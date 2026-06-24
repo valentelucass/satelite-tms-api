@@ -1,0 +1,69 @@
+# Project generated docs
+HELP.md
+
+# Environment and local secrets
+.env
+.env.*
+!.env.example
+!.env.sample
+*.local
+application-local.properties
+application-*.local.properties
+
+# Runtime logs and process files
+logs/
+*.log
+*.log.*
+*.pid
+*.tmp
+*.temp
+
+# Java / Maven build output
+target/
+*.class
+.mvn/wrapper/maven-wrapper.jar
+!**/src/main/**/target/
+!**/src/test/**/target/
+
+# Generated reports and crash dumps
+hs_err_pid*
+replay_pid*
+.attach_pid*
+
+### STS ###
+.apt_generated/
+.classpath
+.factorypath
+.project
+.settings/
+.springBeans
+.sts4-cache/
+
+### IntelliJ IDEA ###
+.idea/
+*.iws
+*.iml
+*.ipr
+
+### NetBeans ###
+/nbproject/private/
+/nbbuild/
+/dist/
+/nbdist/
+/.nb-gradle/
+build/
+!**/src/main/**/build/
+!**/src/test/**/build/
+
+### VS Code ###
+.vscode/
+
+### OS files ###
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Private/internal documentation
+/docs/info-iniciais/
+
+scripts/

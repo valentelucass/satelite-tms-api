@@ -1,0 +1,103 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<jaxb:bindings
+        xmlns:jaxb="https://jakarta.ee/xml/ns/jaxb"
+        xmlns:xs="http://www.w3.org/2001/XMLSchema"
+        version="3.0">
+
+    <jaxb:bindings schemaLocation="https://vedacit.multihomo.com.br/SGT.WebService/NFe.svc?xsd=xsd3" node="/xs:schema">
+        <jaxb:bindings node="xs:element[@name='ArrayOfBoleto']">
+            <jaxb:factoryMethod name="createNFeArrayOfBoletoElement"/>
+        </jaxb:bindings>
+        <jaxb:bindings node="xs:element[@name='ArrayOfCanhoto']">
+            <jaxb:factoryMethod name="createNFeArrayOfCanhotoElement"/>
+        </jaxb:bindings>
+        <jaxb:bindings node="xs:element[@name='ArrayOfCanhotoAvulso']">
+            <jaxb:factoryMethod name="createNFeArrayOfCanhotoAvulsoElement"/>
+        </jaxb:bindings>
+        <jaxb:bindings node="xs:element[@name='ArrayOfLote']">
+            <jaxb:factoryMethod name="createNFeArrayOfLoteElement"/>
+        </jaxb:bindings>
+        <jaxb:bindings node="xs:element[@name='ArrayOfNotaFiscal']">
+            <jaxb:factoryMethod name="createNFeArrayOfNotaFiscalElement"/>
+        </jaxb:bindings>
+        <jaxb:bindings node="xs:element[@name='ArrayOfNotaFiscalChave']">
+            <jaxb:factoryMethod name="createNFeArrayOfNotaFiscalChaveElement"/>
+        </jaxb:bindings>
+        <jaxb:bindings node="xs:element[@name='ArrayOfTokenNF']">
+            <jaxb:factoryMethod name="createNFeArrayOfTokenNFElement"/>
+        </jaxb:bindings>
+        <jaxb:bindings node="xs:element[@name='ArrayOfVolume']">
+            <jaxb:factoryMethod name="createNFeArrayOfVolumeElement"/>
+        </jaxb:bindings>
+        <jaxb:bindings node="xs:element[@name='Boleto']">
+            <jaxb:factoryMethod name="createNFeBoletoElement"/>
+        </jaxb:bindings>
+        <jaxb:bindings node="xs:element[@name='Canhoto']">
+            <jaxb:factoryMethod name="createNFeCanhotoElement"/>
+        </jaxb:bindings>
+        <jaxb:bindings node="xs:element[@name='CanhotoAvulso']">
+            <jaxb:factoryMethod name="createNFeCanhotoAvulsoElement"/>
+        </jaxb:bindings>
+        <jaxb:bindings node="xs:element[@name='CanhotoNotaFiscal']">
+            <jaxb:factoryMethod name="createNFeCanhotoNotaFiscalElement"/>
+        </jaxb:bindings>
+        <jaxb:bindings node="xs:element[@name='ConfirmarEtapaNFe']">
+            <jaxb:factoryMethod name="createNFeConfirmarEtapaNFeElement"/>
+        </jaxb:bindings>
+        <jaxb:bindings node="xs:element[@name='Lote']">
+            <jaxb:factoryMethod name="createNFeLoteElement"/>
+        </jaxb:bindings>
+        <jaxb:bindings node="xs:element[@name='NotaFiscal']">
+            <jaxb:factoryMethod name="createNFeNotaFiscalElement"/>
+        </jaxb:bindings>
+        <jaxb:bindings node="xs:element[@name='NotaFiscalChave']">
+            <jaxb:factoryMethod name="createNFeNotaFiscalChaveElement"/>
+        </jaxb:bindings>
+        <jaxb:bindings node="xs:element[@name='NotaFiscalContabilizacao']">
+            <jaxb:factoryMethod name="createNFeNotaFiscalContabilizacaoElement"/>
+        </jaxb:bindings>
+        <jaxb:bindings node="xs:element[@name='TokenNF']">
+            <jaxb:factoryMethod name="createNFeTokenNFElement"/>
+        </jaxb:bindings>
+        <jaxb:bindings node="xs:element[@name='Volume']">
+            <jaxb:factoryMethod name="createNFeVolumeElement"/>
+        </jaxb:bindings>
+    </jaxb:bindings>
+
+    <jaxb:bindings schemaLocation="https://vedacit.multihomo.com.br/SGT.WebService/NFe.svc?xsd=xsd6" node="/xs:schema">
+        <jaxb:bindings node="xs:element[@name='Empresa']">
+            <jaxb:factoryMethod name="createPessoasEmpresaElement"/>
+        </jaxb:bindings>
+    </jaxb:bindings>
+
+    <jaxb:bindings schemaLocation="https://vedacit.multihomo.com.br/SGT.WebService/NFe.svc?xsd=xsd7" node="/xs:schema">
+        <jaxb:bindings node="xs:element[@name='Endereco']">
+            <jaxb:factoryMethod name="createNFeEnderecoElement"/>
+        </jaxb:bindings>
+        <jaxb:bindings node="xs:element[@name='Pais']">
+            <jaxb:factoryMethod name="createNFePaisElement"/>
+        </jaxb:bindings>
+        <jaxb:bindings node="xs:element[@name='Regiao']">
+            <jaxb:factoryMethod name="createNFeRegiaoElement"/>
+        </jaxb:bindings>
+        <jaxb:bindings node="xs:element[@name='EnderecoDadosComplementares']">
+            <jaxb:factoryMethod name="createNFeEnderecoDadosComplementaresElement"/>
+        </jaxb:bindings>
+    </jaxb:bindings>
+
+    <jaxb:bindings schemaLocation="https://vedacit.multihomo.com.br/SGT.WebService/NFe.svc?xsd=xsd8" node="/xs:schema">
+        <jaxb:bindings node="xs:element[@name='Empresa']">
+            <jaxb:factoryMethod name="createDominioEmpresaElement"/>
+        </jaxb:bindings>
+    </jaxb:bindings>
+
+    <jaxb:bindings schemaLocation="https://vedacit.multihomo.com.br/SGT.WebService/NFe.svc?xsd=xsd21" node="/xs:schema">
+        <jaxb:bindings node="xs:element[@name='ArrayOfNotaFiscal']">
+            <jaxb:factoryMethod name="createCargaArrayOfNotaFiscalElement"/>
+        </jaxb:bindings>
+        <jaxb:bindings node="xs:element[@name='NotaFiscal']">
+            <jaxb:factoryMethod name="createCargaNotaFiscalElement"/>
+        </jaxb:bindings>
+    </jaxb:bindings>
+
+</jaxb:bindings>

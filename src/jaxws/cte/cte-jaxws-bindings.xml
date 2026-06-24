@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<jaxws:bindings
+        xmlns:jaxws="https://jakarta.ee/xml/ns/jaxws"
+        xmlns:wsdl="http://schemas.xmlsoap.org/wsdl/"
+        wsdlLocation="https://vedacit.multihomo.com.br/SGT.WebService/CTe.svc?wsdl"
+        version="3.0">
+    <jaxws:package name="com.example.satelite.vedacit.cte"/>
+</jaxws:bindings>

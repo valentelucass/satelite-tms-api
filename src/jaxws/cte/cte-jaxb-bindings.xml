@@ -1,0 +1,180 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<jaxb:bindings
+        xmlns:jaxb="https://jakarta.ee/xml/ns/jaxb"
+        xmlns:xs="http://www.w3.org/2001/XMLSchema"
+        version="3.0">
+
+    <jaxb:bindings schemaLocation="https://vedacit.multihomo.com.br/SGT.WebService/CTe.svc?xsd=xsd0" node="/xs:schema">
+        <jaxb:schemaBindings>
+            <jaxb:package name="com.example.satelite.vedacit.cte"/>
+        </jaxb:schemaBindings>
+    </jaxb:bindings>
+
+    <jaxb:bindings schemaLocation="https://vedacit.multihomo.com.br/SGT.WebService/CTe.svc?xsd=xsd1" node="/xs:schema">
+        <jaxb:schemaBindings>
+            <jaxb:package name="com.example.satelite.vedacit.cte.serialization"/>
+        </jaxb:schemaBindings>
+    </jaxb:bindings>
+
+    <jaxb:bindings schemaLocation="https://vedacit.multihomo.com.br/SGT.WebService/CTe.svc?xsd=xsd2" node="/xs:schema">
+        <jaxb:schemaBindings>
+            <jaxb:package name="com.example.satelite.vedacit.cte.webservice.carga"/>
+        </jaxb:schemaBindings>
+    </jaxb:bindings>
+
+    <jaxb:bindings schemaLocation="https://vedacit.multihomo.com.br/SGT.WebService/CTe.svc?xsd=xsd3" node="/xs:schema">
+        <jaxb:schemaBindings>
+            <jaxb:package name="com.example.satelite.vedacit.cte.embarcador.carga"/>
+        </jaxb:schemaBindings>
+    </jaxb:bindings>
+
+    <jaxb:bindings schemaLocation="https://vedacit.multihomo.com.br/SGT.WebService/CTe.svc?xsd=xsd4" node="/xs:schema">
+        <jaxb:schemaBindings>
+            <jaxb:package name="com.example.satelite.vedacit.cte.embarcador.enumeradores"/>
+        </jaxb:schemaBindings>
+    </jaxb:bindings>
+
+    <jaxb:bindings schemaLocation="https://vedacit.multihomo.com.br/SGT.WebService/CTe.svc?xsd=xsd5" node="/xs:schema">
+        <jaxb:schemaBindings>
+            <jaxb:package name="com.example.satelite.vedacit.cte.embarcador.pessoas"/>
+        </jaxb:schemaBindings>
+    </jaxb:bindings>
+
+    <jaxb:bindings schemaLocation="https://vedacit.multihomo.com.br/SGT.WebService/CTe.svc?xsd=xsd6" node="/xs:schema">
+        <jaxb:schemaBindings>
+            <jaxb:package name="com.example.satelite.vedacit.cte.embarcador.localidade"/>
+        </jaxb:schemaBindings>
+        <jaxb:bindings node="xs:element[@name='Endereco']">
+            <jaxb:factoryMethod name="createCteEnderecoElement"/>
+        </jaxb:bindings>
+        <jaxb:bindings node="xs:element[@name='Pais']">
+            <jaxb:factoryMethod name="createCtePaisElement"/>
+        </jaxb:bindings>
+        <jaxb:bindings node="xs:element[@name='Regiao']">
+            <jaxb:factoryMethod name="createCteRegiaoElement"/>
+        </jaxb:bindings>
+        <jaxb:bindings node="xs:element[@name='EnderecoDadosComplementares']">
+            <jaxb:factoryMethod name="createCteEnderecoDadosComplementaresElement"/>
+        </jaxb:bindings>
+    </jaxb:bindings>
+
+    <jaxb:bindings schemaLocation="https://vedacit.multihomo.com.br/SGT.WebService/CTe.svc?xsd=xsd7" node="/xs:schema">
+        <jaxb:schemaBindings>
+            <jaxb:package name="com.example.satelite.vedacit.cte.dominio.objetosdevalor"/>
+        </jaxb:schemaBindings>
+    </jaxb:bindings>
+
+    <jaxb:bindings schemaLocation="https://vedacit.multihomo.com.br/SGT.WebService/CTe.svc?xsd=xsd8" node="/xs:schema">
+        <jaxb:schemaBindings>
+            <jaxb:package name="com.example.satelite.vedacit.cte.dominio.enumeradores"/>
+        </jaxb:schemaBindings>
+    </jaxb:bindings>
+
+    <jaxb:bindings schemaLocation="https://vedacit.multihomo.com.br/SGT.WebService/CTe.svc?xsd=xsd9" node="/xs:schema">
+        <jaxb:schemaBindings>
+            <jaxb:package name="com.example.satelite.vedacit.cte.serialization.arrays"/>
+        </jaxb:schemaBindings>
+    </jaxb:bindings>
+
+    <jaxb:bindings schemaLocation="https://vedacit.multihomo.com.br/SGT.WebService/CTe.svc?xsd=xsd10" node="/xs:schema">
+        <jaxb:schemaBindings>
+            <jaxb:package name="com.example.satelite.vedacit.cte.webservice"/>
+        </jaxb:schemaBindings>
+    </jaxb:bindings>
+
+    <jaxb:bindings schemaLocation="https://vedacit.multihomo.com.br/SGT.WebService/CTe.svc?xsd=xsd11" node="/xs:schema">
+        <jaxb:schemaBindings>
+            <jaxb:package name="com.example.satelite.vedacit.cte.sgt"/>
+        </jaxb:schemaBindings>
+    </jaxb:bindings>
+
+    <jaxb:bindings schemaLocation="https://vedacit.multihomo.com.br/SGT.WebService/CTe.svc?xsd=xsd12" node="/xs:schema">
+        <jaxb:schemaBindings>
+            <jaxb:package name="com.example.satelite.vedacit.cte.webservice.cte"/>
+        </jaxb:schemaBindings>
+    </jaxb:bindings>
+
+    <jaxb:bindings schemaLocation="https://vedacit.multihomo.com.br/SGT.WebService/CTe.svc?xsd=xsd13" node="/xs:schema">
+        <jaxb:schemaBindings>
+            <jaxb:package name="com.example.satelite.vedacit.cte.embarcador.financeiro"/>
+        </jaxb:schemaBindings>
+    </jaxb:bindings>
+
+    <jaxb:bindings schemaLocation="https://vedacit.multihomo.com.br/SGT.WebService/CTe.svc?xsd=xsd14" node="/xs:schema">
+        <jaxb:schemaBindings>
+            <jaxb:package name="com.example.satelite.vedacit.cte.embarcador.configuracaocontabil"/>
+        </jaxb:schemaBindings>
+    </jaxb:bindings>
+
+    <jaxb:bindings schemaLocation="https://vedacit.multihomo.com.br/SGT.WebService/CTe.svc?xsd=xsd15" node="/xs:schema">
+        <jaxb:schemaBindings>
+            <jaxb:package name="com.example.satelite.vedacit.cte.dominio.enumerador"/>
+        </jaxb:schemaBindings>
+    </jaxb:bindings>
+
+    <jaxb:bindings schemaLocation="https://vedacit.multihomo.com.br/SGT.WebService/CTe.svc?xsd=xsd16" node="/xs:schema">
+        <jaxb:schemaBindings>
+            <jaxb:package name="com.example.satelite.vedacit.cte.embarcador.transportadores"/>
+        </jaxb:schemaBindings>
+    </jaxb:bindings>
+
+    <jaxb:bindings schemaLocation="https://vedacit.multihomo.com.br/SGT.WebService/CTe.svc?xsd=xsd17" node="/xs:schema">
+        <jaxb:schemaBindings>
+            <jaxb:package name="com.example.satelite.vedacit.cte.dominio.cte"/>
+        </jaxb:schemaBindings>
+    </jaxb:bindings>
+
+    <jaxb:bindings schemaLocation="https://vedacit.multihomo.com.br/SGT.WebService/CTe.svc?xsd=xsd18" node="/xs:schema">
+        <jaxb:schemaBindings>
+            <jaxb:package name="com.example.satelite.vedacit.cte.embarcador.frete"/>
+        </jaxb:schemaBindings>
+    </jaxb:bindings>
+
+    <jaxb:bindings schemaLocation="https://vedacit.multihomo.com.br/SGT.WebService/CTe.svc?xsd=xsd19" node="/xs:schema">
+        <jaxb:schemaBindings>
+            <jaxb:package name="com.example.satelite.vedacit.cte.embarcador.ibscbs"/>
+        </jaxb:schemaBindings>
+    </jaxb:bindings>
+
+    <jaxb:bindings schemaLocation="https://vedacit.multihomo.com.br/SGT.WebService/CTe.svc?xsd=xsd20" node="/xs:schema">
+        <jaxb:schemaBindings>
+            <jaxb:package name="com.example.satelite.vedacit.cte.embarcador.icms"/>
+        </jaxb:schemaBindings>
+    </jaxb:bindings>
+
+    <jaxb:bindings schemaLocation="https://vedacit.multihomo.com.br/SGT.WebService/CTe.svc?xsd=xsd21" node="/xs:schema">
+        <jaxb:schemaBindings>
+            <jaxb:package name="com.example.satelite.vedacit.cte.embarcador.iss"/>
+        </jaxb:schemaBindings>
+    </jaxb:bindings>
+
+    <jaxb:bindings schemaLocation="https://vedacit.multihomo.com.br/SGT.WebService/CTe.svc?xsd=xsd22" node="/xs:schema">
+        <jaxb:schemaBindings>
+            <jaxb:package name="com.example.satelite.vedacit.cte.embarcador.frota"/>
+        </jaxb:schemaBindings>
+    </jaxb:bindings>
+
+    <jaxb:bindings schemaLocation="https://vedacit.multihomo.com.br/SGT.WebService/CTe.svc?xsd=xsd23" node="/xs:schema">
+        <jaxb:schemaBindings>
+            <jaxb:package name="com.example.satelite.vedacit.cte.webservice.ocorrencia"/>
+        </jaxb:schemaBindings>
+    </jaxb:bindings>
+
+    <jaxb:bindings schemaLocation="https://vedacit.multihomo.com.br/SGT.WebService/CTe.svc?xsd=xsd24" node="/xs:schema">
+        <jaxb:schemaBindings>
+            <jaxb:package name="com.example.satelite.vedacit.cte.message"/>
+        </jaxb:schemaBindings>
+    </jaxb:bindings>
+
+    <jaxb:bindings schemaLocation="https://vedacit.multihomo.com.br/SGT.WebService/CTe.svc?xsd=xsd25" node="/xs:schema">
+        <jaxb:schemaBindings>
+            <jaxb:package name="com.example.satelite.vedacit.cte.embarcador.cte"/>
+        </jaxb:schemaBindings>
+    </jaxb:bindings>
+
+    <jaxb:bindings schemaLocation="https://vedacit.multihomo.com.br/SGT.WebService/CTe.svc?xsd=xsd26" node="/xs:schema">
+        <jaxb:schemaBindings>
+            <jaxb:package name="com.example.satelite.vedacit.cte.embarcador.escrituracao"/>
+        </jaxb:schemaBindings>
+    </jaxb:bindings>
+</jaxb:bindings>

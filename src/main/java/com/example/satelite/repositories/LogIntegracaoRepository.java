@@ -1,0 +1,144 @@
+package com.example.satelite.repositories;
+
+import java.math.BigDecimal;
+import java.time.LocalDateTime;
+import java.util.List;
+import java.util.Optional;
+
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+
+import com.example.satelite.models.LogIntegracaoModel;
+
+public interface LogIntegracaoRepository extends JpaRepository<LogIntegracaoModel, Long> {
+
+    Optional<LogIntegracaoModel> findTopBySistemaDestinoAndOccurrenceIdOrderByDataProcessamentoDescIdDesc(
+            String sistemaDestino,
+            Long occurrenceId
+    );
+
+    List<LogIntegracaoModel> findBySistemaDestinoAndStatusCanhotoOrderByDataProcessamentoAscIdAsc(
+            String sistemaDestino,
+            String statusCanhoto
+    );
+
+    @Query(value = """
+            SELECT
+                d.sistema_destino AS sistemaDestino,
+                COUNT(l.id) AS totalRegistros,
+                CAST(
+                    CASE
+                        WHEN COUNT(l.id) = 0 THEN 0.00
+                        ELSE ROUND(
+                            100.0 * SUM(CASE
+                                WHEN COALESCE(UPPER(NULLIF(TRIM(l.status_dados), '')), UPPER(NULLIF(TRIM(l.status), '')))
+                                     IN ('SUCESSO', 'ENVIADO', 'PROCESSADO')
+                                THEN 1.0 ELSE 0.0 END) / COUNT(l.id),
+                            2
+                        )
+                    END AS DECIMAL(5, 2)
+                ) AS percentualXmlSucesso,
+                CAST(
+                    CASE
+                        WHEN COUNT(l.id) = 0 THEN 0.00
+                        ELSE ROUND(
+                            100.0 * SUM(CASE
+                                WHEN COALESCE(UPPER(NULLIF(TRIM(l.status_canhoto), '')), UPPER(NULLIF(TRIM(l.status), '')))
+                                     IN ('SUCESSO', 'ENVIADO', 'PROCESSADO')
+                                THEN 1.0 ELSE 0.0 END) / COUNT(l.id),
+                            2
+                        )
+                    END AS DECIMAL(5, 2)
+                ) AS percentualCanhotoSucesso
+            FROM (VALUES ('VEDACIT'), ('PPG')) AS d(sistema_destino)
+            LEFT JOIN dbo.tb_log_integracao l
+                ON l.sistema_destino = d.sistema_destino
+            GROUP BY d.sistema_destino
+            ORDER BY d.sistema_destino
+            """, nativeQuery = true)
+    List<MetricaIntegracaoClienteProjection> buscarMetricasIntegracoesClientes();
+
+    @Query(
+            value = """
+                    SELECT
+                        l.id AS id,
+                        l.sistema_destino AS sistemaDestino,
+                        l.occurrence_id AS occurrenceId,
+                        l.freight_id AS freightId,
+                        l.chave_nfe AS chaveNfe,
+                        TRY_CAST(SUBSTRING(l.chave_nfe, 26, 9) AS BIGINT) AS numero_nf,
+                        SUBSTRING(l.chave_nfe, 23, 3) AS serie_nf,
+                        COALESCE(NULLIF(TRIM(l.status_dados), ''), NULLIF(TRIM(l.status), '')) AS statusDados,
+                        COALESCE(NULLIF(TRIM(l.status_canhoto), ''), NULLIF(TRIM(l.status), '')) AS statusCanhoto,
+                        l.mensagem_erro_dados AS mensagemErroDados,
+                        l.mensagem_erro_canhoto AS mensagemErroCanhoto,
+                        l.data_processamento AS dataProcessamento,
+                        l.data_processamento_dados AS dataProcessamentoDados,
+                        l.data_processamento_canhoto AS dataProcessamentoCanhoto
+                    FROM dbo.tb_log_integracao l
+                    WHERE l.sistema_destino IN ('VEDACIT', 'PPG')
+                      AND (
+                          l.status_canhoto = 'PENDENTE_FOTO'
+                          OR l.status_dados = 'ERRO_DESTINO'
+                          OR (l.status_canhoto IS NULL AND l.status = 'PENDENTE_FOTO')
+                          OR (l.status_dados IS NULL AND l.status = 'ERRO_DESTINO')
+                      )
+                    ORDER BY l.data_processamento DESC, l.id DESC
+                    """,
+            countQuery = """
+                    SELECT COUNT(1)
+                    FROM dbo.tb_log_integracao l
+                    WHERE l.sistema_destino IN ('VEDACIT', 'PPG')
+                      AND (
+                          l.status_canhoto = 'PENDENTE_FOTO'
+                          OR l.status_dados = 'ERRO_DESTINO'
+                          OR (l.status_canhoto IS NULL AND l.status = 'PENDENTE_FOTO')
+                          OR (l.status_dados IS NULL AND l.status = 'ERRO_DESTINO')
+                      )
+                    """,
+            nativeQuery = true
+    )
+    Page<PendenciaIntegracaoClienteProjection> buscarPendenciasIntegracoesClientes(Pageable pageable);
+
+    interface MetricaIntegracaoClienteProjection {
+        String getSistemaDestino();
+
+        Long getTotalRegistros();
+
+        BigDecimal getPercentualXmlSucesso();
+
+        BigDecimal getPercentualCanhotoSucesso();
+    }
+
+    interface PendenciaIntegracaoClienteProjection {
+        Long getId();
+
+        String getSistemaDestino();
+
+        Long getOccurrenceId();
+
+        Long getFreightId();
+
+        String getChaveNfe();
+
+        Long getNumeroNf();
+
+        String getSerieNf();
+
+        String getStatusDados();
+
+        String getStatusCanhoto();
+
+        String getMensagemErroDados();
+
+        String getMensagemErroCanhoto();
+
+        LocalDateTime getDataProcessamento();
+
+        LocalDateTime getDataProcessamentoDados();
+
+        LocalDateTime getDataProcessamentoCanhoto();
+    }
+}

@@ -1,0 +1,664 @@
+package com.example.satelite.services.etl;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyBoolean;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
+import static org.mockito.Mockito.atLeastOnce;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
+
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
+import java.util.List;
+import java.util.Optional;
+
+import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
+import org.springframework.boot.test.system.CapturedOutput;
+import org.springframework.boot.test.system.OutputCaptureExtension;
+import org.springframework.test.util.ReflectionTestUtils;
+import org.junit.jupiter.api.extension.ExtendWith;
+
+import com.example.satelite.clients.RodogarciaClient;
+import com.example.satelite.dto.rodogarcia.ComprovanteEslDTO;
+import com.example.satelite.dto.rodogarcia.ComprovanteEslItemDTO;
+import com.example.satelite.dto.rodogarcia.EslFreightDTO;
+import com.example.satelite.dto.rodogarcia.EslInvoiceDTO;
+import com.example.satelite.dto.rodogarcia.EslLoteResponseDTO;
+import com.example.satelite.dto.rodogarcia.EslOcorrenciaDTO;
+import com.example.satelite.dto.rodogarcia.EslOccurrenceDefDTO;
+import com.example.satelite.dto.rodogarcia.EslPagingDTO;
+import com.example.satelite.models.ControleCursor;
+import com.example.satelite.repositories.ControleCursorRepository;
+import com.example.satelite.repositories.LogIntegracaoRepository;
+import com.example.satelite.services.ResultadoIntegracao;
+import com.example.satelite.services.ppg.PpgIntegrationService;
+import com.example.satelite.services.vedacit.VedacitIntegrationService;
+
+@ExtendWith(OutputCaptureExtension.class)
+class OrquestradorEtlServiceTest {
+
+    private static final String URL_TESTE_E2E = "https://www.w3.org/People/mimasa/test/imgformat/img/w3c_home.jpg";
+
+    @Test
+    void deveBuscarOcorrenciasComUltimoCursorPersistido() {
+        Dependencias dependencias = criarDependencias();
+        ControleCursor cursor = ControleCursor.builder()
+                .cursorNextId(123L)
+                .sistemaDestino("PPG")
+                .dataAtualizacao(LocalDateTime.now())
+                .build();
+
+        when(dependencias.controleCursorRepository().findBySistemaDestino(anyString()))
+                .thenReturn(Optional.of(cursor));
+        when(dependencias.rodogarciaClient().buscarOcorrencias(eq("Bearer token-ppg"), eq(123L), isNull(), isNull(), eq(1)))
+                .thenReturn(loteVazio());
+        when(dependencias.rodogarciaClient().buscarOcorrencias(eq("Bearer token-vedacit"), eq(123L), isNull(), isNull(), eq(1)))
+                .thenReturn(loteVazio());
+
+        dependencias.service().executarFluxos();
+
+        verify(dependencias.rodogarciaClient()).buscarOcorrencias("Bearer token-ppg", 123L, null, null, 1);
+        verify(dependencias.rodogarciaClient()).buscarOcorrencias("Bearer token-vedacit", 123L, null, null, 1);
+        verify(dependencias.eslRequestPolicyService(), times(2)).aguardarProximaRequisicao();
+    }
+
+    @Test
+    void deveBuscarVedacitPorInvoiceKeyQuandoWhitelistEstiverAtiva() {
+        Dependencias dependencias = criarDependencias();
+        ReflectionTestUtils.setField(dependencias.service(), "vedacitNfeWhitelistEnabled", true);
+        ReflectionTestUtils.setField(
+                dependencias.service(),
+                "vedacitNfeWhitelist",
+                "35260660642774001209550010002214511591072444,35260660642774001209550010002214511591072445"
+        );
+
+        when(dependencias.controleCursorRepository().findBySistemaDestino(anyString())).thenReturn(Optional.empty());
+        when(dependencias.rodogarciaClient().buscarOcorrencias(eq("Bearer token-ppg"), isNull(), isNull(), isNull(), eq(1)))
+                .thenReturn(loteVazio());
+        when(dependencias.rodogarciaClient().buscarOcorrencias(
+                eq("Bearer token-vedacit"),
+                isNull(),
+                eq("35260660642774001209550010002214511591072444"),
+                isNull(),
+                eq(1)
+        ))
+                .thenReturn(loteVazio());
+
+        dependencias.service().executarFluxos();
+
+        verify(dependencias.rodogarciaClient()).buscarOcorrencias("Bearer token-ppg", null, null, null, 1);
+        verify(dependencias.rodogarciaClient()).buscarOcorrencias(
+                "Bearer token-vedacit",
+                null,
+                "35260660642774001209550010002214511591072444",
+                null,
+                1
+        );
+    }
+
+    @Test
+    void deveBuscarPpgPorInvoiceKeyQuandoWhitelistEstiverAtiva() {
+        Dependencias dependencias = criarDependencias();
+        ReflectionTestUtils.setField(dependencias.service(), "ppgNfeWhitelistEnabled", true);
+        ReflectionTestUtils.setField(
+                dependencias.service(),
+                "ppgNfeWhitelist",
+                "35260643996693000127550170004219491100020255,35260643996693000127550170004219491100020256"
+        );
+
+        when(dependencias.controleCursorRepository().findBySistemaDestino(anyString())).thenReturn(Optional.empty());
+        when(dependencias.rodogarciaClient().buscarOcorrencias(
+                eq("Bearer token-ppg"),
+                isNull(),
+                eq("35260643996693000127550170004219491100020255"),
+                isNull(),
+                eq(1)
+        ))
+                .thenReturn(loteVazio());
+        when(dependencias.rodogarciaClient().buscarOcorrencias(eq("Bearer token-vedacit"), isNull(), isNull(), isNull(), eq(1)))
+                .thenReturn(loteVazio());
+
+        dependencias.service().executarFluxos();
+
+        verify(dependencias.rodogarciaClient()).buscarOcorrencias(
+                "Bearer token-ppg",
+                null,
+                "35260643996693000127550170004219491100020255",
+                null,
+                1
+        );
+        verify(dependencias.rodogarciaClient()).buscarOcorrencias("Bearer token-vedacit", null, null, null, 1);
+    }
+
+    @Test
+    void deveIgnorarPpgQuandoNotaNaoEstaNaWhitelistAntesDeBuscarComprovante() {
+        Dependencias dependencias = criarDependencias();
+        ReflectionTestUtils.setField(dependencias.service(), "ppgNfeWhitelistEnabled", true);
+        ReflectionTestUtils.setField(dependencias.service(), "ppgNfeWhitelist", "35260643996693000127550170004219491100020255");
+
+        when(dependencias.ppgIntegrationService().notaFiscalPermitida(any())).thenReturn(false);
+        when(dependencias.ppgIntegrationService().processarOcorrencia(any(), isNull()))
+                .thenReturn(ResultadoIntegracao.ignorado());
+        when(dependencias.controleCursorRepository().findBySistemaDestino(anyString())).thenReturn(Optional.empty());
+        when(dependencias.controleCursorRepository().save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        when(dependencias.logIntegracaoRepository().save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        when(dependencias.rodogarciaClient().buscarOcorrencias(
+                eq("Bearer token-ppg"),
+                isNull(),
+                eq("35260643996693000127550170004219491100020255"),
+                isNull(),
+                eq(1)
+        ))
+                .thenReturn(new EslLoteResponseDTO(
+                        List.of(criarOcorrencia(10L, 1, "35260612345678000123570010000012341000012345")),
+                        new EslPagingDTO(99L, 1)
+                ));
+        when(dependencias.rodogarciaClient().buscarOcorrencias(eq("Bearer token-vedacit"), isNull(), isNull(), isNull(), eq(1)))
+                .thenReturn(loteVazio());
+
+        dependencias.service().executarFluxos();
+
+        verify(dependencias.rodogarciaClient(), times(0)).buscarComprovante(anyString(), anyString());
+        verify(dependencias.ppgIntegrationService(), times(0)).processarOcorrencia(any(), isNull());
+    }
+
+    @Test
+    void deveMarcarPpgComoPendenteFotoQuandoComprovanteNaoExiste() {
+        Dependencias dependencias = criarDependencias();
+        when(dependencias.controleCursorRepository().findBySistemaDestino(anyString())).thenReturn(Optional.empty());
+        when(dependencias.controleCursorRepository().save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        when(dependencias.logIntegracaoRepository().save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        when(dependencias.rodogarciaClient().buscarOcorrencias(eq("Bearer token-ppg"), isNull(), isNull(), isNull(), eq(1)))
+                .thenReturn(new EslLoteResponseDTO(
+                        List.of(criarOcorrencia(10L, 1, "35260612345678000123570010000012341000012345")),
+                        new EslPagingDTO(99L, 1)
+                ));
+        when(dependencias.rodogarciaClient().buscarComprovante(
+                eq("Bearer token-ppg"),
+                eq("35260612345678000123570010000012341000012345")
+        ))
+                .thenReturn(new ComprovanteEslDTO(List.of(), null));
+        when(dependencias.rodogarciaClient().buscarOcorrencias(eq("Bearer token-vedacit"), isNull(), isNull(), isNull(), eq(1)))
+                .thenReturn(loteVazio());
+
+        dependencias.service().executarFluxos();
+
+        ArgumentCaptor<com.example.satelite.models.LogIntegracaoModel> captor =
+                ArgumentCaptor.forClass(com.example.satelite.models.LogIntegracaoModel.class);
+        verify(dependencias.logIntegracaoRepository(), atLeastOnce()).save(captor.capture());
+
+        assertTrue(captor.getAllValues().stream()
+                .anyMatch(log -> "PENDENTE_FOTO".equals(log.getStatus())
+                        && "PENDENTE_FOTO".equals(log.getStatusCanhoto())));
+        verify(dependencias.ppgIntegrationService(), times(0)).processarOcorrencia(any(), any());
+    }
+
+    @Test
+    void deveAvancarCursorQuandoPaginaNaoTemErros() {
+        Dependencias dependencias = criarDependencias();
+        when(dependencias.controleCursorRepository().findBySistemaDestino(anyString())).thenReturn(Optional.empty());
+        when(dependencias.controleCursorRepository().save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        when(dependencias.logIntegracaoRepository().save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        when(dependencias.rodogarciaClient().buscarOcorrencias(eq("Bearer token-ppg"), isNull(), isNull(), isNull(), eq(1)))
+                .thenReturn(new EslLoteResponseDTO(
+                        List.of(criarOcorrencia(10L, 110, "35260612345678000123570010000012341000012345")),
+                        new EslPagingDTO(99L, 1)
+                ));
+        when(dependencias.rodogarciaClient().buscarOcorrencias(eq("Bearer token-vedacit"), isNull(), isNull(), isNull(), eq(1)))
+                .thenReturn(loteVazio());
+
+        dependencias.service().executarFluxos();
+
+        ArgumentCaptor<ControleCursor> captor = ArgumentCaptor.forClass(ControleCursor.class);
+        verify(dependencias.controleCursorRepository()).save(captor.capture());
+
+        assertEquals("PPG", captor.getValue().getSistemaDestino());
+        assertEquals(99L, captor.getValue().getCursorNextId());
+    }
+
+    @Test
+    void naoDeveAvancarCursorQuandoPaginaTemErro() {
+        Dependencias dependencias = criarDependencias();
+        when(dependencias.controleCursorRepository().findBySistemaDestino(anyString())).thenReturn(Optional.empty());
+        when(dependencias.logIntegracaoRepository().save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        when(dependencias.rodogarciaClient().buscarOcorrencias(eq("Bearer token-ppg"), isNull(), isNull(), isNull(), eq(1)))
+                .thenReturn(new EslLoteResponseDTO(
+                        List.of(criarOcorrencia(10L, 1, null)),
+                        new EslPagingDTO(99L, 1)
+                ));
+        when(dependencias.rodogarciaClient().buscarOcorrencias(eq("Bearer token-vedacit"), isNull(), isNull(), isNull(), eq(1)))
+                .thenReturn(loteVazio());
+
+        dependencias.service().executarFluxos();
+
+        verify(dependencias.logIntegracaoRepository(), atLeastOnce()).save(any());
+        verify(dependencias.controleCursorRepository(), times(0)).save(any());
+    }
+
+    @Test
+    void retroativoDeveUsarSinceENaoLerOuSalvarControleCursorNemPendencias() {
+        Dependencias dependencias = criarDependencias();
+        ReflectionTestUtils.setField(dependencias.service(), "vedacitEnabled", false);
+        when(dependencias.logIntegracaoRepository().save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        when(dependencias.rodogarciaClient().buscarOcorrencias(
+                eq("Bearer token-ppg"),
+                isNull(),
+                isNull(),
+                eq("2026-05-01T00:00:00.000-03:00"),
+                eq(1)
+        ))
+                .thenReturn(new EslLoteResponseDTO(
+                        List.of(criarOcorrencia(
+                                10L,
+                                1,
+                                "35260612345678000123570010000012341000012345",
+                                "2026-05-03T10:30:00-03:00",
+                                "2026-05-03T11:00:00-03:00"
+                        )),
+                        new EslPagingDTO(99L, 1)
+                ));
+        when(dependencias.rodogarciaClient().buscarComprovante(
+                eq("Bearer token-ppg"),
+                eq("35260612345678000123570010000012341000012345")
+        ))
+                .thenReturn(new ComprovanteEslDTO(
+                        List.of(new ComprovanteEslItemDTO(50L, "https://example.com/canhoto.jpg", null, null, null)),
+                        null
+                ));
+
+        OrquestradorEtlService.ResultadoCiclo resultado = dependencias.service().executarFluxosComResultado(
+                ExecucaoEtlRequest.retroativo(
+                        LocalDate.of(2026, 5, 1),
+                        LocalDate.of(2026, 6, 23),
+                        "PPG",
+                        1
+                )
+        );
+
+        assertFalse(resultado.erroCritico());
+        verify(dependencias.controleCursorRepository(), times(0)).findBySistemaDestino(anyString());
+        verify(dependencias.controleCursorRepository(), times(0)).save(any());
+        verify(dependencias.logIntegracaoRepository(), times(0))
+                .findBySistemaDestinoAndStatusCanhotoOrderByDataProcessamentoAscIdAsc(anyString(), anyString());
+        verify(dependencias.rodogarciaClient()).buscarOcorrencias(
+                "Bearer token-ppg",
+                null,
+                null,
+                "2026-05-01T00:00:00.000-03:00",
+                1
+        );
+    }
+
+    @Test
+    void retroativoDeveEncerrarQuandoPaginaUltrapassaDataFinalSemEnviarAoDestino(CapturedOutput output) {
+        Dependencias dependencias = criarDependencias();
+        ReflectionTestUtils.setField(dependencias.service(), "vedacitEnabled", false);
+        when(dependencias.rodogarciaClient().buscarOcorrencias(
+                eq("Bearer token-ppg"),
+                isNull(),
+                isNull(),
+                eq("2026-06-01T00:00:00.000-03:00"),
+                eq(1)
+        ))
+                .thenReturn(new EslLoteResponseDTO(
+                        List.of(criarOcorrencia(
+                                10L,
+                                1,
+                                "35260612345678000123570010000012341000012345",
+                                "2026-06-06T10:30:00-03:00",
+                                "2026-06-06T11:00:00-03:00"
+                        )),
+                        new EslPagingDTO(99L, 1)
+                ));
+
+        OrquestradorEtlService.ResultadoCiclo resultado = dependencias.service().executarFluxosComResultado(
+                ExecucaoEtlRequest.retroativo(
+                        LocalDate.of(2026, 6, 1),
+                        LocalDate.of(2026, 6, 5),
+                        "PPG",
+                        10
+                )
+        );
+
+        assertFalse(resultado.erroCritico());
+        assertTrue(output.getOut().contains("Fim da janela retroativa"));
+        verify(dependencias.rodogarciaClient(), times(0)).buscarComprovante(anyString(), anyString());
+        verify(dependencias.ppgIntegrationService(), times(0)).processarOcorrencia(any(), any());
+        verify(dependencias.controleCursorRepository(), times(0)).save(any());
+        verify(dependencias.logIntegracaoRepository(), times(0)).save(any());
+    }
+
+    @Test
+    void retroativoDevePararNoPrimeiroItemForaDaJanelaSemProcessarRestanteDaPagina(CapturedOutput output) {
+        Dependencias dependencias = criarDependencias();
+        ReflectionTestUtils.setField(dependencias.service(), "vedacitEnabled", false);
+        when(dependencias.logIntegracaoRepository().save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        when(dependencias.rodogarciaClient().buscarOcorrencias(
+                eq("Bearer token-ppg"),
+                isNull(),
+                isNull(),
+                eq("2026-06-01T00:00:00.000-03:00"),
+                eq(1)
+        ))
+                .thenReturn(new EslLoteResponseDTO(
+                        List.of(
+                                criarOcorrencia(
+                                        10L,
+                                        1,
+                                        "35260612345678000123570010000012341000012345",
+                                        "2026-06-04T10:30:00-03:00",
+                                        "2026-06-04T11:00:00-03:00"
+                                ),
+                                criarOcorrencia(
+                                        11L,
+                                        1,
+                                        "35260612345678000123570010000099991000099999",
+                                        "2026-06-06T10:30:00-03:00",
+                                        "2026-06-06T11:00:00-03:00"
+                                )
+                        ),
+                        new EslPagingDTO(99L, 2)
+                ));
+        when(dependencias.rodogarciaClient().buscarComprovante(
+                eq("Bearer token-ppg"),
+                eq("35260612345678000123570010000012341000012345")
+        ))
+                .thenReturn(new ComprovanteEslDTO(
+                        List.of(new ComprovanteEslItemDTO(50L, "https://example.com/canhoto.jpg", null, null, null)),
+                        null
+                ));
+
+        OrquestradorEtlService.ResultadoCiclo resultado = dependencias.service().executarFluxosComResultado(
+                ExecucaoEtlRequest.retroativo(
+                        LocalDate.of(2026, 6, 1),
+                        LocalDate.of(2026, 6, 5),
+                        "PPG",
+                        10
+                )
+        );
+
+        assertFalse(resultado.erroCritico());
+        assertTrue(output.getOut().contains("Fim da janela retroativa"));
+        verify(dependencias.rodogarciaClient()).buscarComprovante(
+                "Bearer token-ppg",
+                "35260612345678000123570010000012341000012345"
+        );
+        verify(dependencias.rodogarciaClient(), times(0)).buscarComprovante(
+                "Bearer token-ppg",
+                "35260612345678000123570010000099991000099999"
+        );
+        verify(dependencias.ppgIntegrationService(), times(1)).processarOcorrencia(any(), any());
+        verify(dependencias.controleCursorRepository(), times(0)).save(any());
+    }
+
+    @Test
+    void retroativoDeveTolerarDatasNulasNaOcorrencia() {
+        Dependencias dependencias = criarDependencias();
+        ReflectionTestUtils.setField(dependencias.service(), "vedacitEnabled", false);
+        when(dependencias.logIntegracaoRepository().save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        when(dependencias.rodogarciaClient().buscarOcorrencias(
+                eq("Bearer token-ppg"),
+                isNull(),
+                isNull(),
+                eq("2026-06-01T00:00:00.000-03:00"),
+                eq(1)
+        ))
+                .thenReturn(new EslLoteResponseDTO(
+                        List.of(criarOcorrencia(
+                                10L,
+                                1,
+                                "35260612345678000123570010000012341000012345",
+                                null,
+                                null
+                        )),
+                        new EslPagingDTO(99L, 1)
+                ));
+        when(dependencias.rodogarciaClient().buscarComprovante(
+                eq("Bearer token-ppg"),
+                eq("35260612345678000123570010000012341000012345")
+        ))
+                .thenReturn(new ComprovanteEslDTO(
+                        List.of(new ComprovanteEslItemDTO(50L, "https://example.com/canhoto.jpg", null, null, null)),
+                        null
+                ));
+
+        OrquestradorEtlService.ResultadoCiclo resultado = dependencias.service().executarFluxosComResultado(
+                ExecucaoEtlRequest.retroativo(
+                        LocalDate.of(2026, 6, 1),
+                        LocalDate.of(2026, 6, 5),
+                        "PPG",
+                        1
+                )
+        );
+
+        assertFalse(resultado.erroCritico());
+        verify(dependencias.ppgIntegrationService(), times(1)).processarOcorrencia(any(), any());
+        verify(dependencias.controleCursorRepository(), times(0)).save(any());
+    }
+
+    @Test
+    void retroativoDeveRejeitarDataInvalidaComMensagemLegivel() {
+        IllegalArgumentException erro = assertThrows(
+                IllegalArgumentException.class,
+                () -> CicloRetroativoEtlRunner.parseDataObrigatoria("retroactive.start", "32/13/2026")
+        );
+
+        assertTrue(erro.getMessage().contains("--retroactive.start"));
+        assertTrue(erro.getMessage().contains("AAAA-MM-DD"));
+    }
+
+    @Test
+    void deveEncerrarComErroCriticoQuandoApiEslRetornaMesmoNextIdDaRequisicao(CapturedOutput output) {
+        Dependencias dependencias = criarDependencias();
+        ReflectionTestUtils.setField(dependencias.service(), "maxPaginasPorCiclo", 10);
+        ReflectionTestUtils.setField(dependencias.service(), "vedacitEnabled", false);
+
+        EslLoteResponseDTO primeiraPagina = new EslLoteResponseDTO(
+                List.of(criarOcorrencia(10L, 1, "35260612345678000123570010000012341000012345")),
+                new EslPagingDTO(99L, 1)
+        );
+        EslLoteResponseDTO paginaTravada = new EslLoteResponseDTO(
+                List.of(criarOcorrencia(10L, 1, "35260612345678000123570010000012341000012345")),
+                new EslPagingDTO(99L, 1)
+        );
+
+        when(dependencias.controleCursorRepository().findBySistemaDestino(anyString())).thenReturn(Optional.empty());
+        when(dependencias.controleCursorRepository().save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        when(dependencias.logIntegracaoRepository().save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        when(dependencias.rodogarciaClient().buscarOcorrencias(eq("Bearer token-ppg"), isNull(), isNull(), isNull(), eq(1)))
+                .thenReturn(primeiraPagina);
+        when(dependencias.rodogarciaClient().buscarOcorrencias(eq("Bearer token-ppg"), eq(99L), isNull(), isNull(), eq(1)))
+                .thenReturn(paginaTravada);
+
+        OrquestradorEtlService.ResultadoCiclo resultado = dependencias.service().executarFluxosComResultado();
+
+        assertTrue(resultado.erroCritico());
+        assertEquals(OrquestradorEtlService.CODIGO_SAIDA_ERRO_CRITICO, resultado.codigoSaida());
+        assertTrue(output.getOut().contains("API da ESL travou"));
+        assertTrue(output.getOut().contains("Loop crítico de paginação ESL"));
+        assertTrue(output.getOut().contains("next_id retornado pela API (99) é igual ao next_id requisitado"));
+        verify(dependencias.rodogarciaClient()).buscarOcorrencias("Bearer token-ppg", null, null, null, 1);
+        verify(dependencias.rodogarciaClient()).buscarOcorrencias("Bearer token-ppg", 99L, null, null, 1);
+        verify(dependencias.controleCursorRepository(), times(1)).save(any());
+    }
+
+    @Test
+    void deveEncerrarComSucessoQuandoCursorNaoAvancaSemTrabalhoUtil(CapturedOutput output) {
+        Dependencias dependencias = criarDependencias();
+        ReflectionTestUtils.setField(dependencias.service(), "maxPaginasPorCiclo", 10);
+        ReflectionTestUtils.setField(dependencias.service(), "ppgEnabled", false);
+        ReflectionTestUtils.setField(dependencias.service(), "vedacitNfeWhitelistEnabled", true);
+        ReflectionTestUtils.setField(
+                dependencias.service(),
+                "vedacitNfeWhitelist",
+                "35260660642774001209550010002214511591072444"
+        );
+
+        ControleCursor cursor = ControleCursor.builder()
+                .cursorNextId(99L)
+                .sistemaDestino("VEDACIT")
+                .dataAtualizacao(LocalDateTime.now())
+                .build();
+        EslLoteResponseDTO paginaSemTrabalhoUtil = new EslLoteResponseDTO(
+                List.of(criarOcorrencia(10L, 1, "35260612345678000123570010000012341000012345")),
+                new EslPagingDTO(99L, 1)
+        );
+
+        when(dependencias.controleCursorRepository().findBySistemaDestino("VEDACIT"))
+                .thenReturn(Optional.of(cursor));
+        when(dependencias.logIntegracaoRepository().save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        when(dependencias.vedacitIntegrationService().notaFiscalPermitida(any())).thenReturn(false);
+        when(dependencias.rodogarciaClient().buscarOcorrencias(
+                eq("Bearer token-vedacit"),
+                eq(99L),
+                eq("35260660642774001209550010002214511591072444"),
+                isNull(),
+                eq(1)
+        ))
+                .thenReturn(paginaSemTrabalhoUtil);
+
+        OrquestradorEtlService.ResultadoCiclo resultado = dependencias.service().executarFluxosComResultado();
+
+        assertFalse(resultado.erroCritico());
+        assertEquals(OrquestradorEtlService.CODIGO_SAIDA_SUCESSO, resultado.codigoSaida());
+        assertTrue(output.getOut().contains("Fim da fila"));
+        assertTrue(output.getOut().contains("encerrando sem erro crítico"));
+        verify(dependencias.controleCursorRepository(), times(0)).save(any());
+        verify(dependencias.rodogarciaClient(), times(0)).buscarComprovante(anyString(), anyString());
+        verify(dependencias.vedacitIntegrationService(), times(0))
+                .processarOcorrencia(any(), any(), anyBoolean(), anyBoolean());
+    }
+
+    @Test
+    void modoE2eDeveProcessarPrimeiraNotaComImagemDeTesteQuandoComprovanteNaoTemUrl() {
+        Dependencias dependencias = criarDependencias();
+        ReflectionTestUtils.setField(dependencias.service(), "modoTesteE2eImagem", true);
+        ReflectionTestUtils.setField(dependencias.service(), "urlImagemTesteE2e", URL_TESTE_E2E);
+
+        when(dependencias.controleCursorRepository().findBySistemaDestino(anyString())).thenReturn(Optional.empty());
+        when(dependencias.logIntegracaoRepository().save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        when(dependencias.rodogarciaClient().buscarOcorrencias(eq("Bearer token-ppg"), isNull(), isNull(), isNull(), eq(1)))
+                .thenReturn(new EslLoteResponseDTO(
+                        List.of(
+                                criarOcorrencia(10L, 110, "35260612345678000123570010000012341000012345"),
+                                criarOcorrencia(11L, 120, "35260612345678000123570010000012351000012345")
+                        ),
+                        new EslPagingDTO(99L, 2)
+                ));
+        when(dependencias.rodogarciaClient().buscarOcorrencias(eq("Bearer token-vedacit"), isNull(), isNull(), isNull(), eq(1)))
+                .thenReturn(loteVazio());
+        when(dependencias.rodogarciaClient().buscarComprovante(
+                eq("Bearer token-ppg"),
+                eq("35260612345678000123570010000012341000012345")
+        ))
+                .thenReturn(new ComprovanteEslDTO(
+                        List.of(new ComprovanteEslItemDTO(50L, null, null, null, null)),
+                        null
+                ));
+
+        dependencias.service().executarFluxos();
+
+        ArgumentCaptor<ComprovanteEslDTO> comprovanteCaptor = ArgumentCaptor.forClass(ComprovanteEslDTO.class);
+        verify(dependencias.ppgIntegrationService(), times(1)).processarOcorrencia(any(), comprovanteCaptor.capture());
+
+        assertEquals(URL_TESTE_E2E, comprovanteCaptor.getValue().data().get(0).imageUrl());
+    }
+
+    private Dependencias criarDependencias() {
+        RodogarciaClient rodogarciaClient = mock(RodogarciaClient.class);
+        PpgIntegrationService ppgIntegrationService = mock(PpgIntegrationService.class);
+        VedacitIntegrationService vedacitIntegrationService = mock(VedacitIntegrationService.class);
+        LogIntegracaoRepository logIntegracaoRepository = mock(LogIntegracaoRepository.class);
+        ControleCursorRepository controleCursorRepository = mock(ControleCursorRepository.class);
+        EslRequestPolicyService eslRequestPolicyService = mock(EslRequestPolicyService.class);
+        when(ppgIntegrationService.notaFiscalPermitida(any())).thenReturn(true);
+        when(ppgIntegrationService.processarOcorrencia(any(), any())).thenReturn(ResultadoIntegracao.enviado());
+        when(vedacitIntegrationService.notaFiscalPermitida(any())).thenReturn(true);
+        when(vedacitIntegrationService.processarOcorrencia(any(), any(), anyBoolean(), anyBoolean()))
+                .thenReturn(ResultadoIntegracao.enviado());
+        when(logIntegracaoRepository.findTopBySistemaDestinoAndOccurrenceIdOrderByDataProcessamentoDescIdDesc(
+                anyString(),
+                any()
+        ))
+                .thenReturn(Optional.empty());
+        when(logIntegracaoRepository.findBySistemaDestinoAndStatusCanhotoOrderByDataProcessamentoAscIdAsc(
+                anyString(),
+                anyString()
+        ))
+                .thenReturn(List.of());
+
+        OrquestradorEtlService service = new OrquestradorEtlService(
+                rodogarciaClient,
+                ppgIntegrationService,
+                vedacitIntegrationService,
+                logIntegracaoRepository,
+                controleCursorRepository,
+                eslRequestPolicyService
+        );
+        ReflectionTestUtils.setField(service, "tokenPpgEsl", "token-ppg");
+        ReflectionTestUtils.setField(service, "tokenVedacitEsl", "token-vedacit");
+        ReflectionTestUtils.setField(service, "maxPaginasPorCiclo", 1);
+
+        return new Dependencias(
+                service,
+                rodogarciaClient,
+                ppgIntegrationService,
+                vedacitIntegrationService,
+                logIntegracaoRepository,
+                controleCursorRepository,
+                eslRequestPolicyService
+        );
+    }
+
+    private EslLoteResponseDTO loteVazio() {
+        return new EslLoteResponseDTO(List.of(), new EslPagingDTO(null, 0));
+    }
+
+    private EslOcorrenciaDTO criarOcorrencia(Long id, Integer codigoOcorrencia, String cteKey) {
+        return criarOcorrencia(
+                id,
+                codigoOcorrencia,
+                cteKey,
+                "2026-06-17T10:30:00-03:00",
+                null
+        );
+    }
+
+    private EslOcorrenciaDTO criarOcorrencia(
+            Long id,
+            Integer codigoOcorrencia,
+            String cteKey,
+            String occurrenceAt,
+            String createdAt
+    ) {
+        return new EslOcorrenciaDTO(
+                id,
+                occurrenceAt != null ? OffsetDateTime.parse(occurrenceAt) : null,
+                createdAt != null ? OffsetDateTime.parse(createdAt) : null,
+                new EslInvoiceDTO(20L, "35260612345678000123550010000012341000012345", "1", "1234"),
+                new EslFreightDTO(30L, cteKey),
+                new EslOccurrenceDefDTO(40L, codigoOcorrencia, "Ocorrência")
+        );
+    }
+
+    private record Dependencias(
+            OrquestradorEtlService service,
+            RodogarciaClient rodogarciaClient,
+            PpgIntegrationService ppgIntegrationService,
+            VedacitIntegrationService vedacitIntegrationService,
+            LogIntegracaoRepository logIntegracaoRepository,
+            ControleCursorRepository controleCursorRepository,
+            EslRequestPolicyService eslRequestPolicyService
+    ) {
+    }
+}

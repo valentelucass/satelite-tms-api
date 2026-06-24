@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<jaxb:bindings
+        xmlns:jaxb="https://jakarta.ee/xml/ns/jaxb"
+        xmlns:xs="http://www.w3.org/2001/XMLSchema"
+        version="3.0">
+
+    <jaxb:bindings schemaLocation="https://vedacit.multihomo.com.br/SGT.WebService/Ocorrencias.svc?xsd=xsd8" node="/xs:schema">
+        <jaxb:schemaBindings>
+            <jaxb:package name="org.datacontract.schemas._2004._07.dominio.objetosdevalor.embarcador.localidade"/>
+        </jaxb:schemaBindings>
+        <jaxb:bindings node="xs:element[@name='Endereco']">
+            <jaxb:factoryMethod name="createEnderecoElement"/>
+        </jaxb:bindings>
+        <jaxb:bindings node="xs:element[@name='Pais']">
+            <jaxb:factoryMethod name="createPaisElement"/>
+        </jaxb:bindings>
+        <jaxb:bindings node="xs:element[@name='Regiao']">
+            <jaxb:factoryMethod name="createRegiaoElement"/>
+        </jaxb:bindings>
+        <jaxb:bindings node="xs:element[@name='EnderecoDadosComplementares']">
+            <jaxb:factoryMethod name="createEnderecoDadosComplementaresElement"/>
+        </jaxb:bindings>
+    </jaxb:bindings>
+
+    <jaxb:bindings schemaLocation="https://vedacit.multihomo.com.br/SGT.WebService/Ocorrencias.svc?xsd=xsd16" node="/xs:schema">
+        <jaxb:schemaBindings>
+            <jaxb:package name="org.datacontract.schemas._2004._07.dominio.objetosdevalor.embarcador.financeiro"/>
+        </jaxb:schemaBindings>
+        <jaxb:bindings node="xs:element[@name='CentroResultado']">
+            <jaxb:factoryMethod name="createCentroResultadoFinanceiroElement"/>
+        </jaxb:bindings>
+    </jaxb:bindings>
+
+    <jaxb:bindings schemaLocation="https://vedacit.multihomo.com.br/SGT.WebService/Ocorrencias.svc?xsd=xsd21" node="/xs:schema">
+        <jaxb:schemaBindings>
+            <jaxb:package name="org.datacontract.schemas._2004._07.dominio.objetosdevalor.embarcador.pedido"/>
+        </jaxb:schemaBindings>
+        <jaxb:bindings node="xs:element[@name='PedidoEntrega']">
+            <jaxb:factoryMethod name="createPedidoEntregaElement"/>
+        </jaxb:bindings>
+        <jaxb:bindings node="xs:element[@name='PedidoEntregaProtocolo']">
+            <jaxb:factoryMethod name="createPedidoEntregaProtocoloElement"/>
+        </jaxb:bindings>
+    </jaxb:bindings>
+
+    <jaxb:bindings schemaLocation="https://vedacit.multihomo.com.br/SGT.WebService/Ocorrencias.svc?xsd=xsd23" node="/xs:schema">
+        <jaxb:schemaBindings>
+            <jaxb:package name="org.datacontract.schemas._2004._07.dominio.objetosdevalor.embarcador.configuracaocontabil"/>
+        </jaxb:schemaBindings>
+        <jaxb:bindings node="xs:element[@name='CentroResultado']">
+            <jaxb:factoryMethod name="createCentroResultadoConfiguracaoContabilElement"/>
+        </jaxb:bindings>
+    </jaxb:bindings>
+
+</jaxb:bindings>
