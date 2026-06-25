@@ -1,10 +1,13 @@
 package com.example.satelite.services.ppg;
 
+import java.nio.charset.StandardCharsets;
+import java.text.Normalizer;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Locale;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -12,6 +15,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
+import org.springframework.web.client.HttpClientErrorException;
 
 import com.example.satelite.clients.PpgClient;
 import com.example.satelite.dto.ppg.PpgFotoDTO;
@@ -23,6 +27,8 @@ import com.example.satelite.dto.rodogarcia.EslOcorrenciaDTO;
 import com.example.satelite.services.ResultadoIntegracao;
 import com.example.satelite.utils.ImageDownloader;
 import com.example.satelite.utils.ImageUtils;
+
+import feign.FeignException;
 
 @Service
 public class PpgIntegrationService {
@@ -80,6 +86,24 @@ public class PpgIntegrationService {
             String token = ppgAuthService.obterTokenValido();
             PpgOcorrenciaRequestDTO dtoConvertido = converterParaPpg(ocorrencia, imagemPpgBase64);
             log.info("📤 [PPG] NF {}: Enviando ocorrência para OK Entrega...", chaveNfe);
+            return enviarOcorrenciaComConciliacao(token, dtoConvertido, chaveNfe, cteKey);
+        } catch (Exception e) {
+            if (e instanceof InterruptedException) {
+                Thread.currentThread().interrupt();
+            }
+
+            log.error("❌ [PPG] NF {}: Erro ao processar - {}. CTe={}", chaveNfe, e.getMessage(), cteKey);
+            throw new IllegalStateException("Falha no processamento da ocorrência PPG: " + e.getMessage(), e);
+        }
+    }
+
+    private ResultadoIntegracao enviarOcorrenciaComConciliacao(
+            String token,
+            PpgOcorrenciaRequestDTO dtoConvertido,
+            String chaveNfe,
+            String cteKey
+    ) throws Exception {
+        try {
             PpgOcorrenciaResponseDTO response = ppgClient.enviarOcorrencia(token, dtoConvertido);
             log.info(
                     "✅ [PPG] NF {}: Ocorrência e canhoto enviados com sucesso! ocorrenciaentrega_id={} statusbaixa={}",
@@ -89,13 +113,54 @@ public class PpgIntegrationService {
             );
             return ResultadoIntegracao.enviado();
         } catch (Exception e) {
-            if (e instanceof InterruptedException) {
-                Thread.currentThread().interrupt();
+            if (erroDuplicidadePpg(e)) {
+                log.info("Aviso: Destino informou duplicidade. Conciliando... [PPG] NF {} CTe={}", chaveNfe, cteKey);
+                return ResultadoIntegracao.enviado();
             }
 
-            log.error("❌ [PPG] NF {}: Erro ao processar - {}. CTe={}", chaveNfe, e.getMessage(), cteKey);
-            throw new IllegalStateException("Falha no processamento da ocorrência PPG: " + e.getMessage(), e);
+            throw e;
         }
+    }
+
+    private boolean erroDuplicidadePpg(Throwable erro) {
+        String textoErro = normalizarTextoErro(extrairTextoErro(erro));
+        return textoErro.contains("1721")
+                || textoErro.contains("duplicad")
+                || textoErro.contains("duplicidade");
+    }
+
+    private String extrairTextoErro(Throwable erro) {
+        StringBuilder texto = new StringBuilder();
+        Throwable atual = erro;
+
+        while (atual != null) {
+            if (atual.getMessage() != null) {
+                texto.append(atual.getMessage()).append(' ');
+            }
+
+            if (atual instanceof FeignException feignException) {
+                texto.append(feignException.contentUTF8()).append(' ');
+            }
+
+            if (atual instanceof HttpClientErrorException httpClientErrorException) {
+                texto.append(httpClientErrorException.getResponseBodyAsString(StandardCharsets.UTF_8)).append(' ');
+            }
+
+            Throwable causa = atual.getCause();
+            atual = causa == atual ? null : causa;
+        }
+
+        return texto.toString();
+    }
+
+    private String normalizarTextoErro(String texto) {
+        if (texto == null || texto.isBlank()) {
+            return "";
+        }
+
+        return Normalizer.normalize(texto, Normalizer.Form.NFD)
+                .replaceAll("\\p{M}", "")
+                .toLowerCase(Locale.ROOT);
     }
 
     public boolean notaFiscalPermitida(EslOcorrenciaDTO ocorrencia) {

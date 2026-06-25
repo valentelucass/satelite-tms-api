@@ -6,37 +6,44 @@ cd /d "%~dp0"
 
 :menu
 cls
-echo.
-echo  SATELITE TMS
-echo.
-echo  =============================================================
-echo                    SATELITE TMS CONTROL CENTER
-echo  =============================================================
-echo.
-echo  1. Iniciar Loop 15 min [APENAS VEDACIT] - Background
-echo  2. Iniciar Loop 15 min [APENAS PPG] - Background
-echo  3. Iniciar Loop 15 min [VEDACIT + PPG] - Background
-echo  4. Executar Ciclo Único [Apenas Vedacit] - Foreground
-echo  5. Executar Ciclo Único [Apenas PPG] - Foreground
-echo  6. Acompanhar Logs ao Vivo
-echo  7. Status do Robô (Porta 9090 / PID)
-echo  8. Parar tudo [API / Robo / Java Satelite]
-echo  9. Testes E2E (PPG / Vedacit)
-echo  A. Carga Retroativa - Foreground
-echo  B. Iniciar [API Servidor - Sem robo] - Background
-echo  0. Sair
-echo.
+echo(
+echo( SATELITE TMS
+echo(
+echo( =================================================
+echo(           [ SERVIÇOS EM BACKGROUND ^(API^) ]
+echo( -------------------------------------------------
+echo( 1. Iniciar API + Loop Vedacit
+echo( 2. Iniciar API + Loop PPG
+echo( 3. Iniciar API + Loop ^(Ambos^)
+echo( 4. Iniciar APENAS API ^(Sem Robô^)
+echo(
+echo( =================================================
+echo(           [ EXECUÇÕES MANUAIS ^(FOREGROUND^) ]
+echo( -------------------------------------------------
+echo( 5. Forçar Ciclo Único [Vedacit]
+echo( 6. Forçar Ciclo Único [PPG]
+echo( 7. Executar Carga Retroativa
+echo( 8. Executar Testes E2E Isolados
+echo(
+echo( =================================================
+echo(           [ MONITORAMENTO E CONTROLE ]
+echo( -------------------------------------------------
+echo( 9. Acompanhar Logs ao Vivo
+echo( A. Status do Sistema ^(Procurar portas ativas^)
+echo( B. PARAR TUDO ^(Somente Java do Satelite^)
+echo( 0. Sair
+echo(
 choice /c 123456789AB0 /n /m "Escolha uma opcao: "
 
 if errorlevel 12 goto sair
-if errorlevel 11 goto iniciar_api_sem_robo
-if errorlevel 10 goto carga_retroativa
-if errorlevel 9 goto testes_e2e
-if errorlevel 8 goto parar_robo
-if errorlevel 7 goto status_robo
-if errorlevel 6 goto logs
-if errorlevel 5 goto ciclo_unico_ppg
-if errorlevel 4 goto ciclo_unico_vedacit
+if errorlevel 11 goto parar_robo
+if errorlevel 10 goto status_robo
+if errorlevel 9 goto logs
+if errorlevel 8 goto testes_e2e
+if errorlevel 7 goto carga_retroativa
+if errorlevel 6 goto ciclo_unico_ppg
+if errorlevel 5 goto ciclo_unico_vedacit
+if errorlevel 4 goto iniciar_api_sem_robo
 if errorlevel 3 goto iniciar_todos
 if errorlevel 2 goto iniciar_ppg
 if errorlevel 1 goto iniciar_vedacit

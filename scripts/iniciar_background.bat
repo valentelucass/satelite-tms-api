@@ -22,12 +22,24 @@ if "%APP_SCHEDULER_ENABLED%"=="" set "APP_SCHEDULER_ENABLED=true"
 for %%I in ("%LOG_FILE%") do set "LOG_FILE_ABS=%%~fI"
 if not exist "%LOGS_DIR%" mkdir "%LOGS_DIR%" >nul 2>&1
 
-call :obter_pid_porta_api
-if defined PORTA_API_PID (
-    echo [ERRO] Porta %PORTA_API% ocupada pelo PID %PORTA_API_PID%.
-    echo Use a opcao 8 para parar o robo antes de iniciar novamente.
+set "PORTA_API_ORIGINAL=%PORTA_API%"
+set "PORT_TO_TEST=%PORTA_API%"
+
+:procurar_porta_livre
+netstat -ano | findstr "LISTENING" | findstr ":%PORT_TO_TEST% " >nul
+if errorlevel 1 goto porta_livre_encontrada
+set /a PORT_TO_TEST+=1
+if %PORT_TO_TEST% GTR 65535 (
+    echo [ERRO] Nenhuma porta livre encontrada a partir de %PORTA_API_ORIGINAL%.
     exit /b 1
 )
+goto procurar_porta_livre
+
+:porta_livre_encontrada
+if not "%PORT_TO_TEST%"=="%PORTA_API_ORIGINAL%" (
+    echo [AVISO] Porta %PORTA_API_ORIGINAL% ocupada. Subindo na porta %PORT_TO_TEST%. Atenção: O Dashboard pode nao conseguir se conectar!
+)
+set "PORTA_API=%PORT_TO_TEST%"
 
 set "JAVA_LAUNCHER=javaw"
 where javaw.exe >nul 2>&1
@@ -39,7 +51,7 @@ echo Scheduler habilitado: %APP_SCHEDULER_ENABLED%
 if /I "%APP_SCHEDULER_ENABLED%"=="true" echo Intervalo do loop: 15 min
 echo Log: %LOG_FILE_ABS%
 
-START "Satelite %SATELITE_MODO%" /MIN "%JAVA_LAUNCHER%" -jar "%JAR_PATH%" "--debug=false" "--APP_SCHEDULER_ENABLED=%APP_SCHEDULER_ENABLED%" "--APP_CICLO_UNICO=false" "--APP_PPG_ENABLED=%APP_PPG_ENABLED%" "--APP_VEDACIT_ENABLED=%APP_VEDACIT_ENABLED%" "--server.port=%PORTA_API%" "--spring.main.web-application-type=servlet" "--INTEGRATION_SCHEDULER_INTERVAL_MS=%BACKGROUND_INTERVAL_MS%" 1^> "%LOG_FILE_ABS%" 2^>^&1
+START "Satelite %SATELITE_MODO%" /MIN "%JAVA_LAUNCHER%" -jar "%JAR_PATH%" "--debug=false" "--APP_SCHEDULER_ENABLED=%APP_SCHEDULER_ENABLED%" "--APP_CICLO_UNICO=false" "--APP_PPG_ENABLED=%APP_PPG_ENABLED%" "--APP_VEDACIT_ENABLED=%APP_VEDACIT_ENABLED%" "--server.port=%PORT_TO_TEST%" "--spring.main.web-application-type=servlet" "--INTEGRATION_SCHEDULER_INTERVAL_MS=%BACKGROUND_INTERVAL_MS%" 1^> "%LOG_FILE_ABS%" 2^>^&1
 if errorlevel 1 (
     echo [ERRO] Falha ao iniciar em background.
     exit /b 1

@@ -10,26 +10,21 @@ if errorlevel 1 exit /b 1
 echo Parando Robo Satelite...
 
 set "ENCONTROU_PROCESSO=false"
-for /f "tokens=5" %%P in ('netstat -aon ^| findstr /R /C:":%PORTA_API% .*LISTENING"') do (
-    set "ENCONTROU_PROCESSO=true"
-    echo Encerrando processo da porta %PORTA_API%: PID %%P
-    taskkill /F /PID %%P >nul 2>&1
-)
 
-echo Encerrando processos java/javaw do artefato Satelite, se existirem...
+echo Encerrando somente processos java/javaw do artefato Satelite, se existirem...
 call :encerrar_processos_satelite "java.exe"
 call :encerrar_processos_satelite "javaw.exe"
 
 call :aguardar_porta_liberada 15
 if errorlevel 1 (
-    echo [ERRO] A porta %PORTA_API% continua ocupada.
+    echo [AVISO] A porta %PORTA_API% continua ocupada por processo que nao foi identificado como Satelite.
     exit /b 1
 )
 
 if /I "%ENCONTROU_PROCESSO%"=="true" (
-    echo [SUCESSO] Porta %PORTA_API% liberada.
+    echo [SUCESSO] Processos do Satelite encerrados.
 ) else (
-    echo Nenhum processo estava ouvindo na porta %PORTA_API%.
+    echo Nenhum processo Java do Satelite foi encontrado.
 )
 exit /b 0
 
@@ -50,7 +45,7 @@ goto aguardar_porta_liberada_loop
 
 :encerrar_processos_satelite
 set "PROCESSO_JAVA=%~1"
-for /f "skip=1 tokens=2 delims=," %%P in ('wmic process where "name='%PROCESSO_JAVA%' and commandline like '%%satelite-0.0.1-SNAPSHOT.jar%%'" get ProcessId /format:csv 2^>nul') do (
+for /f "skip=1 tokens=2 delims=," %%P in ('wmic process where "name='%PROCESSO_JAVA%' and commandline like '%%satelite-tms-api%%target%%satelite-0.0.1-SNAPSHOT.jar%%'" get ProcessId /format:csv 2^>nul') do (
     if not "%%P"=="" (
         set "ENCONTROU_PROCESSO=true"
         echo Encerrando %PROCESSO_JAVA% do Satelite: PID %%P

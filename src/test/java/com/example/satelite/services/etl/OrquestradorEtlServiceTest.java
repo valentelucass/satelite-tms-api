@@ -38,6 +38,7 @@ import com.example.satelite.dto.rodogarcia.EslOcorrenciaDTO;
 import com.example.satelite.dto.rodogarcia.EslOccurrenceDefDTO;
 import com.example.satelite.dto.rodogarcia.EslPagingDTO;
 import com.example.satelite.models.ControleCursor;
+import com.example.satelite.models.LogIntegracaoModel;
 import com.example.satelite.repositories.ControleCursorRepository;
 import com.example.satelite.repositories.LogIntegracaoRepository;
 import com.example.satelite.services.ResultadoIntegracao;
@@ -243,6 +244,94 @@ class OrquestradorEtlServiceTest {
 
         verify(dependencias.logIntegracaoRepository(), atLeastOnce()).save(any());
         verify(dependencias.controleCursorRepository(), times(0)).save(any());
+    }
+
+    @Test
+    void devePararRetryAutomaticoNaTerceiraFalhaDestinoELiberarCursor() {
+        Dependencias dependencias = criarDependencias();
+        ReflectionTestUtils.setField(dependencias.service(), "vedacitEnabled", false);
+
+        LogIntegracaoModel logExistente = LogIntegracaoModel.builder()
+                .id(1L)
+                .occurrenceId(10L)
+                .chaveNfe("35260612345678000123550010000012341000012345")
+                .freightId(30L)
+                .cursorNextId(99L)
+                .status(ResultadoIntegracao.STATUS_ERRO_DESTINO)
+                .statusDados(ResultadoIntegracao.STATUS_ERRO_DESTINO)
+                .statusCanhoto(ResultadoIntegracao.STATUS_SUCESSO)
+                .tentativasDados(2)
+                .tentativasCanhoto(1)
+                .sistemaDestino("PPG")
+                .dataProcessamento(LocalDateTime.now())
+                .build();
+
+        when(dependencias.controleCursorRepository().findBySistemaDestino(anyString())).thenReturn(Optional.empty());
+        when(dependencias.controleCursorRepository().save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        when(dependencias.logIntegracaoRepository().save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        when(dependencias.logIntegracaoRepository()
+                .findTopBySistemaDestinoAndOccurrenceIdOrderByDataProcessamentoDescIdDesc("PPG", 10L))
+                .thenReturn(Optional.of(logExistente));
+        when(dependencias.rodogarciaClient().buscarOcorrencias(eq("Bearer token-ppg"), isNull(), isNull(), isNull(), eq(1)))
+                .thenReturn(new EslLoteResponseDTO(
+                        List.of(criarOcorrencia(10L, 1, "35260612345678000123570010000012341000012345")),
+                        new EslPagingDTO(99L, 1)
+                ));
+        when(dependencias.rodogarciaClient().buscarComprovante(
+                eq("Bearer token-ppg"),
+                eq("35260612345678000123570010000012341000012345")
+        ))
+                .thenReturn(criarComprovanteComImagem());
+        when(dependencias.ppgIntegrationService().processarOcorrencia(any(), any()))
+                .thenReturn(ResultadoIntegracao.erroDados("Destino indisponível"));
+
+        dependencias.service().executarFluxos();
+
+        ArgumentCaptor<LogIntegracaoModel> logCaptor = ArgumentCaptor.forClass(LogIntegracaoModel.class);
+        verify(dependencias.logIntegracaoRepository(), atLeastOnce()).save(logCaptor.capture());
+
+        assertTrue(logCaptor.getAllValues().stream()
+                .anyMatch(log -> ResultadoIntegracao.STATUS_ERRO_DESTINO.equals(log.getStatusDados())
+                        && Integer.valueOf(3).equals(log.getTentativasDados())));
+        verify(dependencias.controleCursorRepository(), times(1)).save(any());
+    }
+
+    @Test
+    void naoDeveReprocessarAutomaticamenteQuandoLimiteTentativasJaFoiAtingido() {
+        Dependencias dependencias = criarDependencias();
+        ReflectionTestUtils.setField(dependencias.service(), "vedacitEnabled", false);
+
+        LogIntegracaoModel logExistente = LogIntegracaoModel.builder()
+                .id(1L)
+                .occurrenceId(10L)
+                .chaveNfe("35260612345678000123550010000012341000012345")
+                .freightId(30L)
+                .cursorNextId(99L)
+                .status(ResultadoIntegracao.STATUS_ERRO_DESTINO)
+                .statusDados(ResultadoIntegracao.STATUS_ERRO_DESTINO)
+                .statusCanhoto(ResultadoIntegracao.STATUS_SUCESSO)
+                .tentativasDados(3)
+                .tentativasCanhoto(1)
+                .sistemaDestino("PPG")
+                .dataProcessamento(LocalDateTime.now())
+                .build();
+
+        when(dependencias.controleCursorRepository().findBySistemaDestino(anyString())).thenReturn(Optional.empty());
+        when(dependencias.controleCursorRepository().save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        when(dependencias.logIntegracaoRepository()
+                .findTopBySistemaDestinoAndOccurrenceIdOrderByDataProcessamentoDescIdDesc("PPG", 10L))
+                .thenReturn(Optional.of(logExistente));
+        when(dependencias.rodogarciaClient().buscarOcorrencias(eq("Bearer token-ppg"), isNull(), isNull(), isNull(), eq(1)))
+                .thenReturn(new EslLoteResponseDTO(
+                        List.of(criarOcorrencia(10L, 1, "35260612345678000123570010000012341000012345")),
+                        new EslPagingDTO(99L, 1)
+                ));
+
+        dependencias.service().executarFluxos();
+
+        verify(dependencias.rodogarciaClient(), times(0)).buscarComprovante(anyString(), anyString());
+        verify(dependencias.ppgIntegrationService(), times(0)).processarOcorrencia(any(), any());
+        verify(dependencias.controleCursorRepository(), times(1)).save(any());
     }
 
     @Test
@@ -622,6 +711,13 @@ class OrquestradorEtlServiceTest {
 
     private EslLoteResponseDTO loteVazio() {
         return new EslLoteResponseDTO(List.of(), new EslPagingDTO(null, 0));
+    }
+
+    private ComprovanteEslDTO criarComprovanteComImagem() {
+        return new ComprovanteEslDTO(
+                List.of(new ComprovanteEslItemDTO(50L, "https://example.com/canhoto.jpg", null, null, null)),
+                null
+        );
     }
 
     private EslOcorrenciaDTO criarOcorrencia(Long id, Integer codigoOcorrencia, String cteKey) {

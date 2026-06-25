@@ -26,6 +26,7 @@ import com.example.satelite.vedacit.nfe.RetornoOfboolean;
 import jakarta.xml.ws.Binding;
 import jakarta.xml.ws.BindingProvider;
 import jakarta.xml.ws.handler.Handler;
+import jakarta.xml.ws.soap.SOAPFaultException;
 
 import org.datacontract.schemas._2004._07.dominio_objetosdevalor_embarcador.ObjectFactory;
 import org.datacontract.schemas._2004._07.dominio_objetosdevalor_embarcador.Ocorrencia;
@@ -38,10 +39,12 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
+import java.text.Normalizer;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.Base64;
 import java.util.List;
+import java.util.Locale;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -261,15 +264,29 @@ public class VedacitIntegrationService {
                 codigoOcorrenciaDestino
         );
 
-        Ocorrencias servico = new Ocorrencias(URI.create(montarEndpointOcorrencias() + "?wsdl").toURL());
-        IOcorrencias porta = servico.getBasicHttpBindingIOcorrencias();
-        configurarPortaSoap(porta, montarEndpointOcorrencias());
+        IOcorrencias porta = criarPortaOcorrencias();
 
         log.info("📤 [VEDACIT] NF {}: Enviando ocorrência para MultiTMS...", chaveNfe);
-        RetornoOfint retorno = porta.adicionarOcorrencia(ocorrenciaVedacit);
+        RetornoOfint retorno;
+        try {
+            retorno = porta.adicionarOcorrencia(ocorrenciaVedacit);
+        } catch (Exception e) {
+            if (erroDuplicidadeVedacit(e)) {
+                logarConciliacaoDuplicidadeVedacit("Ocorrência", chaveNfe, cteKey);
+                return;
+            }
+
+            throw e;
+        }
 
         if (retorno != null && Boolean.FALSE.equals(retorno.isStatus())) {
-            throw new IllegalStateException("Vedacit recusou a ocorrência: " + obterMensagem(retorno));
+            String mensagem = obterMensagem(retorno);
+            if (textoIndicaDuplicidadeVedacit(mensagem)) {
+                logarConciliacaoDuplicidadeVedacit("Ocorrência", chaveNfe, cteKey);
+                return;
+            }
+
+            throw new IllegalStateException("Vedacit recusou a ocorrência: " + mensagem);
         }
 
         log.info("✅ [VEDACIT] NF {}: Ocorrência enviada com sucesso! CTe={}", chaveNfe, cteKey);
@@ -310,15 +327,29 @@ public class VedacitIntegrationService {
     }
 
     private void enviarCanhoto(Canhoto canhoto, String chaveNfe, String cteKey) throws Exception {
-        NFe servico = new NFe(URI.create(montarEndpointNFe() + "?wsdl").toURL());
-        INFe porta = servico.getBasicHttpBindingINFe();
-        configurarPortaSoap(porta, montarEndpointNFe());
+        INFe porta = criarPortaNFe();
 
         log.info("📤 [VEDACIT] NF {}: Enviando digitalização do canhoto...", chaveNfe);
-        RetornoOfboolean retorno = porta.enviarDigitalizacaoCanhoto(canhoto);
+        RetornoOfboolean retorno;
+        try {
+            retorno = porta.enviarDigitalizacaoCanhoto(canhoto);
+        } catch (Exception e) {
+            if (erroDuplicidadeVedacit(e)) {
+                logarConciliacaoDuplicidadeVedacit("Canhoto", chaveNfe, cteKey);
+                return;
+            }
+
+            throw e;
+        }
 
         if (retorno != null && Boolean.FALSE.equals(retorno.isStatus())) {
-            throw new IllegalStateException("Vedacit recusou o canhoto: " + obterMensagem(retorno));
+            String mensagem = obterMensagem(retorno);
+            if (textoIndicaDuplicidadeVedacit(mensagem)) {
+                logarConciliacaoDuplicidadeVedacit("Canhoto", chaveNfe, cteKey);
+                return;
+            }
+
+            throw new IllegalStateException("Vedacit recusou o canhoto: " + mensagem);
         }
 
         log.info("✅ [VEDACIT] NF {}: Canhoto enviado com sucesso! CTe={}", chaveNfe, cteKey);
@@ -353,19 +384,102 @@ public class VedacitIntegrationService {
     }
 
     private void enviarXmlCte(byte[] xmlCte, String chaveNfe, String cteKey) throws Exception {
-        CTe servico = new CTe(URI.create(montarEndpointCte() + "?wsdl").toURL());
-        ICTe porta = servico.getBasicHttpBindingICTe();
-        configurarPortaSoap(porta, montarEndpointCte());
+        ICTe porta = criarPortaCte();
 
         log.info("📤 [VEDACIT] NF {}: Enviando XML do CT-e para MultiTMS... CTe={}", chaveNfe, cteKey);
         logarTokenAutenticacaoVedacit();
-        RetornoOfstring retorno = porta.enviarArquivoXMLCTe(xmlCte);
+        RetornoOfstring retorno;
+        try {
+            retorno = porta.enviarArquivoXMLCTe(xmlCte);
+        } catch (Exception e) {
+            if (erroDuplicidadeVedacit(e)) {
+                logarConciliacaoDuplicidadeVedacit("XML do CT-e", chaveNfe, cteKey);
+                return;
+            }
+
+            throw e;
+        }
 
         if (retorno != null && Boolean.FALSE.equals(retorno.isStatus())) {
-            throw new IllegalStateException("Vedacit recusou o XML do CT-e: " + obterMensagem(retorno));
+            String mensagem = obterMensagem(retorno);
+            if (textoIndicaDuplicidadeVedacit(mensagem)) {
+                logarConciliacaoDuplicidadeVedacit("XML do CT-e", chaveNfe, cteKey);
+                return;
+            }
+
+            throw new IllegalStateException("Vedacit recusou o XML do CT-e: " + mensagem);
         }
 
         log.info("✅ [VEDACIT] NF {}: XML do CT-e enviado com sucesso! CTe={}", chaveNfe, cteKey);
+    }
+
+    protected IOcorrencias criarPortaOcorrencias() throws Exception {
+        Ocorrencias servico = new Ocorrencias(URI.create(montarEndpointOcorrencias() + "?wsdl").toURL());
+        IOcorrencias porta = servico.getBasicHttpBindingIOcorrencias();
+        configurarPortaSoap(porta, montarEndpointOcorrencias());
+        return porta;
+    }
+
+    protected INFe criarPortaNFe() throws Exception {
+        NFe servico = new NFe(URI.create(montarEndpointNFe() + "?wsdl").toURL());
+        INFe porta = servico.getBasicHttpBindingINFe();
+        configurarPortaSoap(porta, montarEndpointNFe());
+        return porta;
+    }
+
+    protected ICTe criarPortaCte() throws Exception {
+        CTe servico = new CTe(URI.create(montarEndpointCte() + "?wsdl").toURL());
+        ICTe porta = servico.getBasicHttpBindingICTe();
+        configurarPortaSoap(porta, montarEndpointCte());
+        return porta;
+    }
+
+    private boolean erroDuplicidadeVedacit(Throwable erro) {
+        return textoIndicaDuplicidadeVedacit(extrairTextoErro(erro));
+    }
+
+    private boolean textoIndicaDuplicidadeVedacit(String texto) {
+        String textoNormalizado = normalizarTextoErro(texto);
+        return textoNormalizado.contains("ja existe")
+                || textoNormalizado.contains("ja cadastr")
+                || textoNormalizado.contains("duplicad")
+                || textoNormalizado.contains("duplicidade");
+    }
+
+    private String extrairTextoErro(Throwable erro) {
+        StringBuilder texto = new StringBuilder();
+        Throwable atual = erro;
+
+        while (atual != null) {
+            if (atual.getMessage() != null) {
+                texto.append(atual.getMessage()).append(' ');
+            }
+
+            if (atual instanceof SOAPFaultException soapFaultException
+                    && soapFaultException.getFault() != null
+                    && soapFaultException.getFault().getFaultString() != null) {
+                texto.append(soapFaultException.getFault().getFaultString()).append(' ');
+            }
+
+            Throwable causa = atual.getCause();
+            atual = causa == atual ? null : causa;
+        }
+
+        return texto.toString();
+    }
+
+    private String normalizarTextoErro(String texto) {
+        if (texto == null || texto.isBlank()) {
+            return "";
+        }
+
+        return Normalizer.normalize(texto, Normalizer.Form.NFD)
+                .replaceAll("\\p{M}", "")
+                .toLowerCase(Locale.ROOT);
+    }
+
+    private void logarConciliacaoDuplicidadeVedacit(String etapa, String chaveNfe, String cteKey) {
+        log.info("Aviso: Destino informou duplicidade. Conciliando... [VEDACIT] {} NF {} CTe={}", etapa, chaveNfe, cteKey);
     }
 
     @SuppressWarnings("rawtypes")

@@ -73,6 +73,9 @@ public class OrquestradorEtlService {
     @Value("${INTEGRATION_MAX_PAGES_PER_CYCLE:10}")
     private int maxPaginasPorCiclo;
 
+    @Value("${INTEGRATION_MAX_RETRY_ATTEMPTS:3}")
+    private int maxTentativasReprocessamento = 3;
+
     @Value("${APP_E2E_IMAGE_TEST_MODE:false}")
     private boolean modoTesteE2eImagem;
 
@@ -578,6 +581,11 @@ public class OrquestradorEtlService {
             return ResultadoRegistro.JA_PROCESSADO;
         }
 
+        if (logExistente.isPresent() && limiteTentativasAtingido(logExistente.get())) {
+            logarLimiteTentativasAtingido(destino, ocorrencia, logExistente.get());
+            return ResultadoRegistro.JA_PROCESSADO;
+        }
+
         LogIntegracaoModel logIntegracao = logExistente
                 .orElseGet(() -> criarLogComStatus(destino, cursorNextId, ocorrencia, STATUS_RECEBIDO));
         return processarOcorrenciaComLog(destino, headerAuth, cursorNextId, ocorrencia, processadorDestino, logIntegracao);
@@ -677,7 +685,7 @@ public class OrquestradorEtlService {
 
             if (resultadoRegistro == ResultadoRegistro.ERRO) {
                 log.error("❌ [{}] NF {}: Destino retornou erro controlado.", destino, chave);
-                return ResultadoRegistro.ERRO;
+                return resultadoErroRespeitandoLimiteTentativas(destino, ocorrencia, logIntegracao);
             }
 
             log.info("✅ [{}] NF {}: Processamento do destino concluído com sucesso!", destino, chave);
@@ -687,7 +695,7 @@ public class OrquestradorEtlService {
             logIntegracaoRepository.save(logIntegracao);
 
             log.error("❌ [{}] NF {}: Erro ao processar - {}", destino, obterChaveNfe(ocorrencia), e.getMessage());
-            return ResultadoRegistro.ERRO;
+            return resultadoErroRespeitandoLimiteTentativas(destino, ocorrencia, logIntegracao);
         }
     }
 
@@ -742,6 +750,56 @@ public class OrquestradorEtlService {
         return logIntegracao != null && STATUS_FINALIZADOS_SEM_REENVIO.contains(logIntegracao.getStatus());
     }
 
+    private ResultadoRegistro resultadoErroRespeitandoLimiteTentativas(
+            String destino,
+            EslOcorrenciaDTO ocorrencia,
+            LogIntegracaoModel logIntegracao
+    ) {
+        if (limiteTentativasAtingido(logIntegracao)) {
+            logarLimiteTentativasAtingido(destino, ocorrencia, logIntegracao);
+            return ResultadoRegistro.JA_PROCESSADO;
+        }
+
+        return ResultadoRegistro.ERRO;
+    }
+
+    private boolean limiteTentativasAtingido(LogIntegracaoModel logIntegracao) {
+        if (logIntegracao == null) {
+            return false;
+        }
+
+        return limiteTentativasAtingido(logIntegracao.getStatusDados(), logIntegracao.getTentativasDados())
+                || limiteTentativasAtingido(logIntegracao.getStatusCanhoto(), logIntegracao.getTentativasCanhoto());
+    }
+
+    private boolean limiteTentativasAtingido(String status, Integer tentativas) {
+        return STATUS_ERRO_DESTINO.equals(status)
+                && valorTentativas(tentativas) >= limiteMaximoTentativas();
+    }
+
+    private int valorTentativas(Integer tentativas) {
+        return tentativas == null ? 0 : tentativas;
+    }
+
+    private int limiteMaximoTentativas() {
+        return Math.max(1, maxTentativasReprocessamento);
+    }
+
+    private void logarLimiteTentativasAtingido(
+            String destino,
+            EslOcorrenciaDTO ocorrencia,
+            LogIntegracaoModel logIntegracao
+    ) {
+        log.warn(
+                "🛑 [{}] NF {}: Limite de {} tentativa(s) atingido. Mantendo ERRO_DESTINO para o Dashboard e bloqueando retry automático. tentativas_dados={} tentativas_canhoto={}",
+                destino,
+                obterChaveNfe(ocorrencia),
+                limiteMaximoTentativas(),
+                valorTentativas(logIntegracao.getTentativasDados()),
+                valorTentativas(logIntegracao.getTentativasCanhoto())
+        );
+    }
+
     private void aplicarResultadoIntegracao(LogIntegracaoModel logIntegracao, ResultadoIntegracao resultado) {
         LocalDateTime agora = LocalDateTime.now();
         String statusDadosAnterior = logIntegracao.getStatusDados();
@@ -771,7 +829,7 @@ public class OrquestradorEtlService {
     private boolean deveAtualizarDataProcessamento(String statusAnterior, String statusNovo) {
         return statusNovo != null
                 && !ResultadoIntegracao.STATUS_NAO_APLICAVEL.equals(statusNovo)
-                && !statusNovo.equals(statusAnterior);
+                && (STATUS_ERRO_DESTINO.equals(statusNovo) || !statusNovo.equals(statusAnterior));
     }
 
     private Integer incrementar(Integer valorAtual) {

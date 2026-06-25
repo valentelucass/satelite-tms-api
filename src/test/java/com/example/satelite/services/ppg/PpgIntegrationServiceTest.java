@@ -7,7 +7,9 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import java.nio.charset.StandardCharsets;
 import java.time.OffsetDateTime;
+import java.util.Collections;
 import java.util.List;
 
 import org.junit.jupiter.api.Test;
@@ -26,6 +28,11 @@ import com.example.satelite.dto.rodogarcia.EslOccurrenceDefDTO;
 import com.example.satelite.services.ResultadoIntegracao;
 import com.example.satelite.utils.ImageDownloader;
 import com.example.satelite.utils.ImageUtils;
+
+import feign.FeignException;
+import feign.Request;
+import feign.RequestTemplate;
+import feign.Response;
 
 class PpgIntegrationServiceTest {
 
@@ -87,6 +94,42 @@ class PpgIntegrationServiceTest {
         assertEquals("C", payload.ocorrenciaEntregaFoto().get(0).tipoFoto());
     }
 
+    @Test
+    void deveConciliarDuplicidadeInformadaPeloDestinoComoEnviado() throws Exception {
+        PpgClient ppgClient = mock(PpgClient.class);
+        PpgAuthService ppgAuthService = mock(PpgAuthService.class);
+        ImageDownloader imageDownloader = mock(ImageDownloader.class);
+        ImageUtils imageUtils = mock(ImageUtils.class);
+
+        PpgIntegrationService service = new PpgIntegrationService(
+                ppgClient,
+                ppgAuthService,
+                imageDownloader,
+                imageUtils
+        );
+        ReflectionTestUtils.setField(service, "entregadorId", 123);
+        ReflectionTestUtils.setField(service, "cnpjTransportadora", "12345678000199");
+
+        byte[] imagemOriginal = new byte[] { 1, 2, 3 };
+        String imagemPpg = "data:image/jpeg;base64,BASE64_REAL";
+
+        when(imageDownloader.baixarImagemDaUrl(
+                "https://assinada.exemplo/canhoto.jpg",
+                "35260612345678000123570010000012341000012345"
+        )).thenReturn(imagemOriginal);
+        when(imageUtils.converterParaBase64Ppg(imagemOriginal)).thenReturn(imagemPpg);
+        when(ppgAuthService.obterTokenValido()).thenReturn("token-ppg");
+        when(ppgClient.enviarOcorrencia(eq("token-ppg"), any(PpgOcorrenciaRequestDTO.class)))
+                .thenThrow(criarErroDuplicidadePpg());
+
+        ResultadoIntegracao resultado = service.processarOcorrencia(criarOcorrencia(), criarComprovante());
+
+        verify(ppgClient).enviarOcorrencia(eq("token-ppg"), any(PpgOcorrenciaRequestDTO.class));
+        assertEquals(ResultadoIntegracao.STATUS_ENVIADO, resultado.status());
+        assertEquals(ResultadoIntegracao.STATUS_SUCESSO, resultado.statusDados());
+        assertEquals(ResultadoIntegracao.STATUS_SUCESSO, resultado.statusCanhoto());
+    }
+
     private EslOcorrenciaDTO criarOcorrencia() {
         return new EslOcorrenciaDTO(
                 10L,
@@ -107,5 +150,25 @@ class PpgIntegrationServiceTest {
         );
 
         return new ComprovanteEslDTO(List.of(item), null);
+    }
+
+    private FeignException criarErroDuplicidadePpg() {
+        String body = "{\"error\":{\"message\":\"1721 - Imagem duplicada\"}}";
+        Request request = Request.create(
+                Request.HttpMethod.POST,
+                "https://ppg.exemplo/assets/ws/ws.0.ocorrenciaentregacache_api.php",
+                Collections.emptyMap(),
+                null,
+                StandardCharsets.UTF_8,
+                new RequestTemplate()
+        );
+        Response response = Response.builder()
+                .status(409)
+                .reason("Conflict")
+                .request(request)
+                .body(body, StandardCharsets.UTF_8)
+                .build();
+
+        return FeignException.errorStatus("PpgClient#enviarOcorrencia", response);
     }
 }
