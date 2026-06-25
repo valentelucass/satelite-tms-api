@@ -7,6 +7,7 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import com.example.satelite.clients.PpgClient;
 import com.example.satelite.clients.RodogarciaClient;
 import com.example.satelite.repositories.ControleCursorRepository;
+import com.example.satelite.repositories.IntegracaoAuditoriaQueryRepository;
 import com.example.satelite.repositories.LogIntegracaoRepository;
 
 @SpringBootTest(properties = {
@@ -42,6 +43,9 @@ class SateliteApplicationTests {
 
 	@MockitoBean
 	private ControleCursorRepository controleCursorRepository;
+
+	@MockitoBean
+	private IntegracaoAuditoriaQueryRepository integracaoAuditoriaQueryRepository;
 
 	@Test
 	void contextLoads() {

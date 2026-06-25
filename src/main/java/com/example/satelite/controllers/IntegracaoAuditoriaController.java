@@ -1,6 +1,10 @@
 package com.example.satelite.controllers;
 
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
+import org.springframework.util.MultiValueMap;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -21,8 +25,18 @@ public class IntegracaoAuditoriaController {
     @GetMapping("/integracoes-clientes")
     public AuditoriaIntegracoesClientesResponseDTO consultarIntegracoesClientes(
             @RequestParam(defaultValue = "0") int pagina,
-            @RequestParam(defaultValue = "100") int tamanho
+            @RequestParam(defaultValue = "100") int tamanho,
+            @RequestParam MultiValueMap<String, String> params
     ) {
-        return integracaoAuditoriaService.consultarIntegracoesClientes(pagina, tamanho);
+        return integracaoAuditoriaService.consultarIntegracoesClientes(pagina, tamanho, params);
+    }
+
+    @GetMapping(value = "/logs/{id}/imagem", produces = MediaType.TEXT_PLAIN_VALUE)
+    public ResponseEntity<String> consultarImagemCanhoto(@PathVariable Long id) {
+        return integracaoAuditoriaService.buscarImagemCanhoto(id)
+                .map(imagem -> ResponseEntity.ok()
+                        .contentType(MediaType.TEXT_PLAIN)
+                        .body(imagem))
+                .orElseGet(() -> ResponseEntity.notFound().build());
     }
 }

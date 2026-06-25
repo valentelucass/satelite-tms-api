@@ -76,7 +76,19 @@ public interface LogIntegracaoRepository extends JpaRepository<LogIntegracaoMode
                         l.mensagem_erro_canhoto AS mensagemErroCanhoto,
                         l.data_processamento AS dataProcessamento,
                         l.data_processamento_dados AS dataProcessamentoDados,
-                        l.data_processamento_canhoto AS dataProcessamentoCanhoto
+                        l.data_processamento_canhoto AS dataProcessamentoCanhoto,
+                        CAST(CASE
+                            WHEN l.request_payload IS NOT NULL
+                             AND (
+                                  CHARINDEX('"foto"', l.request_payload) > 0
+                                  OR CHARINDEX('"imagemBase64"', l.request_payload) > 0
+                                  OR CHARINDEX('"imageBase64"', l.request_payload) > 0
+                                  OR CHARINDEX('"canhotoBase64"', l.request_payload) > 0
+                                  OR CHARINDEX('"conteudoBase64"', l.request_payload) > 0
+                                  OR CHARINDEX('data:image/', l.request_payload) > 0
+                             )
+                            THEN 1 ELSE 0
+                        END AS BIT) AS possuiImagemPayload
                     FROM dbo.tb_log_integracao l
                     WHERE l.sistema_destino IN ('VEDACIT', 'PPG')
                       AND (
@@ -140,5 +152,7 @@ public interface LogIntegracaoRepository extends JpaRepository<LogIntegracaoMode
         LocalDateTime getDataProcessamentoDados();
 
         LocalDateTime getDataProcessamentoCanhoto();
+
+        Boolean getPossuiImagemPayload();
     }
 }

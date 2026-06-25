@@ -66,4 +66,6 @@ desktop.ini
 # Private/internal documentation
 /docs/info-iniciais/
 
-scripts/
+# Operational batch scripts are versioned; local helpers remain ignored.
+scripts/*
+!scripts/*.bat

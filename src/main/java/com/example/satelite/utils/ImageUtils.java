@@ -25,20 +25,26 @@ import java.util.Iterator;
 public class ImageUtils {
 
     private static final String PREFIXO_BASE64_PPG = "data:image/jpeg;base64,";
-    private static final double CROP_RODAPE_RATIO_PADRAO = 0.18;
+    private static final double CROP_INICIO_RATIO_PADRAO = 0.60;
+    private static final double CROP_ALTURA_RATIO_PADRAO = 0.20;
 
     private static final int LARGURA_PPG = 1536;
     private static final int ALTURA_PPG = 240;
     private static final int DPI_PPG = 150;
 
-    private final double cropRodapeRatio;
+    private final double cropInicioRatio;
+    private final double cropAlturaRatio;
 
-    public ImageUtils(@Value("${app.ppg.image-bottom-crop-ratio:0.18}") double cropRodapeRatio) {
-        this.cropRodapeRatio = normalizarCropRodapeRatio(cropRodapeRatio);
+    public ImageUtils(
+            @Value("${app.ppg.image-crop-start-ratio:0.60}") double cropInicioRatio,
+            @Value("${app.ppg.image-crop-height-ratio:0.20}") double cropAlturaRatio
+    ) {
+        this.cropInicioRatio = normalizarCropInicioRatio(cropInicioRatio);
+        this.cropAlturaRatio = normalizarCropAlturaRatio(cropAlturaRatio);
     }
 
     /**
-     * Recebe os bytes originais, recorta o rodape do canhoto, normaliza para o padrao PPG e devolve o Base64 final.
+     * Recebe os bytes originais, recorta a faixa do canhoto, normaliza para o padrao PPG e devolve o Base64 final.
      */
     public String converterParaBase64Ppg(byte[] imagemOriginalBytes) throws IOException {
         if (imagemOriginalBytes == null || imagemOriginalBytes.length == 0) {
@@ -50,35 +56,71 @@ public class ImageUtils {
             throw new IOException("Formato de imagem nao suportado para conversao PPG");
         }
 
-        BufferedImage recorteRodape = recortarRodape(imagemOriginal);
-        BufferedImage imagemPpg = redimensionarParaPpg(recorteRodape);
+        BufferedImage imagemRgb = converterParaRgbComFundoBranco(imagemOriginal);
+        BufferedImage recorteCanhoto = recortarFaixaCanhoto(imagemRgb);
+        BufferedImage imagemPpg = redimensionarParaPpg(recorteCanhoto);
         byte[] imagemFinalBytes = escreverJpegComDpi(imagemPpg, DPI_PPG);
 
         String base64Bruto = Base64.getEncoder().encodeToString(imagemFinalBytes);
         return PREFIXO_BASE64_PPG + base64Bruto;
     }
 
-    private BufferedImage recortarRodape(BufferedImage imagemOriginal) {
-        int larguraOriginal = imagemOriginal.getWidth();
-        int alturaOriginal = imagemOriginal.getHeight();
-        int alturaCrop = (int) Math.round(alturaOriginal * cropRodapeRatio);
-        alturaCrop = Math.max(1, Math.min(alturaOriginal, alturaCrop));
+    private BufferedImage converterParaRgbComFundoBranco(BufferedImage imagemOriginal) {
+        if (imagemOriginal.getType() == BufferedImage.TYPE_INT_RGB) {
+            return imagemOriginal;
+        }
 
-        int eixoY = alturaOriginal - alturaCrop;
-        return imagemOriginal.getSubimage(0, eixoY, larguraOriginal, alturaCrop);
+        BufferedImage imagemRgb = new BufferedImage(
+                imagemOriginal.getWidth(),
+                imagemOriginal.getHeight(),
+                BufferedImage.TYPE_INT_RGB
+        );
+        Graphics2D g2d = imagemRgb.createGraphics();
+        aplicarRenderizacaoAltaQualidade(g2d);
+        g2d.setColor(Color.WHITE);
+        g2d.fillRect(0, 0, imagemRgb.getWidth(), imagemRgb.getHeight());
+        g2d.drawImage(imagemOriginal, 0, 0, null);
+        g2d.dispose();
+
+        return imagemRgb;
     }
 
-    private BufferedImage redimensionarParaPpg(BufferedImage recorteRodape) {
+    private BufferedImage recortarFaixaCanhoto(BufferedImage imagemOriginal) {
+        int larguraOriginal = imagemOriginal.getWidth();
+        int alturaOriginal = imagemOriginal.getHeight();
+        int eixoY = (int) Math.round(alturaOriginal * cropInicioRatio);
+        int alturaCrop = (int) Math.round(alturaOriginal * cropAlturaRatio);
+
+        eixoY = Math.max(0, Math.min(alturaOriginal - 1, eixoY));
+        alturaCrop = Math.max(1, alturaCrop);
+
+        int yFinal = Math.min(alturaOriginal, eixoY + alturaCrop);
+        if (yFinal <= eixoY) {
+            eixoY = Math.max(0, alturaOriginal - 1);
+            yFinal = alturaOriginal;
+        }
+
+        return imagemOriginal.getSubimage(0, eixoY, larguraOriginal, yFinal - eixoY);
+    }
+
+    private BufferedImage redimensionarParaPpg(BufferedImage recorteCanhoto) {
         BufferedImage imagemPpg = new BufferedImage(LARGURA_PPG, ALTURA_PPG, BufferedImage.TYPE_INT_RGB);
         Graphics2D g2d = imagemPpg.createGraphics();
 
         g2d.setColor(Color.WHITE);
         g2d.fillRect(0, 0, LARGURA_PPG, ALTURA_PPG);
-        g2d.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BICUBIC);
-        g2d.setRenderingHint(RenderingHints.KEY_RENDERING, RenderingHints.VALUE_RENDER_QUALITY);
-        g2d.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+        aplicarRenderizacaoAltaQualidade(g2d);
 
-        g2d.drawImage(recorteRodape, 0, 0, LARGURA_PPG, ALTURA_PPG, null);
+        double escala = Math.min(
+                (double) LARGURA_PPG / recorteCanhoto.getWidth(),
+                (double) ALTURA_PPG / recorteCanhoto.getHeight()
+        );
+        int larguraFinal = Math.max(1, (int) Math.round(recorteCanhoto.getWidth() * escala));
+        int alturaFinal = Math.max(1, (int) Math.round(recorteCanhoto.getHeight() * escala));
+        int x = (LARGURA_PPG - larguraFinal) / 2;
+        int y = (ALTURA_PPG - alturaFinal) / 2;
+
+        g2d.drawImage(recorteCanhoto, x, y, larguraFinal, alturaFinal, null);
         g2d.dispose();
 
         return imagemPpg;
@@ -141,11 +183,25 @@ public class ImageUtils {
         return novoNo;
     }
 
-    private static double normalizarCropRodapeRatio(double cropRodapeRatio) {
-        if (!Double.isFinite(cropRodapeRatio) || cropRodapeRatio <= 0 || cropRodapeRatio > 1) {
-            return CROP_RODAPE_RATIO_PADRAO;
+    private static void aplicarRenderizacaoAltaQualidade(Graphics2D g2d) {
+        g2d.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BICUBIC);
+        g2d.setRenderingHint(RenderingHints.KEY_RENDERING, RenderingHints.VALUE_RENDER_QUALITY);
+        g2d.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+    }
+
+    private static double normalizarCropInicioRatio(double cropInicioRatio) {
+        if (!Double.isFinite(cropInicioRatio) || cropInicioRatio < 0 || cropInicioRatio >= 1) {
+            return CROP_INICIO_RATIO_PADRAO;
         }
 
-        return cropRodapeRatio;
+        return cropInicioRatio;
+    }
+
+    private static double normalizarCropAlturaRatio(double cropAlturaRatio) {
+        if (!Double.isFinite(cropAlturaRatio) || cropAlturaRatio <= 0 || cropAlturaRatio > 1) {
+            return CROP_ALTURA_RATIO_PADRAO;
+        }
+
+        return cropAlturaRatio;
     }
 }

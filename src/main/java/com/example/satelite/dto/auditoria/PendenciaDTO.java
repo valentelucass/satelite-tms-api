@@ -16,5 +16,6 @@ public record PendenciaDTO(
         String mensagemErroCanhoto,
         LocalDateTime dataProcessamento,
         LocalDateTime dataProcessamentoDados,
-        LocalDateTime dataProcessamentoCanhoto) {
+        LocalDateTime dataProcessamentoCanhoto,
+        Boolean possuiImagemPayload) {
 }
