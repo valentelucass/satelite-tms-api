@@ -24,9 +24,10 @@ echo  2. PPG
 echo  3. Todos
 echo.
 choice /c 123 /n /m "Destino: "
-if errorlevel 3 set "RETRO_DESTINO=TODOS"
-if errorlevel 2 set "RETRO_DESTINO=PPG"
-if errorlevel 1 set "RETRO_DESTINO=VEDACIT"
+set "RETRO_OPCAO=%ERRORLEVEL%"
+if "%RETRO_OPCAO%"=="1" set "RETRO_DESTINO=VEDACIT"
+if "%RETRO_OPCAO%"=="2" set "RETRO_DESTINO=PPG"
+if "%RETRO_OPCAO%"=="3" set "RETRO_DESTINO=TODOS"
 
 set "APP_VEDACIT_ENABLED=true"
 set "APP_PPG_ENABLED=true"

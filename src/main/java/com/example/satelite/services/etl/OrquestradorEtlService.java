@@ -6,6 +6,7 @@ import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Locale;
 import java.util.Optional;
 import java.util.Set;
 
@@ -50,6 +51,7 @@ public class OrquestradorEtlService {
     private static final String STATUS_PENDENTE_FOTO = ResultadoIntegracao.STATUS_PENDENTE_FOTO;
     private static final String STATUS_SUCESSO = ResultadoIntegracao.STATUS_SUCESSO;
     private static final Set<String> STATUS_FINALIZADOS_SEM_REENVIO = Set.of(STATUS_ENVIADO, STATUS_IGNORADO);
+    private static final Set<Integer> CODIGOS_HTTP_TRANSITORIOS = Set.of(429, 502, 503, 504);
 
     private final RodogarciaClient rodogarciaClient;
     private final PpgIntegrationService ppgIntegrationService;
@@ -75,6 +77,9 @@ public class OrquestradorEtlService {
 
     @Value("${INTEGRATION_MAX_RETRY_ATTEMPTS:3}")
     private int maxTentativasReprocessamento = 3;
+
+    @Value("${INTEGRATION_TRANSIENT_BACKOFF_MS:15000}")
+    private long backoffErroTransitorioMs = 15000;
 
     @Value("${APP_E2E_IMAGE_TEST_MODE:false}")
     private boolean modoTesteE2eImagem;
@@ -356,7 +361,7 @@ public class OrquestradorEtlService {
                     return resultadoDestino;
                 }
 
-                if (resultado.erros() > 0) {
+                if (resultado.erros() > 0 && !request.retroativo()) {
                     log.warn(
                             "⚠️ [DESTINO: {}] Cursor não avançado: {} erro(s) na página. Próximo ciclo tentará novamente a partir de {}.",
                             destino,
@@ -365,6 +370,14 @@ public class OrquestradorEtlService {
                     );
                     resultadoDestino = resultadoDestino.encerrar("Cursor nao avancado por erro em registro");
                     return resultadoDestino;
+                }
+
+                if (resultado.erros() > 0) {
+                    log.warn(
+                            "⚠️ [DESTINO: {}] Página retroativa teve {} erro(s), já registrados em ERRO_DESTINO. A carga retroativa continuará avançando em memória para não interromper o histórico.",
+                            destino,
+                            resultado.erros()
+                    );
                 }
 
                 if (resultado.fimJanelaRetroativa() || deveEncerrarPorDataFinal(request, lote)) {
@@ -535,7 +548,7 @@ public class OrquestradorEtlService {
                     continue;
                 }
 
-                ResultadoRegistro registro = processarOcorrenciaComLog(
+                ResultadoRegistro registro = processarOcorrenciaComRetentativas(
                         destino,
                         headerAuth,
                         pendencia.getCursorNextId(),
@@ -588,7 +601,53 @@ public class OrquestradorEtlService {
 
         LogIntegracaoModel logIntegracao = logExistente
                 .orElseGet(() -> criarLogComStatus(destino, cursorNextId, ocorrencia, STATUS_RECEBIDO));
-        return processarOcorrenciaComLog(destino, headerAuth, cursorNextId, ocorrencia, processadorDestino, logIntegracao);
+        return processarOcorrenciaComRetentativas(
+                destino,
+                headerAuth,
+                cursorNextId,
+                ocorrencia,
+                processadorDestino,
+                logIntegracao
+        );
+    }
+
+    private ResultadoRegistro processarOcorrenciaComRetentativas(
+            String destino,
+            String headerAuth,
+            Long cursorNextId,
+            EslOcorrenciaDTO ocorrencia,
+            ProcessadorDestino processadorDestino,
+            LogIntegracaoModel logIntegracao
+    ) {
+        while (true) {
+            ResultadoRegistro resultado = processarOcorrenciaComLog(
+                    destino,
+                    headerAuth,
+                    cursorNextId,
+                    ocorrencia,
+                    processadorDestino,
+                    logIntegracao
+            );
+
+            if (resultado != ResultadoRegistro.ERRO || !erroTransitorioRegistrado(logIntegracao)) {
+                return resultado;
+            }
+
+            int tentativasConsumidas = maiorTentativas(logIntegracao);
+            if (tentativasConsumidas >= limiteMaximoTentativas()) {
+                return resultadoErroRespeitandoLimiteTentativas(destino, ocorrencia, logIntegracao);
+            }
+
+            log.warn(
+                    "⏸️ [{}] NF {}: erro HTTP temporário detectado após a tentativa {}/{}. Pausando {} ms antes de retomar o mesmo registro.",
+                    destino,
+                    obterChaveNfe(ocorrencia),
+                    tentativasConsumidas,
+                    limiteMaximoTentativas(),
+                    backoffTransitorioMs()
+            );
+            pausarAposErroTransitorio();
+        }
     }
 
     private ResultadoRegistro processarOcorrenciaComLog(
@@ -781,8 +840,78 @@ public class OrquestradorEtlService {
         return tentativas == null ? 0 : tentativas;
     }
 
+    private int maiorTentativas(LogIntegracaoModel logIntegracao) {
+        if (logIntegracao == null) {
+            return 0;
+        }
+
+        return Math.max(
+                valorTentativas(logIntegracao.getTentativasDados()),
+                valorTentativas(logIntegracao.getTentativasCanhoto())
+        );
+    }
+
     private int limiteMaximoTentativas() {
         return Math.max(1, maxTentativasReprocessamento);
+    }
+
+    private boolean erroTransitorioRegistrado(LogIntegracaoModel logIntegracao) {
+        String textoErro = montarTextoErro(logIntegracao);
+        if (textoErro.isBlank()) {
+            return false;
+        }
+
+        String normalizado = textoErro.toLowerCase(Locale.ROOT);
+        return CODIGOS_HTTP_TRANSITORIOS.stream().anyMatch(codigo -> contemCodigoHttp(normalizado, codigo))
+                || normalizado.contains("too many requests")
+                || normalizado.contains("bad gateway")
+                || normalizado.contains("service unavailable")
+                || normalizado.contains("gateway timeout");
+    }
+
+    private String montarTextoErro(LogIntegracaoModel logIntegracao) {
+        if (logIntegracao == null) {
+            return "";
+        }
+
+        StringBuilder texto = new StringBuilder();
+        adicionarTextoErro(texto, logIntegracao.getErro());
+        adicionarTextoErro(texto, logIntegracao.getMensagemErroDados());
+        adicionarTextoErro(texto, logIntegracao.getMensagemErroCanhoto());
+        return texto.toString();
+    }
+
+    private void adicionarTextoErro(StringBuilder texto, String mensagem) {
+        if (mensagem == null || mensagem.isBlank()) {
+            return;
+        }
+
+        if (!texto.isEmpty()) {
+            texto.append(' ');
+        }
+        texto.append(mensagem);
+    }
+
+    private boolean contemCodigoHttp(String texto, int codigoHttp) {
+        return texto.matches("(?s).*\\b" + codigoHttp + "\\b.*");
+    }
+
+    private long backoffTransitorioMs() {
+        return Math.max(0, backoffErroTransitorioMs);
+    }
+
+    private void pausarAposErroTransitorio() {
+        long esperaMs = backoffTransitorioMs();
+        if (esperaMs <= 0) {
+            return;
+        }
+
+        try {
+            Thread.sleep(esperaMs);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException("Pausa de backoff transitorio interrompida", e);
+        }
     }
 
     private void logarLimiteTentativasAtingido(

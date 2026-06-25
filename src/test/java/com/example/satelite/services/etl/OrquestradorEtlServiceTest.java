@@ -247,6 +247,101 @@ class OrquestradorEtlServiceTest {
     }
 
     @Test
+    void devePausarERetentarMesmoRegistroQuandoErroDestinoForHttpTemporario() {
+        Dependencias dependencias = criarDependencias();
+        ReflectionTestUtils.setField(dependencias.service(), "vedacitEnabled", false);
+
+        when(dependencias.controleCursorRepository().findBySistemaDestino(anyString())).thenReturn(Optional.empty());
+        when(dependencias.controleCursorRepository().save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        when(dependencias.logIntegracaoRepository().save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        when(dependencias.rodogarciaClient().buscarOcorrencias(eq("Bearer token-ppg"), isNull(), isNull(), isNull(), eq(1)))
+                .thenReturn(new EslLoteResponseDTO(
+                        List.of(
+                                criarOcorrencia(10L, 1, "cte-10"),
+                                criarOcorrencia(11L, 1, "cte-11")
+                        ),
+                        new EslPagingDTO(99L, 2)
+                ));
+        when(dependencias.rodogarciaClient().buscarComprovante(anyString(), anyString()))
+                .thenReturn(criarComprovanteComImagem());
+        when(dependencias.ppgIntegrationService().processarOcorrencia(any(), any()))
+                .thenReturn(ResultadoIntegracao.erroDados("HTTP 429 Too Many Requests"))
+                .thenReturn(ResultadoIntegracao.enviado())
+                .thenReturn(ResultadoIntegracao.enviado());
+
+        dependencias.service().executarFluxos();
+
+        ArgumentCaptor<EslOcorrenciaDTO> ocorrenciaCaptor = ArgumentCaptor.forClass(EslOcorrenciaDTO.class);
+        verify(dependencias.ppgIntegrationService(), times(3)).processarOcorrencia(ocorrenciaCaptor.capture(), any());
+
+        assertEquals(
+                List.of(10L, 10L, 11L),
+                ocorrenciaCaptor.getAllValues().stream().map(EslOcorrenciaDTO::id).toList()
+        );
+        verify(dependencias.controleCursorRepository(), times(1)).save(any());
+    }
+
+    @Test
+    void retroativoDeveAvancarEmMemoriaQuandoPaginaTemErroRegistrado() {
+        Dependencias dependencias = criarDependencias();
+        ReflectionTestUtils.setField(dependencias.service(), "vedacitEnabled", false);
+
+        when(dependencias.logIntegracaoRepository().save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        when(dependencias.rodogarciaClient().buscarOcorrencias(
+                eq("Bearer token-ppg"),
+                isNull(),
+                isNull(),
+                eq("2026-06-01T00:00:00.000-03:00"),
+                eq(1)
+        ))
+                .thenReturn(new EslLoteResponseDTO(
+                        List.of(criarOcorrencia(
+                                10L,
+                                1,
+                                null,
+                                "2026-06-17T10:30:00-03:00",
+                                null
+                        )),
+                        new EslPagingDTO(99L, 1)
+                ));
+        when(dependencias.rodogarciaClient().buscarOcorrencias(
+                eq("Bearer token-ppg"),
+                eq(99L),
+                isNull(),
+                eq("2026-06-01T00:00:00.000-03:00"),
+                eq(1)
+        ))
+                .thenReturn(loteVazio());
+
+        OrquestradorEtlService.ResultadoCiclo resultado = dependencias.service().executarFluxosComResultado(
+                ExecucaoEtlRequest.retroativo(
+                        LocalDate.of(2026, 6, 1),
+                        LocalDate.of(2026, 6, 30),
+                        "PPG",
+                        2
+                )
+        );
+
+        assertFalse(resultado.erroCritico());
+        assertEquals(OrquestradorEtlService.CODIGO_SAIDA_SUCESSO, resultado.codigoSaida());
+        verify(dependencias.rodogarciaClient()).buscarOcorrencias(
+                "Bearer token-ppg",
+                null,
+                null,
+                "2026-06-01T00:00:00.000-03:00",
+                1
+        );
+        verify(dependencias.rodogarciaClient()).buscarOcorrencias(
+                "Bearer token-ppg",
+                99L,
+                null,
+                "2026-06-01T00:00:00.000-03:00",
+                1
+        );
+        verify(dependencias.controleCursorRepository(), times(0)).save(any());
+    }
+
+    @Test
     void devePararRetryAutomaticoNaTerceiraFalhaDestinoELiberarCursor() {
         Dependencias dependencias = criarDependencias();
         ReflectionTestUtils.setField(dependencias.service(), "vedacitEnabled", false);
@@ -697,6 +792,7 @@ class OrquestradorEtlServiceTest {
         ReflectionTestUtils.setField(service, "tokenPpgEsl", "token-ppg");
         ReflectionTestUtils.setField(service, "tokenVedacitEsl", "token-vedacit");
         ReflectionTestUtils.setField(service, "maxPaginasPorCiclo", 1);
+        ReflectionTestUtils.setField(service, "backoffErroTransitorioMs", 0L);
 
         return new Dependencias(
                 service,
