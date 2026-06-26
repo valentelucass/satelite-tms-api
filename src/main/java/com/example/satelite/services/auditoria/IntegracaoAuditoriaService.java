@@ -34,6 +34,7 @@ public class IntegracaoAuditoriaService {
     private static final String PARAM_TABELA_STATUS = "f.tabelaStatus";
     private static final String PARAM_SORT_FIELD = "sortField";
     private static final String PARAM_SORT_DIRECTION = "sortDirection";
+    private static final String PARAM_ESCOPO = "escopo";
     private static final String PREFIXO_FILTRO_COLUNA = "f.tabelaColuna.";
     private static final List<String> CAMPOS_IMAGEM_CANHOTO = List.of(
             "foto",
@@ -183,6 +184,7 @@ public class IntegracaoAuditoriaService {
                 primeiroValor(params, PARAM_TABELA_CODIGO),
                 valores(params, PARAM_TABELA_STATUS),
                 filtrosColuna(params),
+                primeiroValor(params, PARAM_ESCOPO),
                 primeiroValor(params, PARAM_SORT_FIELD),
                 primeiroValor(params, PARAM_SORT_DIRECTION)
         );

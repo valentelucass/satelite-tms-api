@@ -58,3 +58,24 @@ BEGIN
     INCLUDE (occurrence_id, chave_nfe);
 END;
 GO
+
+IF NOT EXISTS (
+    SELECT 1
+    FROM sys.indexes
+    WHERE name = N'IX_tb_log_integracao_auditoria_escopo'
+      AND object_id = OBJECT_ID(N'dbo.tb_log_integracao')
+)
+BEGIN
+    CREATE NONCLUSTERED INDEX IX_tb_log_integracao_auditoria_escopo
+    ON dbo.tb_log_integracao (sistema_destino, status_canhoto, status_dados, data_processamento DESC, id DESC)
+    INCLUDE (
+        occurrence_id,
+        freight_id,
+        chave_nfe,
+        mensagem_erro_dados,
+        mensagem_erro_canhoto,
+        canhoto_referencia,
+        canhoto_mime_type
+    );
+END;
+GO

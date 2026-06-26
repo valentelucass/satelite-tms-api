@@ -49,6 +49,12 @@ public class LogIntegracaoModel {
     private String mensagemErroDados;
     @Column(name = "mensagem_erro_canhoto", columnDefinition = "NVARCHAR(MAX)")
     private String mensagemErroCanhoto;
+    @Column(name = "canhoto_referencia", length = 2048)
+    private String canhotoReferencia;
+    @Column(name = "canhoto_mime_type", length = 100)
+    private String canhotoMimeType;
+    @Column(name = "canhoto_origem", length = 30)
+    private String canhotoOrigem;
     @Column(name = "data_processamento_dados")
     private LocalDateTime dataProcessamentoDados;
     @Column(name = "data_processamento_canhoto")

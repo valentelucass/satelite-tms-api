@@ -29,40 +29,75 @@ class IntegracaoAuditoriaQueryRepositoryTest {
         NamedParameterJdbcTemplate jdbcTemplate = criarJdbcTemplate();
         IntegracaoAuditoriaQueryRepository repository = new IntegracaoAuditoriaQueryRepository(jdbcTemplate);
 
-        repository.buscarPendencias(filtros(null, null), 0, 20);
+        repository.buscarPendencias(filtros(null, null, null), 0, 20);
 
         String sql = capturarSqlTabela(jdbcTemplate);
         assertTrue(sql.contains("l.status_canhoto = 'PENDENTE_FOTO'"));
         assertTrue(sql.contains("l.status_dados = 'ERRO_DESTINO'"));
         assertTrue(sql.contains("possuiImagemPayload"));
+        assertTrue(sql.contains("l.canhoto_referencia AS canhotoReferencia"));
+        assertTrue(sql.contains("l.canhoto_mime_type AS canhotoMimeType"));
+        assertTrue(sql.contains("l.canhoto_referencia IS NOT NULL"));
+        assertFalse(sql.contains("request_payload"));
     }
 
     @Test
-    void deveIgnorarFiltroDePendenciasQuandoBuscaGeralEstaPreenchida() {
+    void deveManterFiltroDePendenciasQuandoBuscaGeralEstaPreenchida() {
         NamedParameterJdbcTemplate jdbcTemplate = criarJdbcTemplate();
         IntegracaoAuditoriaQueryRepository repository = new IntegracaoAuditoriaQueryRepository(jdbcTemplate);
 
-        repository.buscarPendencias(filtros("35260643996693000127550170004223891100032056", null), 0, 20);
+        repository.buscarPendencias(filtros("35260643996693000127550170004223891100032056", null, null), 0, 20);
 
         String sql = capturarSqlTabela(jdbcTemplate);
-        assertFalse(sql.contains("l.status_canhoto = 'PENDENTE_FOTO'"));
-        assertFalse(sql.contains("l.status_dados = 'ERRO_DESTINO'"));
+        assertTrue(sql.contains("l.status_canhoto = 'PENDENTE_FOTO'"));
+        assertTrue(sql.contains("l.status_dados = 'ERRO_DESTINO'"));
         assertTrue(sql.contains("l.chave_nfe LIKE :filtroTabelaBusca"));
         assertTrue(sql.contains("possuiImagemPayload"));
+        assertFalse(sql.contains("request_payload"));
     }
 
     @Test
-    void deveIgnorarFiltroDePendenciasQuandoCodigoEstaPreenchido() {
+    void deveManterFiltroDePendenciasQuandoCodigoEstaPreenchido() {
         NamedParameterJdbcTemplate jdbcTemplate = criarJdbcTemplate();
         IntegracaoAuditoriaQueryRepository repository = new IntegracaoAuditoriaQueryRepository(jdbcTemplate);
 
-        repository.buscarPendencias(filtros(null, "423891"), 0, 20);
+        repository.buscarPendencias(filtros(null, "423891", null), 0, 20);
 
         String sql = capturarSqlTabela(jdbcTemplate);
-        assertFalse(sql.contains("l.status_canhoto = 'PENDENTE_FOTO'"));
-        assertFalse(sql.contains("l.status_dados = 'ERRO_DESTINO'"));
+        assertTrue(sql.contains("l.status_canhoto = 'PENDENTE_FOTO'"));
+        assertTrue(sql.contains("l.status_dados = 'ERRO_DESTINO'"));
         assertTrue(sql.contains("TRY_CAST(SUBSTRING(l.chave_nfe, 26, 9) AS BIGINT) = :filtroTabelaCodigoNumero"));
         assertTrue(sql.contains("possuiImagemPayload"));
+        assertFalse(sql.contains("request_payload"));
+    }
+
+    @Test
+    void deveAplicarFiltroDeSucessoQuandoEscopoForSucesso() {
+        NamedParameterJdbcTemplate jdbcTemplate = criarJdbcTemplate();
+        IntegracaoAuditoriaQueryRepository repository = new IntegracaoAuditoriaQueryRepository(jdbcTemplate);
+
+        repository.buscarPendencias(filtros(null, null, "SUCESSO"), 0, 20);
+
+        String sql = capturarSqlTabela(jdbcTemplate);
+        assertTrue(sql.contains("l.status IN ('ENVIADO', 'PROCESSADO')"));
+        assertTrue(sql.contains("l.status_dados IN ('SUCESSO', 'ENVIADO', 'PROCESSADO')"));
+        assertTrue(sql.contains("l.status_canhoto IN ('SUCESSO', 'ENVIADO', 'PROCESSADO')"));
+        assertFalse(sql.contains("l.status_canhoto = 'PENDENTE_FOTO'"));
+        assertFalse(sql.contains("request_payload"));
+    }
+
+    @Test
+    void deveIgnorarFiltroDeStatusOperacionalQuandoEscopoForTodos() {
+        NamedParameterJdbcTemplate jdbcTemplate = criarJdbcTemplate();
+        IntegracaoAuditoriaQueryRepository repository = new IntegracaoAuditoriaQueryRepository(jdbcTemplate);
+
+        repository.buscarPendencias(filtros(null, null, "TODOS"), 0, 20);
+
+        String sql = capturarSqlTabela(jdbcTemplate);
+        assertTrue(sql.contains("l.sistema_destino IN ('VEDACIT', 'PPG')"));
+        assertFalse(sql.contains("l.status_canhoto = 'PENDENTE_FOTO'"));
+        assertFalse(sql.contains("l.status IN ('ENVIADO', 'PROCESSADO')"));
+        assertFalse(sql.contains("request_payload"));
     }
 
     private NamedParameterJdbcTemplate criarJdbcTemplate() {
@@ -88,7 +123,7 @@ class IntegracaoAuditoriaQueryRepositoryTest {
         return sqlCaptor.getValue();
     }
 
-    private Filtros filtros(String busca, String codigo) {
-        return new Filtros(busca, codigo, List.of(), Map.of(), null, null);
+    private Filtros filtros(String busca, String codigo, String escopo) {
+        return new Filtros(busca, codigo, List.of(), Map.of(), escopo, null, null);
     }
 }

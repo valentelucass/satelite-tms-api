@@ -27,12 +27,21 @@ public class IntegracaoAuditoriaQueryRepository {
     private static final String STATUS_CANHOTO_EXPR =
             "COALESCE(NULLIF(TRIM(l.status_canhoto), ''), NULLIF(TRIM(l.status), ''))";
     private static final String NUMERO_NF_TEXTO_EXPR = "CAST(" + NUMERO_NF_EXPR + " AS VARCHAR(32))";
+    private static final String ESCOPO_SUCESSO = "SUCESSO";
+    private static final String ESCOPO_TODOS = "TODOS";
     private static final String FILTRO_PENDENCIAS = """
             (
                 l.status_canhoto = 'PENDENTE_FOTO'
                 OR l.status_dados = 'ERRO_DESTINO'
                 OR (l.status_canhoto IS NULL AND l.status = 'PENDENTE_FOTO')
                 OR (l.status_dados IS NULL AND l.status = 'ERRO_DESTINO')
+            )
+            """;
+    private static final String FILTRO_SUCESSO = """
+            (
+                l.status IN ('ENVIADO', 'PROCESSADO')
+                OR l.status_dados IN ('SUCESSO', 'ENVIADO', 'PROCESSADO')
+                OR l.status_canhoto IN ('SUCESSO', 'ENVIADO', 'PROCESSADO')
             )
             """;
     private static final Pattern DIGITOS = Pattern.compile("\\d+");
@@ -72,20 +81,13 @@ public class IntegracaoAuditoriaQueryRepository {
                     %s AS statusCanhoto,
                     l.mensagem_erro_dados AS mensagemErroDados,
                     l.mensagem_erro_canhoto AS mensagemErroCanhoto,
+                    l.canhoto_referencia AS canhotoReferencia,
+                    l.canhoto_mime_type AS canhotoMimeType,
                     l.data_processamento AS dataProcessamento,
                     l.data_processamento_dados AS dataProcessamentoDados,
                     l.data_processamento_canhoto AS dataProcessamentoCanhoto,
                     CAST(CASE
-                        WHEN l.request_payload IS NOT NULL
-                         AND (
-                              CHARINDEX('"foto"', l.request_payload) > 0
-                              OR CHARINDEX('"imagemBase64"', l.request_payload) > 0
-                              OR CHARINDEX('"imageBase64"', l.request_payload) > 0
-                              OR CHARINDEX('"canhotoBase64"', l.request_payload) > 0
-                              OR CHARINDEX('"conteudoBase64"', l.request_payload) > 0
-                              OR CHARINDEX('data:image/', l.request_payload) > 0
-                         )
-                        THEN 1 ELSE 0
+                        WHEN l.canhoto_referencia IS NOT NULL THEN 1 ELSE 0
                     END AS BIT) AS possuiImagemPayload
                 %s
                 %s
@@ -108,9 +110,7 @@ public class IntegracaoAuditoriaQueryRepository {
         MapSqlParameterSource params = new MapSqlParameterSource();
 
         where.add("l.sistema_destino IN ('VEDACIT', 'PPG')");
-        if (!temBuscaTabela(filtros)) {
-            where.add(FILTRO_PENDENCIAS);
-        }
+        adicionarEscopo(where, filtros.escopo());
 
         adicionarBusca(where, params, filtros.tabelaBusca());
         adicionarCodigo(where, params, filtros.tabelaCodigo());
@@ -120,9 +120,18 @@ public class IntegracaoAuditoriaQueryRepository {
         return new QueryParts(where, params);
     }
 
-    private boolean temBuscaTabela(Filtros filtros) {
-        return normalizarTexto(filtros.tabelaBusca()) != null
-                || normalizarTexto(filtros.tabelaCodigo()) != null;
+    private void adicionarEscopo(List<String> where, String escopo) {
+        String escopoNormalizado = normalizarTexto(escopo);
+        if (ESCOPO_TODOS.equalsIgnoreCase(escopoNormalizado)) {
+            return;
+        }
+
+        if (ESCOPO_SUCESSO.equalsIgnoreCase(escopoNormalizado)) {
+            where.add(FILTRO_SUCESSO);
+            return;
+        }
+
+        where.add(FILTRO_PENDENCIAS);
     }
 
     private void adicionarBusca(List<String> where, MapSqlParameterSource params, String valor) {
@@ -319,6 +328,7 @@ public class IntegracaoAuditoriaQueryRepository {
             String tabelaCodigo,
             List<String> tabelaStatus,
             Map<String, List<String>> filtrosColuna,
+            String escopo,
             String sortField,
             String sortDirection
     ) {
@@ -369,6 +379,8 @@ public class IntegracaoAuditoriaQueryRepository {
                     rs.getString("statusCanhoto"),
                     rs.getString("mensagemErroDados"),
                     rs.getString("mensagemErroCanhoto"),
+                    rs.getString("canhotoReferencia"),
+                    rs.getString("canhotoMimeType"),
                     getLocalDateTimeOuNull(rs, "dataProcessamento"),
                     getLocalDateTimeOuNull(rs, "dataProcessamentoDados"),
                     getLocalDateTimeOuNull(rs, "dataProcessamentoCanhoto"),

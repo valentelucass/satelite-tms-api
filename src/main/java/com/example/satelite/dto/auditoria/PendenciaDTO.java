@@ -14,6 +14,8 @@ public record PendenciaDTO(
         String statusCanhoto,
         String mensagemErroDados,
         String mensagemErroCanhoto,
+        String canhotoReferencia,
+        String canhotoMimeType,
         LocalDateTime dataProcessamento,
         LocalDateTime dataProcessamentoDados,
         LocalDateTime dataProcessamentoCanhoto,
