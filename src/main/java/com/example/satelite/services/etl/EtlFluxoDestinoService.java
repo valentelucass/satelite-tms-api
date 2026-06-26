@@ -18,6 +18,8 @@ import com.example.satelite.dto.rodogarcia.EslOcorrenciaDTO;
 import com.example.satelite.models.ControleCursor;
 import com.example.satelite.repositories.ControleCursorRepository;
 
+import feign.FeignException;
+
 @Service
 public class EtlFluxoDestinoService {
 
@@ -99,13 +101,13 @@ public class EtlFluxoDestinoService {
                         CODIGO_ENTREGA_REALIZADA
                 );
 
-                eslRequestPolicyService.aguardarProximaRequisicao();
-                EslLoteResponseDTO lote = rodogarciaClient.buscarOcorrencias(
+                EslLoteResponseDTO lote = buscarOcorrenciasComRetry429(
+                        destino,
+                        pagina,
                         headerAuth,
                         cursorAtual,
                         invoiceKeyParam,
-                        sinceParam,
-                        CODIGO_ENTREGA_REALIZADA
+                        sinceParam
                 );
                 if (loteVazio(lote)) {
                     log.info("📭 [DESTINO: {}] Nenhuma ocorrência encontrada a partir do cursor {}.", destino, cursorAtual);
@@ -264,6 +266,83 @@ public class EtlFluxoDestinoService {
                     LINHA_BANNER
             );
         }
+    }
+
+    private EslLoteResponseDTO buscarOcorrenciasComRetry429(
+            String destino,
+            int pagina,
+            String headerAuth,
+            Long cursorAtual,
+            String invoiceKeyParam,
+            String sinceParam
+    ) {
+        int tentativas429 = 0;
+
+        while (true) {
+            eslRequestPolicyService.aguardarProximaRequisicao();
+
+            try {
+                return rodogarciaClient.buscarOcorrencias(
+                        headerAuth,
+                        cursorAtual,
+                        invoiceKeyParam,
+                        sinceParam,
+                        CODIGO_ENTREGA_REALIZADA
+                );
+            } catch (FeignException.TooManyRequests e) {
+                tentativas429 = tratarTooManyRequestsPagina(
+                        destino,
+                        pagina,
+                        cursorAtual,
+                        invoiceKeyParam,
+                        sinceParam,
+                        tentativas429,
+                        e
+                );
+            } catch (FeignException e) {
+                if (!ehTooManyRequests(e)) {
+                    throw e;
+                }
+
+                tentativas429 = tratarTooManyRequestsPagina(
+                        destino,
+                        pagina,
+                        cursorAtual,
+                        invoiceKeyParam,
+                        sinceParam,
+                        tentativas429,
+                        e
+                );
+            }
+        }
+    }
+
+    private int tratarTooManyRequestsPagina(
+            String destino,
+            int pagina,
+            Long cursorAtual,
+            String invoiceKeyParam,
+            String sinceParam,
+            int tentativas429,
+            FeignException e
+    ) {
+        int proximaTentativa = tentativas429 + 1;
+        log.warn(
+                "⏸️ [DESTINO: {}] Página {} recebeu HTTP 429 da ESL na busca raiz. cursor={} invoice_key={} since={} retry_429={}. Pausando para repetir a mesma página. mensagem={}",
+                destino,
+                pagina,
+                cursorAtual,
+                invoiceKeyParam,
+                sinceParam,
+                proximaTentativa,
+                e.getMessage()
+        );
+        eslRequestPolicyService.pausarAposTooManyRequests();
+        return proximaTentativa;
+    }
+
+    private boolean ehTooManyRequests(FeignException e) {
+        return e.status() == 429;
     }
 
     ResultadoPagina processarPagina(

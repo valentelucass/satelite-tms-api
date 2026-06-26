@@ -15,9 +15,11 @@ import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import java.nio.charset.StandardCharsets;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.OffsetDateTime;
+import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
 
@@ -45,6 +47,11 @@ import com.example.satelite.services.ResultadoIntegracao;
 import com.example.satelite.services.ppg.PpgIntegrationService;
 import com.example.satelite.services.vedacit.VedacitIntegrationService;
 
+import feign.FeignException;
+import feign.Request;
+import feign.RequestTemplate;
+import feign.Response;
+
 @ExtendWith(OutputCaptureExtension.class)
 class OrquestradorEtlServiceTest {
 
@@ -71,6 +78,25 @@ class OrquestradorEtlServiceTest {
         verify(dependencias.rodogarciaClient()).buscarOcorrencias("Bearer token-ppg", 123L, null, null, 1);
         verify(dependencias.rodogarciaClient()).buscarOcorrencias("Bearer token-vedacit", 123L, null, null, 1);
         verify(dependencias.eslRequestPolicyService(), times(2)).aguardarProximaRequisicao();
+    }
+
+    @Test
+    void devePausarERetentarPaginaQuandoEslRetorna429NaBuscaRaiz() {
+        Dependencias dependencias = criarDependencias();
+        ReflectionTestUtils.setField(dependencias.service(), "vedacitEnabled", false);
+
+        when(dependencias.controleCursorRepository().findBySistemaDestino(anyString())).thenReturn(Optional.empty());
+        when(dependencias.rodogarciaClient().buscarOcorrencias(eq("Bearer token-ppg"), isNull(), isNull(), isNull(), eq(1)))
+                .thenThrow(criarErroTooManyRequestsEsl())
+                .thenReturn(loteVazio());
+
+        OrquestradorEtlService.ResultadoCiclo resultado = dependencias.service().executarFluxosComResultado();
+
+        assertFalse(resultado.erroCritico());
+        verify(dependencias.rodogarciaClient(), times(2))
+                .buscarOcorrencias("Bearer token-ppg", null, null, null, 1);
+        verify(dependencias.eslRequestPolicyService(), times(2)).aguardarProximaRequisicao();
+        verify(dependencias.eslRequestPolicyService()).pausarAposTooManyRequests();
     }
 
     @Test
@@ -869,6 +895,25 @@ class OrquestradorEtlServiceTest {
 
     private EslLoteResponseDTO loteVazio() {
         return new EslLoteResponseDTO(List.of(), new EslPagingDTO(null, 0));
+    }
+
+    private FeignException criarErroTooManyRequestsEsl() {
+        Request request = Request.create(
+                Request.HttpMethod.GET,
+                "https://rodogarcia.eslcloud.com.br/api/customer/invoice_occurrences",
+                Collections.emptyMap(),
+                null,
+                StandardCharsets.UTF_8,
+                new RequestTemplate()
+        );
+        Response response = Response.builder()
+                .status(429)
+                .reason("Too Many Requests")
+                .request(request)
+                .body("rate limit", StandardCharsets.UTF_8)
+                .build();
+
+        return FeignException.errorStatus("RodogarciaClient#buscarOcorrencias", response);
     }
 
     private ComprovanteEslDTO criarComprovanteComImagem() {

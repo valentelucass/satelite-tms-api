@@ -17,21 +17,22 @@ public class EslRequestPolicyService {
     private final Object requisicaoLock = new Object();
     private final ConcurrentMap<String, Instant> proximaExtracaoPorPeriodo = new ConcurrentHashMap<>();
     private final long intervaloMinimoRequisicoesMs;
+    private final long cooldownTooManyRequestsMs;
     private final long limiteDiasPeriodoLivre;
     private final long limiteDiasPeriodoMedio;
     private final Duration cooldownPeriodoMedio;
     private final Duration cooldownPeriodoLongo;
 
-    private Instant proximaRequisicaoPermitida = Instant.EPOCH;
-
     public EslRequestPolicyService(
             @Value("${ESL_MIN_INTERVAL_BETWEEN_REQUESTS_MS:2000}") long intervaloMinimoRequisicoesMs,
+            @Value("${ESL_TOO_MANY_REQUESTS_BACKOFF_MS:30000}") long cooldownTooManyRequestsMs,
             @Value("${ESL_PERIOD_FREE_LIMIT_DAYS:30}") long limiteDiasPeriodoLivre,
             @Value("${ESL_PERIOD_MEDIUM_LIMIT_DAYS:183}") long limiteDiasPeriodoMedio,
             @Value("${ESL_PERIOD_MEDIUM_COOLDOWN_MS:3600000}") long cooldownPeriodoMedioMs,
             @Value("${ESL_PERIOD_LONG_COOLDOWN_MS:43200000}") long cooldownPeriodoLongoMs
     ) {
         this.intervaloMinimoRequisicoesMs = Math.max(0, intervaloMinimoRequisicoesMs);
+        this.cooldownTooManyRequestsMs = Math.max(0, cooldownTooManyRequestsMs);
         this.limiteDiasPeriodoLivre = Math.max(0, limiteDiasPeriodoLivre);
         this.limiteDiasPeriodoMedio = Math.max(this.limiteDiasPeriodoLivre, limiteDiasPeriodoMedio);
         this.cooldownPeriodoMedio = Duration.ofMillis(Math.max(0, cooldownPeriodoMedioMs));
@@ -44,13 +45,17 @@ public class EslRequestPolicyService {
         }
 
         synchronized (requisicaoLock) {
-            Instant agora = Instant.now();
-            long esperaMs = Duration.between(agora, proximaRequisicaoPermitida).toMillis();
-            if (esperaMs > 0) {
-                dormir(esperaMs);
-            }
+            dormir(intervaloMinimoRequisicoesMs);
+        }
+    }
 
-            proximaRequisicaoPermitida = Instant.now().plusMillis(intervaloMinimoRequisicoesMs);
+    public void pausarAposTooManyRequests() {
+        if (cooldownTooManyRequestsMs <= 0) {
+            return;
+        }
+
+        synchronized (requisicaoLock) {
+            dormir(cooldownTooManyRequestsMs);
         }
     }
 

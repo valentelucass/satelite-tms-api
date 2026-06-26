@@ -4,6 +4,7 @@ set "SCRIPT_DIR=%~dp0"
 for %%I in ("%SCRIPT_DIR%..") do set "PROJECT_ROOT=%%~fI"
 
 set "ALLOWED_DB_NAME=SATELITE_TMS_AUDITORIA"
+set "DEFAULT_DB_URL=jdbc:sqlserver://localhost:1433;databaseName=SATELITE_TMS_AUDITORIA;encrypt=true;trustServerCertificate=true"
 set "JAR_PATH=%PROJECT_ROOT%\target\satelite-0.0.1-SNAPSHOT.jar"
 set "PORTA_API=9090"
 set "LOGS_DIR=%PROJECT_ROOT%\logs"
@@ -26,9 +27,14 @@ if not "%SERVER_PORT%"=="" set "PORTA_API=%SERVER_PORT%"
 if "%SERVER_PORT%"=="" set "SERVER_PORT=%PORTA_API%"
 
 if "%DB_NAME%"=="" set "DB_NAME=%ALLOWED_DB_NAME%"
+if "%DB_URL%"=="" set "DB_URL=%DEFAULT_DB_URL%"
 if "%SATELITE_DB_URL%"=="" set "SATELITE_DB_URL=%DB_URL%"
 if "%SATELITE_DB_USER%"=="" set "SATELITE_DB_USER=%DB_USER%"
 if "%SATELITE_DB_PASSWORD%"=="" set "SATELITE_DB_PASSWORD=%DB_PASSWORD%"
+
+if not "%SATELITE_DB_URL%"=="" set "SPRING_DATASOURCE_URL=%SATELITE_DB_URL%"
+if not "%SATELITE_DB_USER%"=="" set "SPRING_DATASOURCE_USERNAME=%SATELITE_DB_USER%"
+if not "%SATELITE_DB_PASSWORD%"=="" set "SPRING_DATASOURCE_PASSWORD=%SATELITE_DB_PASSWORD%"
 
 if /I "%COMMON_VALIDATE_DB%"=="true" call :validar_database_permitida
 if errorlevel 1 exit /b 1
@@ -37,7 +43,7 @@ if /I "%COMMON_REQUIRE_JAR%"=="true" (
     if not exist "%JAR_PATH%" (
         echo.
         echo [ERRO] JAR nao encontrado: %JAR_PATH%
-        echo Gere o artefato manualmente antes de iniciar o robo.
+        echo Execute mvn package antes de iniciar o robo.
         exit /b 1
     )
 )
