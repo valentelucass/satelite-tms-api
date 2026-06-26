@@ -76,9 +76,9 @@ class OrquestradorEtlServiceTest {
     @Test
     void deveBuscarVedacitPorInvoiceKeyQuandoWhitelistEstiverAtiva() {
         Dependencias dependencias = criarDependencias();
-        ReflectionTestUtils.setField(dependencias.service(), "vedacitNfeWhitelistEnabled", true);
+        ReflectionTestUtils.setField(dependencias.etlFluxoDestinoService(), "vedacitNfeWhitelistEnabled", true);
         ReflectionTestUtils.setField(
-                dependencias.service(),
+                dependencias.etlFluxoDestinoService(),
                 "vedacitNfeWhitelist",
                 "35260660642774001209550010002214511591072444,35260660642774001209550010002214511591072445"
         );
@@ -110,9 +110,9 @@ class OrquestradorEtlServiceTest {
     @Test
     void deveBuscarPpgPorInvoiceKeyQuandoWhitelistEstiverAtiva() {
         Dependencias dependencias = criarDependencias();
-        ReflectionTestUtils.setField(dependencias.service(), "ppgNfeWhitelistEnabled", true);
+        ReflectionTestUtils.setField(dependencias.etlFluxoDestinoService(), "ppgNfeWhitelistEnabled", true);
         ReflectionTestUtils.setField(
-                dependencias.service(),
+                dependencias.etlFluxoDestinoService(),
                 "ppgNfeWhitelist",
                 "35260643996693000127550170004219491100020255,35260643996693000127550170004219491100020256"
         );
@@ -144,8 +144,12 @@ class OrquestradorEtlServiceTest {
     @Test
     void deveIgnorarPpgQuandoNotaNaoEstaNaWhitelistAntesDeBuscarComprovante() {
         Dependencias dependencias = criarDependencias();
-        ReflectionTestUtils.setField(dependencias.service(), "ppgNfeWhitelistEnabled", true);
-        ReflectionTestUtils.setField(dependencias.service(), "ppgNfeWhitelist", "35260643996693000127550170004219491100020255");
+        ReflectionTestUtils.setField(dependencias.etlFluxoDestinoService(), "ppgNfeWhitelistEnabled", true);
+        ReflectionTestUtils.setField(
+                dependencias.etlFluxoDestinoService(),
+                "ppgNfeWhitelist",
+                "35260643996693000127550170004219491100020255"
+        );
 
         when(dependencias.ppgIntegrationService().notaFiscalPermitida(any())).thenReturn(false);
         when(dependencias.ppgIntegrationService().processarOcorrencia(any(), isNull()))
@@ -278,6 +282,46 @@ class OrquestradorEtlServiceTest {
                 List.of(10L, 10L, 11L),
                 ocorrenciaCaptor.getAllValues().stream().map(EslOcorrenciaDTO::id).toList()
         );
+        verify(dependencias.controleCursorRepository(), times(1)).save(any());
+    }
+
+    @Test
+    void deveConsumirLimiteDeRetentativasMesmoQuandoJpaMergeRetornaNovaInstancia() {
+        Dependencias dependencias = criarDependencias();
+        ReflectionTestUtils.setField(dependencias.service(), "vedacitEnabled", false);
+
+        when(dependencias.controleCursorRepository().findBySistemaDestino(anyString())).thenReturn(Optional.empty());
+        when(dependencias.controleCursorRepository().save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        when(dependencias.logIntegracaoRepository().save(any())).thenAnswer(invocation -> {
+            LogIntegracaoModel log = invocation.getArgument(0);
+            if (log.getId() == null) {
+                log.setId(1L);
+                return log;
+            }
+            return copiarLog(log);
+        });
+        when(dependencias.rodogarciaClient().buscarOcorrencias(eq("Bearer token-ppg"), isNull(), isNull(), isNull(), eq(1)))
+                .thenReturn(new EslLoteResponseDTO(
+                        List.of(criarOcorrencia(10L, 1, "cte-10")),
+                        new EslPagingDTO(99L, 1)
+                ));
+        when(dependencias.rodogarciaClient().buscarComprovante(anyString(), anyString()))
+                .thenReturn(criarComprovanteComImagem());
+        when(dependencias.ppgIntegrationService().processarOcorrencia(any(), any()))
+                .thenReturn(ResultadoIntegracao.erroDados("HTTP 429 Too Many Requests"))
+                .thenReturn(ResultadoIntegracao.erroDados("HTTP 429 Too Many Requests"))
+                .thenReturn(ResultadoIntegracao.erroDados("HTTP 429 Too Many Requests"))
+                .thenReturn(ResultadoIntegracao.enviado());
+
+        dependencias.service().executarFluxos();
+
+        verify(dependencias.ppgIntegrationService(), times(3)).processarOcorrencia(any(), any());
+
+        ArgumentCaptor<LogIntegracaoModel> logCaptor = ArgumentCaptor.forClass(LogIntegracaoModel.class);
+        verify(dependencias.logIntegracaoRepository(), atLeastOnce()).save(logCaptor.capture());
+        assertTrue(logCaptor.getAllValues().stream()
+                .anyMatch(log -> ResultadoIntegracao.STATUS_ERRO_DESTINO.equals(log.getStatusDados())
+                        && Integer.valueOf(3).equals(log.getTentativasDados())));
         verify(dependencias.controleCursorRepository(), times(1)).save(any());
     }
 
@@ -681,9 +725,9 @@ class OrquestradorEtlServiceTest {
         Dependencias dependencias = criarDependencias();
         ReflectionTestUtils.setField(dependencias.service(), "maxPaginasPorCiclo", 10);
         ReflectionTestUtils.setField(dependencias.service(), "ppgEnabled", false);
-        ReflectionTestUtils.setField(dependencias.service(), "vedacitNfeWhitelistEnabled", true);
+        ReflectionTestUtils.setField(dependencias.etlFluxoDestinoService(), "vedacitNfeWhitelistEnabled", true);
         ReflectionTestUtils.setField(
-                dependencias.service(),
+                dependencias.etlFluxoDestinoService(),
                 "vedacitNfeWhitelist",
                 "35260660642774001209550010002214511591072444"
         );
@@ -726,8 +770,8 @@ class OrquestradorEtlServiceTest {
     @Test
     void modoE2eDeveProcessarPrimeiraNotaComImagemDeTesteQuandoComprovanteNaoTemUrl() {
         Dependencias dependencias = criarDependencias();
-        ReflectionTestUtils.setField(dependencias.service(), "modoTesteE2eImagem", true);
-        ReflectionTestUtils.setField(dependencias.service(), "urlImagemTesteE2e", URL_TESTE_E2E);
+        ReflectionTestUtils.setField(dependencias.etlRegistroService(), "modoTesteE2eImagem", true);
+        ReflectionTestUtils.setField(dependencias.etlRegistroService(), "urlImagemTesteE2e", URL_TESTE_E2E);
 
         when(dependencias.controleCursorRepository().findBySistemaDestino(anyString())).thenReturn(Optional.empty());
         when(dependencias.logIntegracaoRepository().save(any())).thenAnswer(invocation -> invocation.getArgument(0));
@@ -765,6 +809,22 @@ class OrquestradorEtlServiceTest {
         LogIntegracaoRepository logIntegracaoRepository = mock(LogIntegracaoRepository.class);
         ControleCursorRepository controleCursorRepository = mock(ControleCursorRepository.class);
         EslRequestPolicyService eslRequestPolicyService = mock(EslRequestPolicyService.class);
+        EtlResilienciaService etlResilienciaService = new EtlResilienciaService();
+        EtlEstadoIntegracaoService etlEstadoIntegracaoService = new EtlEstadoIntegracaoService(logIntegracaoRepository);
+        EtlRegistroService etlRegistroService = new EtlRegistroService(
+                rodogarciaClient,
+                eslRequestPolicyService,
+                etlResilienciaService,
+                etlEstadoIntegracaoService,
+                ppgIntegrationService,
+                vedacitIntegrationService
+        );
+        EtlFluxoDestinoService etlFluxoDestinoService = new EtlFluxoDestinoService(
+                rodogarciaClient,
+                controleCursorRepository,
+                eslRequestPolicyService,
+                etlRegistroService
+        );
         when(ppgIntegrationService.notaFiscalPermitida(any())).thenReturn(true);
         when(ppgIntegrationService.processarOcorrencia(any(), any())).thenReturn(ResultadoIntegracao.enviado());
         when(vedacitIntegrationService.notaFiscalPermitida(any())).thenReturn(true);
@@ -782,17 +842,15 @@ class OrquestradorEtlServiceTest {
                 .thenReturn(List.of());
 
         OrquestradorEtlService service = new OrquestradorEtlService(
-                rodogarciaClient,
                 ppgIntegrationService,
                 vedacitIntegrationService,
-                logIntegracaoRepository,
-                controleCursorRepository,
-                eslRequestPolicyService
+                etlEstadoIntegracaoService,
+                etlFluxoDestinoService
         );
         ReflectionTestUtils.setField(service, "tokenPpgEsl", "token-ppg");
         ReflectionTestUtils.setField(service, "tokenVedacitEsl", "token-vedacit");
         ReflectionTestUtils.setField(service, "maxPaginasPorCiclo", 1);
-        ReflectionTestUtils.setField(service, "backoffErroTransitorioMs", 0L);
+        ReflectionTestUtils.setField(etlResilienciaService, "backoffErroTransitorioMs", 0L);
 
         return new Dependencias(
                 service,
@@ -801,7 +859,11 @@ class OrquestradorEtlServiceTest {
                 vedacitIntegrationService,
                 logIntegracaoRepository,
                 controleCursorRepository,
-                eslRequestPolicyService
+                eslRequestPolicyService,
+                etlResilienciaService,
+                etlEstadoIntegracaoService,
+                etlRegistroService,
+                etlFluxoDestinoService
         );
     }
 
@@ -843,6 +905,30 @@ class OrquestradorEtlServiceTest {
         );
     }
 
+    private LogIntegracaoModel copiarLog(LogIntegracaoModel log) {
+        LogIntegracaoModel copia = new LogIntegracaoModel();
+        copia.setId(log.getId());
+        copia.setOccurrenceId(log.getOccurrenceId());
+        copia.setChaveNfe(log.getChaveNfe());
+        copia.setFreightId(log.getFreightId());
+        copia.setCursorNextId(log.getCursorNextId());
+        copia.setStatus(log.getStatus());
+        copia.setSistemaDestino(log.getSistemaDestino());
+        copia.setRequestPayload(log.getRequestPayload());
+        copia.setResponsePayload(log.getResponsePayload());
+        copia.setErro(log.getErro());
+        copia.setStatusDados(log.getStatusDados());
+        copia.setStatusCanhoto(log.getStatusCanhoto());
+        copia.setMensagemErroDados(log.getMensagemErroDados());
+        copia.setMensagemErroCanhoto(log.getMensagemErroCanhoto());
+        copia.setDataProcessamentoDados(log.getDataProcessamentoDados());
+        copia.setDataProcessamentoCanhoto(log.getDataProcessamentoCanhoto());
+        copia.setTentativasDados(log.getTentativasDados());
+        copia.setTentativasCanhoto(log.getTentativasCanhoto());
+        copia.setDataProcessamento(log.getDataProcessamento());
+        return copia;
+    }
+
     private record Dependencias(
             OrquestradorEtlService service,
             RodogarciaClient rodogarciaClient,
@@ -850,7 +936,11 @@ class OrquestradorEtlServiceTest {
             VedacitIntegrationService vedacitIntegrationService,
             LogIntegracaoRepository logIntegracaoRepository,
             ControleCursorRepository controleCursorRepository,
-            EslRequestPolicyService eslRequestPolicyService
+            EslRequestPolicyService eslRequestPolicyService,
+            EtlResilienciaService etlResilienciaService,
+            EtlEstadoIntegracaoService etlEstadoIntegracaoService,
+            EtlRegistroService etlRegistroService,
+            EtlFluxoDestinoService etlFluxoDestinoService
     ) {
     }
 }
