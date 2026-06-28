@@ -2,11 +2,14 @@ package com.example.satelite.services.vedacit;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.contains;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import java.time.OffsetDateTime;
 import java.util.List;
+import java.util.function.Supplier;
 
 import javax.xml.namespace.QName;
 
@@ -26,6 +29,7 @@ import com.example.satelite.dto.rodogarcia.EslInvoiceDTO;
 import com.example.satelite.dto.rodogarcia.EslOcorrenciaDTO;
 import com.example.satelite.dto.rodogarcia.EslOccurrenceDefDTO;
 import com.example.satelite.services.ResultadoIntegracao;
+import com.example.satelite.services.etl.EslRequestPolicyService;
 import com.example.satelite.utils.ImageDownloader;
 import com.example.satelite.vedacit.cte.ICTe;
 import com.example.satelite.vedacit.nfe.Canhoto;
@@ -40,7 +44,8 @@ class VedacitIntegrationServiceTest {
     void deveManterCanhotoPendenteQuandoDadosJaForamEnviadosEFotoNaoExiste() {
         VedacitIntegrationService service = new VedacitIntegrationService(
                 mock(ImageDownloader.class),
-                mock(RodogarciaClient.class)
+                mock(RodogarciaClient.class),
+                criarPoliticaEslExecutora()
         );
         ReflectionTestUtils.setField(service, "envioCanhotoHabilitado", true);
 
@@ -64,7 +69,8 @@ class VedacitIntegrationServiceTest {
 
         VedacitIntegrationService service = new VedacitIntegrationService(
                 mock(ImageDownloader.class),
-                mock(RodogarciaClient.class)
+                mock(RodogarciaClient.class),
+                criarPoliticaEslExecutora()
         ) {
             @Override
             protected IOcorrencias criarPortaOcorrencias() {
@@ -85,6 +91,7 @@ class VedacitIntegrationServiceTest {
     @Test
     void deveConciliarDuplicidadeSoapNoXmlCteComoDadosEnviados() throws Exception {
         RodogarciaClient rodogarciaClient = mock(RodogarciaClient.class);
+        EslRequestPolicyService politicaEsl = criarPoliticaEslExecutora();
         ICTe portaCte = mock(ICTe.class);
 
         when(rodogarciaClient.buscarXmlCte(
@@ -96,7 +103,8 @@ class VedacitIntegrationServiceTest {
 
         VedacitIntegrationService service = new VedacitIntegrationService(
                 mock(ImageDownloader.class),
-                rodogarciaClient
+                rodogarciaClient,
+                politicaEsl
         ) {
             @Override
             protected ICTe criarPortaCte() {
@@ -113,6 +121,7 @@ class VedacitIntegrationServiceTest {
         assertEquals(ResultadoIntegracao.STATUS_ENVIADO, resultado.status());
         assertEquals(ResultadoIntegracao.STATUS_SUCESSO, resultado.statusDados());
         assertEquals(ResultadoIntegracao.STATUS_NAO_APLICAVEL, resultado.statusCanhoto());
+        verify(politicaEsl).executar(contains("buscarXmlCte"), any());
     }
 
     @Test
@@ -129,7 +138,8 @@ class VedacitIntegrationServiceTest {
 
         VedacitIntegrationService service = new VedacitIntegrationService(
                 imageDownloader,
-                mock(RodogarciaClient.class)
+                mock(RodogarciaClient.class),
+                criarPoliticaEslExecutora()
         ) {
             @Override
             protected INFe criarPortaNFe() {
@@ -170,6 +180,15 @@ class VedacitIntegrationServiceTest {
         );
 
         return new ComprovanteEslDTO(List.of(item), null);
+    }
+
+    private EslRequestPolicyService criarPoliticaEslExecutora() {
+        EslRequestPolicyService service = mock(EslRequestPolicyService.class);
+        when(service.executar(any(), any())).thenAnswer(invocation -> {
+            Supplier<?> chamada = invocation.getArgument(1);
+            return chamada.get();
+        });
+        return service;
     }
 
     private SOAPFaultException criarErroSoap(String mensagem) throws Exception {

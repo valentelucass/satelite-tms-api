@@ -16,6 +16,7 @@ import com.example.satelite.dto.rodogarcia.EslLoteResponseDTO;
 import com.example.satelite.dto.rodogarcia.EslOcorrenciaDTO;
 import com.example.satelite.models.LogIntegracaoModel;
 import com.example.satelite.services.ResultadoIntegracao;
+import com.example.satelite.services.etl.EslRequestPolicyService.EslRequestTransientException;
 import com.example.satelite.services.ppg.PpgIntegrationService;
 import com.example.satelite.services.vedacit.VedacitIntegrationService;
 
@@ -98,6 +99,8 @@ public class EtlRegistroService {
                         )
                 );
                 resultado = resultado.com(registro);
+            } catch (EslRequestTransientException e) {
+                throw e;
             } catch (Exception e) {
                 etlEstadoIntegracaoService.aplicarResultadoIntegracao(pendencia, ResultadoIntegracao.erroCanhoto(
                         etlEstadoIntegracaoService.statusDadosAtualOuSucesso(pendencia),
@@ -230,6 +233,8 @@ public class EtlRegistroService {
             ResultadoIntegracao resultadoProcessador;
             try {
                 resultadoProcessador = processadorDestino.processar(ocorrencia, comprovanteProcessamento, logIntegracao);
+            } catch (EslRequestTransientException e) {
+                throw e;
             } catch (Exception e) {
                 if (!modoTesteE2eImagem || comprovanteUsaImagemTeste(comprovanteProcessamento)) {
                     throw e;
@@ -258,9 +263,9 @@ public class EtlRegistroService {
                 return ResultadoRegistro.PENDENTE_FOTO;
             }
 
-            if (resultadoRegistro == ResultadoRegistro.ERRO) {
+            if (resultadoRegistro.erro()) {
                 log.error("❌ [{}] NF {}: Destino retornou erro controlado.", destino, chave);
-                return etlResilienciaService.resultadoErroRespeitandoLimiteTentativas(
+                return etlResilienciaService.resultadoErroAposTentativa(
                         destino,
                         chave,
                         logIntegracao
@@ -269,6 +274,8 @@ public class EtlRegistroService {
 
             log.info("✅ [{}] NF {}: Processamento do destino concluído com sucesso!", destino, chave);
             return ResultadoRegistro.ENVIADO;
+        } catch (EslRequestTransientException e) {
+            throw e;
         } catch (Exception e) {
             etlEstadoIntegracaoService.aplicarResultadoIntegracao(
                     logIntegracao,
@@ -277,7 +284,7 @@ public class EtlRegistroService {
             etlEstadoIntegracaoService.salvar(logIntegracao);
 
             log.error("❌ [{}] NF {}: Erro ao processar - {}", destino, obterChaveNfe(ocorrencia), e.getMessage());
-            return etlResilienciaService.resultadoErroRespeitandoLimiteTentativas(
+            return etlResilienciaService.resultadoErroAposTentativa(
                     destino,
                     obterChaveNfe(ocorrencia),
                     logIntegracao
@@ -291,13 +298,15 @@ public class EtlRegistroService {
             return Optional.empty();
         }
 
-        eslRequestPolicyService.aguardarProximaRequisicao();
-        EslLoteResponseDTO lote = rodogarciaClient.buscarOcorrencias(
-                headerAuth,
-                null,
-                chaveNfe,
-                null,
-                CODIGO_ENTREGA_REALIZADA
+        EslLoteResponseDTO lote = eslRequestPolicyService.executar(
+                "buscarOcorrenciaPendente invoice_key=" + chaveNfe,
+                () -> rodogarciaClient.buscarOcorrencias(
+                        headerAuth,
+                        null,
+                        chaveNfe,
+                        null,
+                        CODIGO_ENTREGA_REALIZADA
+                )
         );
         if (loteVazio(lote)) {
             return Optional.empty();
@@ -327,8 +336,10 @@ public class EtlRegistroService {
             throw new IllegalStateException("Chave CTe ausente para consulta do comprovante");
         }
 
-        eslRequestPolicyService.aguardarProximaRequisicao();
-        ComprovanteEslDTO comprovante = rodogarciaClient.buscarComprovante(headerAuth, cteKey);
+        ComprovanteEslDTO comprovante = eslRequestPolicyService.executar(
+                "buscarComprovante cte_key=" + cteKey,
+                () -> rodogarciaClient.buscarComprovante(headerAuth, cteKey)
+        );
 
         if (comprovante == null || comprovante.data() == null || comprovante.data().isEmpty()) {
             return null;

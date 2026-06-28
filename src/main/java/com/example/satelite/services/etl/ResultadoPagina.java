@@ -7,23 +7,31 @@ record ResultadoPagina(
         int pendentesFoto,
         int jaProcessados,
         int erros,
+        int falhasInfraestruturaConsecutivas,
         boolean interromperCiclo,
-        boolean fimJanelaRetroativa
+        boolean fimJanelaRetroativa,
+        boolean circuitoAberto
 ) {
     static ResultadoPagina vazio() {
-        return new ResultadoPagina(0, 0, 0, 0, 0, 0, false, false);
+        return vazio(0);
+    }
+
+    static ResultadoPagina vazio(int falhasInfraestruturaConsecutivas) {
+        return new ResultadoPagina(0, 0, 0, 0, 0, 0, falhasInfraestruturaConsecutivas, false, false, false);
     }
 
     ResultadoPagina com(ResultadoRegistro registro) {
         return new ResultadoPagina(
                 recebidos + 1,
-                enviados + (registro == ResultadoRegistro.ENVIADO ? 1 : 0),
-                ignorados + (registro == ResultadoRegistro.IGNORADO ? 1 : 0),
-                pendentesFoto + (registro == ResultadoRegistro.PENDENTE_FOTO ? 1 : 0),
-                jaProcessados + (registro == ResultadoRegistro.JA_PROCESSADO ? 1 : 0),
-                erros + (registro == ResultadoRegistro.ERRO ? 1 : 0),
+                enviados + (registro.enviado() ? 1 : 0),
+                ignorados + (registro.ignorado() ? 1 : 0),
+                pendentesFoto + (registro.pendenteFoto() ? 1 : 0),
+                jaProcessados + (registro.jaProcessado() ? 1 : 0),
+                erros + (registro.erro() ? 1 : 0),
+                registro.falhaInfraestrutura() ? falhasInfraestruturaConsecutivas + 1 : 0,
                 interromperCiclo,
-                fimJanelaRetroativa
+                fimJanelaRetroativa,
+                circuitoAberto
         );
     }
 
@@ -35,8 +43,10 @@ record ResultadoPagina(
                 pendentesFoto,
                 jaProcessados,
                 erros,
+                falhasInfraestruturaConsecutivas,
                 true,
-                fimJanelaRetroativa
+                fimJanelaRetroativa,
+                circuitoAberto
         );
     }
 
@@ -48,7 +58,24 @@ record ResultadoPagina(
                 pendentesFoto,
                 jaProcessados,
                 erros,
+                falhasInfraestruturaConsecutivas,
                 interromperCiclo,
+                true,
+                circuitoAberto
+        );
+    }
+
+    ResultadoPagina comCircuitoAberto() {
+        return new ResultadoPagina(
+                recebidos,
+                enviados,
+                ignorados,
+                pendentesFoto,
+                jaProcessados,
+                erros,
+                falhasInfraestruturaConsecutivas,
+                interromperCiclo,
+                fimJanelaRetroativa,
                 true
         );
     }

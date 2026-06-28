@@ -122,7 +122,9 @@ public class OrquestradorEtlService {
             int errosTotal = resultadoPpg.erros() + resultadoVedacit.erros();
             boolean erroCritico = resultadoPpg.erroCritico() || resultadoVedacit.erroCritico();
             String resultadoFinal = erroCritico || errosTotal > 0 ? "CONCLUIDO_COM_ERROS" : "CONCLUIDO_SEM_ERROS";
-            int codigoSaida = erroCritico ? CODIGO_SAIDA_ERRO_CRITICO : CODIGO_SAIDA_SUCESSO;
+            int codigoSaida = erroCritico || errosTotal > 0
+                    ? CODIGO_SAIDA_ERRO_CRITICO
+                    : CODIGO_SAIDA_SUCESSO;
             String proximoPasso = execucao.retroativo()
                     ? "🏁 Carga retroativa concluída; aplicação será encerrada."
                     : cicloUnico

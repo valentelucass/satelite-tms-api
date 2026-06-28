@@ -17,8 +17,7 @@ import com.example.satelite.dto.rodogarcia.EslLoteResponseDTO;
 import com.example.satelite.dto.rodogarcia.EslOcorrenciaDTO;
 import com.example.satelite.models.ControleCursor;
 import com.example.satelite.repositories.ControleCursorRepository;
-
-import feign.FeignException;
+import com.example.satelite.services.etl.EslRequestPolicyService.EslRequestTransientException;
 
 @Service
 public class EtlFluxoDestinoService {
@@ -32,6 +31,7 @@ public class EtlFluxoDestinoService {
             DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss.SSSXXX");
     private static final String DESTINO_PPG = "PPG";
     private static final String DESTINO_VEDACIT = "VEDACIT";
+    private static final int LIMITE_PADRAO_FALHAS_INFRAESTRUTURA_CONSECUTIVAS = 10;
 
     private final RodogarciaClient rodogarciaClient;
     private final ControleCursorRepository controleCursorRepository;
@@ -49,6 +49,9 @@ public class EtlFluxoDestinoService {
 
     @Value("${app.ppg.nfe-whitelist:}")
     private String ppgNfeWhitelist;
+
+    @Value("${ETL_CIRCUIT_BREAKER_TRANSIENT_FAILURE_THRESHOLD:10}")
+    private int limiteFalhasInfraestruturaConsecutivasCircuitBreaker;
 
     public EtlFluxoDestinoService(
             RodogarciaClient rodogarciaClient,
@@ -86,6 +89,7 @@ public class EtlFluxoDestinoService {
             }
 
             int pagina = 1;
+            int falhasInfraestruturaConsecutivas = 0;
             AssinaturaPagina assinaturaPaginaAnterior = null;
             String sinceParam = obterSinceParam(request);
 
@@ -101,7 +105,7 @@ public class EtlFluxoDestinoService {
                         CODIGO_ENTREGA_REALIZADA
                 );
 
-                EslLoteResponseDTO lote = buscarOcorrenciasComRetry429(
+                EslLoteResponseDTO lote = buscarOcorrenciasEsl(
                         destino,
                         pagina,
                         headerAuth,
@@ -125,9 +129,11 @@ public class EtlFluxoDestinoService {
                         cursorParaPersistir,
                         lote,
                         request,
+                        falhasInfraestruturaConsecutivas,
                         processadorDestino
                 );
                 resultadoDestino = resultadoDestino.comPagina(resultado);
+                falhasInfraestruturaConsecutivas = resultado.falhasInfraestruturaConsecutivas();
 
                 log.info(
                         "📄 [DESTINO: {}] Página {} finalizada: lidas={}, enviadas={}, ignoradas={}, já_processadas={}, falhas={}.",
@@ -139,6 +145,20 @@ public class EtlFluxoDestinoService {
                         resultado.jaProcessados(),
                         resultado.erros()
                 );
+
+                if (resultado.circuitoAberto()) {
+                    String mensagem = "Circuit Breaker Aberto: "
+                            + resultado.falhasInfraestruturaConsecutivas()
+                            + " falhas de infraestrutura consecutivas em " + destino;
+                    log.error(
+                            "🛑 [DESTINO: {}] {}. Cursor não avançado; próximo ciclo retomará de {}.",
+                            destino,
+                            mensagem,
+                            cursorAtual
+                    );
+                    resultadoDestino = resultadoDestino.comErroCritico(mensagem);
+                    return resultadoDestino;
+                }
 
                 if (resultado.interromperCiclo()) {
                     resultadoDestino = resultadoDestino.encerrar("Modo E2E processou a primeira nota forcada");
@@ -230,6 +250,16 @@ public class EtlFluxoDestinoService {
             );
             resultadoDestino = resultadoDestino.encerrar("Limite de paginas por ciclo atingido");
             return resultadoDestino;
+        } catch (EslRequestTransientException e) {
+            log.warn(
+                    "⏸️ [DESTINO: {}] Ciclo suspenso por falha transitória da ESL. operacao={} status={} mensagem={}",
+                    destino,
+                    e.operacao(),
+                    e.status(),
+                    e.getMessage()
+            );
+            resultadoDestino = resultadoDestino.comErroCritico(e);
+            return resultadoDestino;
         } catch (Exception e) {
             log.error("💥 [DESTINO: {}] Erro crítico no ciclo ETL - {}", destino, e.getMessage());
             resultadoDestino = resultadoDestino.comErroCritico(e);
@@ -268,7 +298,7 @@ public class EtlFluxoDestinoService {
         }
     }
 
-    private EslLoteResponseDTO buscarOcorrenciasComRetry429(
+    private EslLoteResponseDTO buscarOcorrenciasEsl(
             String destino,
             int pagina,
             String headerAuth,
@@ -276,73 +306,22 @@ public class EtlFluxoDestinoService {
             String invoiceKeyParam,
             String sinceParam
     ) {
-        int tentativas429 = 0;
+        String operacao = "buscarOcorrencias destino=" + destino
+                + " pagina=" + pagina
+                + " cursor=" + cursorAtual
+                + " invoice_key=" + invoiceKeyParam
+                + " since=" + sinceParam;
 
-        while (true) {
-            eslRequestPolicyService.aguardarProximaRequisicao();
-
-            try {
-                return rodogarciaClient.buscarOcorrencias(
+        return eslRequestPolicyService.executar(
+                operacao,
+                () -> rodogarciaClient.buscarOcorrencias(
                         headerAuth,
                         cursorAtual,
                         invoiceKeyParam,
                         sinceParam,
                         CODIGO_ENTREGA_REALIZADA
-                );
-            } catch (FeignException.TooManyRequests e) {
-                tentativas429 = tratarTooManyRequestsPagina(
-                        destino,
-                        pagina,
-                        cursorAtual,
-                        invoiceKeyParam,
-                        sinceParam,
-                        tentativas429,
-                        e
-                );
-            } catch (FeignException e) {
-                if (!ehTooManyRequests(e)) {
-                    throw e;
-                }
-
-                tentativas429 = tratarTooManyRequestsPagina(
-                        destino,
-                        pagina,
-                        cursorAtual,
-                        invoiceKeyParam,
-                        sinceParam,
-                        tentativas429,
-                        e
-                );
-            }
-        }
-    }
-
-    private int tratarTooManyRequestsPagina(
-            String destino,
-            int pagina,
-            Long cursorAtual,
-            String invoiceKeyParam,
-            String sinceParam,
-            int tentativas429,
-            FeignException e
-    ) {
-        int proximaTentativa = tentativas429 + 1;
-        log.warn(
-                "⏸️ [DESTINO: {}] Página {} recebeu HTTP 429 da ESL na busca raiz. cursor={} invoice_key={} since={} retry_429={}. Pausando para repetir a mesma página. mensagem={}",
-                destino,
-                pagina,
-                cursorAtual,
-                invoiceKeyParam,
-                sinceParam,
-                proximaTentativa,
-                e.getMessage()
+                )
         );
-        eslRequestPolicyService.pausarAposTooManyRequests();
-        return proximaTentativa;
-    }
-
-    private boolean ehTooManyRequests(FeignException e) {
-        return e.status() == 429;
     }
 
     ResultadoPagina processarPagina(
@@ -351,9 +330,10 @@ public class EtlFluxoDestinoService {
             Long cursorNextId,
             EslLoteResponseDTO lote,
             ExecucaoEtlRequest request,
+            int falhasInfraestruturaConsecutivasInicial,
             ProcessadorDestino processadorDestino
     ) {
-        ResultadoPagina resultado = ResultadoPagina.vazio();
+        ResultadoPagina resultado = ResultadoPagina.vazio(falhasInfraestruturaConsecutivasInicial);
         int indice = 0;
 
         for (EslOcorrenciaDTO ocorrencia : lote.data()) {
@@ -377,6 +357,17 @@ public class EtlFluxoDestinoService {
             );
             resultado = resultado.com(registro);
 
+            if (resultado.falhasInfraestruturaConsecutivas() >= limiteCircuitBreaker()) {
+                log.error(
+                        "🛑 [DESTINO: {}] Circuit Breaker aberto após {} falha(s) de infraestrutura consecutiva(s). occurrence_id={} NF={}",
+                        destino,
+                        resultado.falhasInfraestruturaConsecutivas(),
+                        etlRegistroService.obterOccurrenceId(ocorrencia),
+                        etlRegistroService.obterChaveNfe(ocorrencia)
+                );
+                return resultado.comCircuitoAberto();
+            }
+
             if (etlRegistroService.modoTesteE2eImagemAtivo() && indice == 0) {
                 log.warn(
                         "🧪 [DESTINO: {}] Modo E2E de imagem ativo: primeira nota da página processada com status {}. Encerrando laço de teste.",
@@ -390,6 +381,15 @@ public class EtlFluxoDestinoService {
         }
 
         return resultado;
+    }
+
+    private int limiteCircuitBreaker() {
+        return Math.max(
+                1,
+                limiteFalhasInfraestruturaConsecutivasCircuitBreaker > 0
+                        ? limiteFalhasInfraestruturaConsecutivasCircuitBreaker
+                        : LIMITE_PADRAO_FALHAS_INFRAESTRUTURA_CONSECUTIVAS
+        );
     }
 
     String obterSinceParam(ExecucaoEtlRequest request) {

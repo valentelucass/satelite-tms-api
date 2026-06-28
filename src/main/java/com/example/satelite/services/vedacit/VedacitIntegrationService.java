@@ -14,6 +14,8 @@ import com.example.satelite.dto.rodogarcia.CteItemDTO;
 import com.example.satelite.dto.rodogarcia.CteResponseDTO;
 import com.example.satelite.dto.rodogarcia.EslOcorrenciaDTO;
 import com.example.satelite.services.ResultadoIntegracao;
+import com.example.satelite.services.etl.EslRequestPolicyService;
+import com.example.satelite.services.etl.EslRequestPolicyService.EslRequestTransientException;
 import com.example.satelite.utils.ImageDownloader;
 import com.example.satelite.vedacit.cte.CTe;
 import com.example.satelite.vedacit.cte.ICTe;
@@ -79,15 +81,24 @@ public class VedacitIntegrationService {
     @Value("${VEDACIT_NFE_WHITELIST_ENABLED:true}")
     private boolean whitelistEnabled;
 
+    @Value("${VEDACIT_SOAP_CONNECT_TIMEOUT_MS:15000}")
+    private int soapConnectTimeoutMs;
+
+    @Value("${VEDACIT_SOAP_READ_TIMEOUT_MS:45000}")
+    private int soapReadTimeoutMs;
+
     private final ImageDownloader imageDownloader;
     private final RodogarciaClient rodogarciaClient;
+    private final EslRequestPolicyService eslRequestPolicyService;
 
     public VedacitIntegrationService(
             ImageDownloader imageDownloader,
-            RodogarciaClient rodogarciaClient
+            RodogarciaClient rodogarciaClient,
+            EslRequestPolicyService eslRequestPolicyService
     ) {
         this.imageDownloader = imageDownloader;
         this.rodogarciaClient = rodogarciaClient;
+        this.eslRequestPolicyService = eslRequestPolicyService;
     }
 
     public ResultadoIntegracao processarOcorrencia(EslOcorrenciaDTO ocorrencia, ComprovanteEslDTO comprovante) {
@@ -145,6 +156,8 @@ public class VedacitIntegrationService {
                         ? ResultadoIntegracao.STATUS_SUCESSO
                         : ResultadoIntegracao.STATUS_NAO_APLICAVEL;
             }
+        } catch (EslRequestTransientException e) {
+            throw e;
         } catch (Exception e) {
             if (e instanceof InterruptedException) {
                 Thread.currentThread().interrupt();
@@ -174,6 +187,8 @@ public class VedacitIntegrationService {
             enviarCanhoto(canhoto, chaveNfe, cteKey);
             statusCanhoto = ResultadoIntegracao.STATUS_SUCESSO;
             return ResultadoIntegracao.vedacitConcluido(statusDados, statusCanhoto);
+        } catch (EslRequestTransientException e) {
+            throw e;
         } catch (Exception e) {
             if (e instanceof InterruptedException) {
                 Thread.currentThread().interrupt();
@@ -360,7 +375,10 @@ public class VedacitIntegrationService {
         String token = obterTokenCteXmlEsl();
 
         log.info("Baixando XML do CT-e na ESL usando a chave: {}", chaveCte);
-        CteResponseDTO response = rodogarciaClient.buscarXmlCte("Bearer " + token, chaveCte);
+        CteResponseDTO response = eslRequestPolicyService.executar(
+                "buscarXmlCte cte_key=" + chaveCte,
+                () -> rodogarciaClient.buscarXmlCte("Bearer " + token, chaveCte)
+        );
         String xmlString = extrairXmlCte(response);
         byte[] xmlCte = xmlString.getBytes(StandardCharsets.UTF_8);
 
@@ -489,11 +507,21 @@ public class VedacitIntegrationService {
                 BindingProvider.ENDPOINT_ADDRESS_PROPERTY,
                 endpoint
         );
+        configurarTimeoutsSoap(bindingProvider);
 
         Binding binding = bindingProvider.getBinding();
         List<Handler> handlerChain = new ArrayList<>(binding.getHandlerChain());
         handlerChain.add(new VedacitTokenHeaderHandler(vedacitToken));
         binding.setHandlerChain(handlerChain);
+    }
+
+    private void configurarTimeoutsSoap(BindingProvider bindingProvider) {
+        bindingProvider.getRequestContext().put("com.sun.xml.ws.connect.timeout", soapConnectTimeoutMs);
+        bindingProvider.getRequestContext().put("com.sun.xml.ws.request.timeout", soapReadTimeoutMs);
+        bindingProvider.getRequestContext().put("javax.xml.ws.client.connectionTimeout", String.valueOf(soapConnectTimeoutMs));
+        bindingProvider.getRequestContext().put("javax.xml.ws.client.receiveTimeout", String.valueOf(soapReadTimeoutMs));
+        bindingProvider.getRequestContext().put("jakarta.xml.ws.client.connectionTimeout", String.valueOf(soapConnectTimeoutMs));
+        bindingProvider.getRequestContext().put("jakarta.xml.ws.client.receiveTimeout", String.valueOf(soapReadTimeoutMs));
     }
 
     private void logarTokenAutenticacaoVedacit() {

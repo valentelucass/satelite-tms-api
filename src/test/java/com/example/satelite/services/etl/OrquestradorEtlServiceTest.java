@@ -22,6 +22,8 @@ import java.time.OffsetDateTime;
 import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
+import java.util.function.Supplier;
+import java.util.stream.LongStream;
 
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -77,26 +79,25 @@ class OrquestradorEtlServiceTest {
 
         verify(dependencias.rodogarciaClient()).buscarOcorrencias("Bearer token-ppg", 123L, null, null, 1);
         verify(dependencias.rodogarciaClient()).buscarOcorrencias("Bearer token-vedacit", 123L, null, null, 1);
-        verify(dependencias.eslRequestPolicyService(), times(2)).aguardarProximaRequisicao();
+        verify(dependencias.eslRequestPolicyService(), times(2)).executar(anyString(), any());
     }
 
     @Test
-    void devePausarERetentarPaginaQuandoEslRetorna429NaBuscaRaiz() {
+    void deveSuspenderCicloQuandoEslRetorna429NaBuscaRaiz() {
         Dependencias dependencias = criarDependencias();
         ReflectionTestUtils.setField(dependencias.service(), "vedacitEnabled", false);
 
         when(dependencias.controleCursorRepository().findBySistemaDestino(anyString())).thenReturn(Optional.empty());
         when(dependencias.rodogarciaClient().buscarOcorrencias(eq("Bearer token-ppg"), isNull(), isNull(), isNull(), eq(1)))
-                .thenThrow(criarErroTooManyRequestsEsl())
-                .thenReturn(loteVazio());
+                .thenThrow(criarErroTooManyRequestsEsl());
 
         OrquestradorEtlService.ResultadoCiclo resultado = dependencias.service().executarFluxosComResultado();
 
-        assertFalse(resultado.erroCritico());
-        verify(dependencias.rodogarciaClient(), times(2))
+        assertTrue(resultado.erroCritico());
+        assertEquals(OrquestradorEtlService.CODIGO_SAIDA_ERRO_CRITICO, resultado.codigoSaida());
+        verify(dependencias.rodogarciaClient(), times(1))
                 .buscarOcorrencias("Bearer token-ppg", null, null, null, 1);
-        verify(dependencias.eslRequestPolicyService(), times(2)).aguardarProximaRequisicao();
-        verify(dependencias.eslRequestPolicyService()).pausarAposTooManyRequests();
+        verify(dependencias.eslRequestPolicyService(), times(1)).executar(anyString(), any());
     }
 
     @Test
@@ -352,6 +353,33 @@ class OrquestradorEtlServiceTest {
     }
 
     @Test
+    void deveAbrirCircuitBreakerAposDezFalhasInfraestruturaConsecutivasSemAvancarCursor() {
+        Dependencias dependencias = criarDependencias();
+        ReflectionTestUtils.setField(dependencias.service(), "vedacitEnabled", false);
+
+        List<EslOcorrenciaDTO> ocorrencias = LongStream.rangeClosed(1, 11)
+                .mapToObj(id -> criarOcorrencia(id, 1, "cte-" + id))
+                .toList();
+
+        when(dependencias.controleCursorRepository().findBySistemaDestino(anyString())).thenReturn(Optional.empty());
+        when(dependencias.controleCursorRepository().save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        when(dependencias.logIntegracaoRepository().save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        when(dependencias.rodogarciaClient().buscarOcorrencias(eq("Bearer token-ppg"), isNull(), isNull(), isNull(), eq(1)))
+                .thenReturn(new EslLoteResponseDTO(ocorrencias, new EslPagingDTO(99L, ocorrencias.size())));
+        when(dependencias.rodogarciaClient().buscarComprovante(anyString(), anyString()))
+                .thenReturn(criarComprovanteComImagem());
+        when(dependencias.ppgIntegrationService().processarOcorrencia(any(), any()))
+                .thenReturn(ResultadoIntegracao.erroDados("java.net.SocketTimeoutException: Read timed out"));
+
+        OrquestradorEtlService.ResultadoCiclo resultado = dependencias.service().executarFluxosComResultado();
+
+        assertTrue(resultado.erroCritico());
+        assertTrue(resultado.resultadoPpg().mensagemEncerramento().contains("Circuit Breaker Aberto"));
+        verify(dependencias.ppgIntegrationService(), times(30)).processarOcorrencia(any(), any());
+        verify(dependencias.controleCursorRepository(), times(0)).save(any());
+    }
+
+    @Test
     void retroativoDeveAvancarEmMemoriaQuandoPaginaTemErroRegistrado() {
         Dependencias dependencias = criarDependencias();
         ReflectionTestUtils.setField(dependencias.service(), "vedacitEnabled", false);
@@ -393,7 +421,7 @@ class OrquestradorEtlServiceTest {
         );
 
         assertFalse(resultado.erroCritico());
-        assertEquals(OrquestradorEtlService.CODIGO_SAIDA_SUCESSO, resultado.codigoSaida());
+        assertEquals(OrquestradorEtlService.CODIGO_SAIDA_ERRO_CRITICO, resultado.codigoSaida());
         verify(dependencias.rodogarciaClient()).buscarOcorrencias(
                 "Bearer token-ppg",
                 null,
@@ -835,6 +863,22 @@ class OrquestradorEtlServiceTest {
         LogIntegracaoRepository logIntegracaoRepository = mock(LogIntegracaoRepository.class);
         ControleCursorRepository controleCursorRepository = mock(ControleCursorRepository.class);
         EslRequestPolicyService eslRequestPolicyService = mock(EslRequestPolicyService.class);
+        when(eslRequestPolicyService.executar(anyString(), any())).thenAnswer(invocation -> {
+            Supplier<?> chamada = invocation.getArgument(1);
+            try {
+                return chamada.get();
+            } catch (FeignException e) {
+                if (e.status() == 429) {
+                    throw new EslRequestPolicyService.EslRequestTransientException(
+                            invocation.getArgument(0),
+                            e.status(),
+                            e
+                    );
+                }
+
+                throw e;
+            }
+        });
         EtlResilienciaService etlResilienciaService = new EtlResilienciaService();
         EtlEstadoIntegracaoService etlEstadoIntegracaoService = new EtlEstadoIntegracaoService(logIntegracaoRepository);
         EtlRegistroService etlRegistroService = new EtlRegistroService(

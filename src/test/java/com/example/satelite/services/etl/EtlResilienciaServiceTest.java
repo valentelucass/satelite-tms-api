@@ -1,6 +1,7 @@
 package com.example.satelite.services.etl;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -62,6 +63,34 @@ class EtlResilienciaServiceTest {
 
         assertEquals(ResultadoRegistro.JA_PROCESSADO, resultado);
         assertEquals(3, chamadas.get());
+    }
+
+    @Test
+    void deveMarcarFalhaInfraestruturaNaTerceiraFalhaHttp502() {
+        LogIntegracaoModel logIntegracao = new LogIntegracaoModel();
+        AtomicInteger chamadas = new AtomicInteger();
+
+        ResultadoRegistro resultado = service.processarOcorrenciaComRetentativas(
+                "VEDACIT",
+                "nf-123",
+                logIntegracao,
+                () -> {
+                    int tentativa = chamadas.incrementAndGet();
+                    marcarErroDestino(logIntegracao, "HTTP 502 Bad Gateway", tentativa);
+                    return ResultadoRegistro.ERRO;
+                }
+        );
+
+        assertEquals(ResultadoRegistro.ERRO_INFRAESTRUTURA, resultado);
+        assertEquals(3, chamadas.get());
+    }
+
+    @Test
+    void naoDeveClassificarHttp429ComoFalhaInfraestrutura() {
+        LogIntegracaoModel logIntegracao = new LogIntegracaoModel();
+        marcarErroDestino(logIntegracao, "HTTP 429 Too Many Requests", 1);
+
+        assertFalse(service.falhaInfraestruturaRegistrada(logIntegracao));
     }
 
     @Test

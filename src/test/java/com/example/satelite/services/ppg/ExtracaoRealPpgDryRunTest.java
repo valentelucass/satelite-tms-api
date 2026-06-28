@@ -14,6 +14,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -35,7 +36,7 @@ import com.example.satelite.services.etl.ExecucaoEtlRequest.ModoExecucao;
 import com.example.satelite.services.etl.OrquestradorEtlService;
 import tools.jackson.databind.ObjectMapper;
 
-//@Disabled("Teste de laboratório Dry Run")
+@Disabled("Teste manual de integracao - acessa rede real e disco local (S3/C:\\temp). Rodar apenas sob demanda.")
 @SpringBootTest(properties = {
         "spring.autoconfigure.exclude="
                 + "org.springframework.boot.jdbc.autoconfigure.DataSourceAutoConfiguration,"

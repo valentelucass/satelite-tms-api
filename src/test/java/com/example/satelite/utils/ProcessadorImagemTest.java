@@ -1,6 +1,7 @@
 package com.example.satelite.utils;
 
 import org.junit.jupiter.api.Assumptions;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 
 import java.io.IOException;
@@ -8,6 +9,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Base64;
 
+@Disabled("Teste manual de laboratorio visual - depende de imagem local em C:\\temp e grava arquivo de saida.")
 public class ProcessadorImagemTest {
 
     private static final Path ENTRADA_PADRAO = Path.of("C:\\temp\\canhoto_original.jpg");

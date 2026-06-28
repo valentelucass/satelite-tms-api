@@ -7,12 +7,19 @@ import java.time.temporal.ChronoUnit;
 import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
+import java.util.function.Supplier;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
+import feign.FeignException;
+
 @Service
 public class EslRequestPolicyService {
+
+    private static final Logger log = LoggerFactory.getLogger(EslRequestPolicyService.class);
 
     private final Object requisicaoLock = new Object();
     private final ConcurrentMap<String, Instant> proximaExtracaoPorPeriodo = new ConcurrentHashMap<>();
@@ -37,6 +44,24 @@ public class EslRequestPolicyService {
         this.limiteDiasPeriodoMedio = Math.max(this.limiteDiasPeriodoLivre, limiteDiasPeriodoMedio);
         this.cooldownPeriodoMedio = Duration.ofMillis(Math.max(0, cooldownPeriodoMedioMs));
         this.cooldownPeriodoLongo = Duration.ofMillis(Math.max(0, cooldownPeriodoLongoMs));
+    }
+
+    public <T> T executar(String operacao, Supplier<T> chamada) {
+        Objects.requireNonNull(chamada, "Chamada ESL deve ser informada");
+
+        aguardarProximaRequisicao();
+
+        try {
+            return chamada.get();
+        } catch (FeignException.TooManyRequests e) {
+            throw tratarTooManyRequests(operacao, e);
+        } catch (FeignException e) {
+            if (e.status() == 429) {
+                throw tratarTooManyRequests(operacao, e);
+            }
+
+            throw e;
+        }
     }
 
     public void aguardarProximaRequisicao() {
@@ -90,6 +115,25 @@ public class EslRequestPolicyService {
         proximaExtracaoPorPeriodo.put(chave, Instant.now().plus(cooldown));
     }
 
+    private EslRequestTransientException tratarTooManyRequests(String operacao, FeignException e) {
+        String operacaoNormalizada = normalizarOperacao(operacao);
+        log.warn(
+                "ESL retornou HTTP 429 em {}. Aplicando backoff antes de suspender a chamada. mensagem={}",
+                operacaoNormalizada,
+                e.getMessage()
+        );
+        pausarAposTooManyRequests();
+        return new EslRequestTransientException(operacaoNormalizada, e.status(), e);
+    }
+
+    private String normalizarOperacao(String operacao) {
+        if (operacao == null || operacao.isBlank()) {
+            return "chamada ESL";
+        }
+
+        return operacao.trim();
+    }
+
     public Duration calcularCooldownPeriodo(LocalDate dataInicial, LocalDate dataFinal) {
         validarPeriodo(dataInicial, dataFinal);
 
@@ -127,6 +171,26 @@ public class EslRequestPolicyService {
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             throw new IllegalStateException("Espera de limite da ESL interrompida", e);
+        }
+    }
+
+    public static class EslRequestTransientException extends RuntimeException {
+
+        private final String operacao;
+        private final int status;
+
+        public EslRequestTransientException(String operacao, int status, Throwable cause) {
+            super("Falha transitoria da ESL em " + operacao + " (HTTP " + status + ")", cause);
+            this.operacao = operacao;
+            this.status = status;
+        }
+
+        public String operacao() {
+            return operacao;
+        }
+
+        public int status() {
+            return status;
         }
     }
 }

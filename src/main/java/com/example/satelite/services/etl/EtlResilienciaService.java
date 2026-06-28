@@ -18,6 +18,7 @@ public class EtlResilienciaService {
 
     private static final String STATUS_ERRO_DESTINO = ResultadoIntegracao.STATUS_ERRO_DESTINO;
     private static final Set<Integer> CODIGOS_HTTP_TRANSITORIOS = Set.of(429, 502, 503, 504);
+    private static final Set<Integer> CODIGOS_HTTP_INFRAESTRUTURA = Set.of(502, 503, 504);
 
     @Value("${INTEGRATION_MAX_RETRY_ATTEMPTS:3}")
     private int maxTentativasReprocessamento = 3;
@@ -34,13 +35,17 @@ public class EtlResilienciaService {
         while (true) {
             ResultadoRegistro resultado = processamento.processar();
 
-            if (resultado != ResultadoRegistro.ERRO || !erroTransitorioRegistrado(logIntegracao)) {
+            if (!resultado.erro() || !erroTransitorioRegistrado(logIntegracao)) {
                 return resultado;
             }
 
             int tentativasConsumidas = maiorTentativas(logIntegracao);
             if (tentativasConsumidas >= limiteMaximoTentativas()) {
-                return resultadoErroRespeitandoLimiteTentativas(destino, chaveNfe, logIntegracao);
+                if (resultado != ResultadoRegistro.ERRO) {
+                    return resultado;
+                }
+
+                return resultadoErroAposTentativa(destino, chaveNfe, logIntegracao);
             }
 
             log.warn(
@@ -65,7 +70,24 @@ public class EtlResilienciaService {
             return ResultadoRegistro.JA_PROCESSADO;
         }
 
-        return ResultadoRegistro.ERRO;
+        return resultadoErroAposTentativa(destino, chaveNfe, logIntegracao);
+    }
+
+    public ResultadoRegistro resultadoErroAposTentativa(
+            String destino,
+            String chaveNfe,
+            LogIntegracaoModel logIntegracao
+    ) {
+        if (limiteTentativasAtingido(logIntegracao)) {
+            logarLimiteTentativasAtingido(destino, chaveNfe, logIntegracao);
+            if (!falhaInfraestruturaRegistrada(logIntegracao)) {
+                return ResultadoRegistro.JA_PROCESSADO;
+            }
+        }
+
+        return falhaInfraestruturaRegistrada(logIntegracao)
+                ? ResultadoRegistro.ERRO_INFRAESTRUTURA
+                : ResultadoRegistro.ERRO;
     }
 
     public boolean limiteTentativasAtingido(LogIntegracaoModel logIntegracao) {
@@ -102,17 +124,30 @@ public class EtlResilienciaService {
     }
 
     private boolean erroTransitorioRegistrado(LogIntegracaoModel logIntegracao) {
-        String textoErro = montarTextoErro(logIntegracao);
-        if (textoErro.isBlank()) {
-            return false;
-        }
-
-        String normalizado = textoErro.toLowerCase(Locale.ROOT);
-        return CODIGOS_HTTP_TRANSITORIOS.stream().anyMatch(codigo -> contemCodigoHttp(normalizado, codigo))
+        String normalizado = normalizarTextoErro(logIntegracao);
+        return !normalizado.isBlank()
+                && (CODIGOS_HTTP_TRANSITORIOS.stream().anyMatch(codigo -> contemCodigoHttp(normalizado, codigo))
                 || normalizado.contains("too many requests")
-                || normalizado.contains("bad gateway")
-                || normalizado.contains("service unavailable")
-                || normalizado.contains("gateway timeout");
+                || contemMarcadorInfraestrutura(normalizado));
+    }
+
+    public boolean falhaInfraestruturaRegistrada(LogIntegracaoModel logIntegracao) {
+        String normalizado = normalizarTextoErro(logIntegracao);
+        return !normalizado.isBlank() && contemMarcadorInfraestrutura(normalizado);
+    }
+
+    private boolean contemMarcadorInfraestrutura(String textoErroNormalizado) {
+        return CODIGOS_HTTP_INFRAESTRUTURA.stream().anyMatch(codigo -> contemCodigoHttp(textoErroNormalizado, codigo))
+                || textoErroNormalizado.contains("bad gateway")
+                || textoErroNormalizado.contains("service unavailable")
+                || textoErroNormalizado.contains("gateway timeout")
+                || textoErroNormalizado.contains("sockettimeoutexception")
+                || textoErroNormalizado.contains("timed out")
+                || textoErroNormalizado.contains("timeout");
+    }
+
+    private String normalizarTextoErro(LogIntegracaoModel logIntegracao) {
+        return montarTextoErro(logIntegracao).toLowerCase(Locale.ROOT);
     }
 
     private String montarTextoErro(LogIntegracaoModel logIntegracao) {
