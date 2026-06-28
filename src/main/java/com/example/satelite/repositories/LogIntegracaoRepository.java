@@ -8,7 +8,9 @@ import java.util.Optional;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 
 import com.example.satelite.models.LogIntegracaoModel;
 
@@ -23,6 +25,33 @@ public interface LogIntegracaoRepository extends JpaRepository<LogIntegracaoMode
             String sistemaDestino,
             String statusCanhoto
     );
+
+    @Query("""
+            SELECT l
+            FROM LogIntegracaoModel l
+            WHERE l.sistemaDestino = :destino
+              AND l.status = 'ERRO_DESTINO'
+              AND (l.tentativasDados >= 3 OR l.tentativasCanhoto >= 3)
+            ORDER BY l.dataProcessamento ASC, l.id ASC
+            """)
+    List<LogIntegracaoModel> findQuarentenaByDestino(@Param("destino") String destino);
+
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query("""
+            UPDATE LogIntegracaoModel l
+            SET l.status = 'PENDENTE',
+                l.statusDados = 'PENDENTE',
+                l.statusCanhoto = 'PENDENTE',
+                l.tentativasDados = 0,
+                l.tentativasCanhoto = 0,
+                l.erro = null,
+                l.mensagemErroDados = null,
+                l.mensagemErroCanhoto = null
+            WHERE l.sistemaDestino = :destino
+              AND l.status = 'ERRO_DESTINO'
+              AND (l.tentativasDados >= 3 OR l.tentativasCanhoto >= 3)
+            """)
+    int resetarQuarentenaByDestino(@Param("destino") String destino);
 
     @Query(value = """
             SELECT

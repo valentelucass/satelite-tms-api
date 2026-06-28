@@ -1,12 +1,14 @@
 package com.example.satelite.services.etl;
 
 import java.time.LocalDateTime;
+import java.util.List;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
+import com.example.satelite.models.LogIntegracaoModel;
 import com.example.satelite.services.ppg.PpgIntegrationService;
 import com.example.satelite.services.vedacit.VedacitIntegrationService;
 
@@ -26,6 +28,7 @@ public class OrquestradorEtlService {
     private final VedacitIntegrationService vedacitIntegrationService;
     private final EtlEstadoIntegracaoService etlEstadoIntegracaoService;
     private final EtlFluxoDestinoService etlFluxoDestinoService;
+    private final QuarentenaService quarentenaService;
 
     @Value("${RODOGARCIA_TOKEN_PPG}")
     private String tokenPpgEsl;
@@ -49,12 +52,14 @@ public class OrquestradorEtlService {
             PpgIntegrationService ppgIntegrationService,
             VedacitIntegrationService vedacitIntegrationService,
             EtlEstadoIntegracaoService etlEstadoIntegracaoService,
-            EtlFluxoDestinoService etlFluxoDestinoService
+            EtlFluxoDestinoService etlFluxoDestinoService,
+            QuarentenaService quarentenaService
     ) {
         this.ppgIntegrationService = ppgIntegrationService;
         this.vedacitIntegrationService = vedacitIntegrationService;
         this.etlEstadoIntegracaoService = etlEstadoIntegracaoService;
         this.etlFluxoDestinoService = etlFluxoDestinoService;
+        this.quarentenaService = quarentenaService;
     }
 
     public void executarFluxos() {
@@ -186,6 +191,8 @@ public class OrquestradorEtlService {
                     proximoPasso
             );
 
+            logarRelatorioQuarentena();
+
             resultadoCiclo = new ResultadoCiclo(
                     resultadoPpg,
                     resultadoVedacit,
@@ -198,6 +205,88 @@ public class OrquestradorEtlService {
         }
 
         return resultadoCiclo;
+    }
+
+    private void logarRelatorioQuarentena() {
+        try {
+            List<LogIntegracaoModel> quarentenaPpg = buscarQuarentena(DESTINO_PPG);
+            List<LogIntegracaoModel> quarentenaVedacit = buscarQuarentena(DESTINO_VEDACIT);
+            if (quarentenaPpg.isEmpty() && quarentenaVedacit.isEmpty()) {
+                return;
+            }
+
+            String quebraLinha = System.lineSeparator();
+            StringBuilder relatorio = new StringBuilder()
+                    .append(quebraLinha)
+                    .append(LINHA_BANNER)
+                    .append(quebraLinha)
+                    .append("📋 RELATÓRIO DE QUARENTENA - AÇÃO MANUAL REQUERIDA")
+                    .append(quebraLinha)
+                    .append(LINHA_BANNER)
+                    .append(quebraLinha);
+
+            adicionarItensQuarentena(relatorio, DESTINO_PPG, quarentenaPpg);
+            adicionarItensQuarentena(relatorio, DESTINO_VEDACIT, quarentenaVedacit);
+            relatorio.append(LINHA_BANNER);
+
+            log.warn("{}", relatorio);
+        } catch (Exception e) {
+            log.warn("⚠️ Não foi possível emitir o relatório de quarentena: {}", e.getMessage());
+        }
+    }
+
+    private List<LogIntegracaoModel> buscarQuarentena(String destino) {
+        List<LogIntegracaoModel> registros = quarentenaService.findQuarentenaByDestino(destino);
+        return registros != null ? registros : List.of();
+    }
+
+    private void adicionarItensQuarentena(
+            StringBuilder relatorio,
+            String destino,
+            List<LogIntegracaoModel> registros
+    ) {
+        if (registros.isEmpty()) {
+            return;
+        }
+
+        relatorio.append("Destino: ").append(destino).append(System.lineSeparator());
+        for (LogIntegracaoModel registro : registros) {
+            relatorio
+                    .append("NF: ")
+                    .append(valorLog(registro.getChaveNfe()))
+                    .append(" | Tentativas: ")
+                    .append(maiorTentativas(registro))
+                    .append(" | Erro: ")
+                    .append(valorLog(mensagemErro(registro)))
+                    .append(System.lineSeparator());
+        }
+    }
+
+    private int maiorTentativas(LogIntegracaoModel registro) {
+        return Math.max(
+                valorTentativas(registro.getTentativasDados()),
+                valorTentativas(registro.getTentativasCanhoto())
+        );
+    }
+
+    private int valorTentativas(Integer tentativas) {
+        return tentativas != null ? tentativas : 0;
+    }
+
+    private String mensagemErro(LogIntegracaoModel registro) {
+        if (registro.getErro() != null && !registro.getErro().isBlank()) {
+            return registro.getErro();
+        }
+
+        if (registro.getMensagemErroDados() != null && !registro.getMensagemErroDados().isBlank()) {
+            return registro.getMensagemErroDados();
+        }
+
+        return registro.getMensagemErroCanhoto();
+    }
+
+    private String valorLog(String valor) {
+        return valor != null && !valor.isBlank() ? valor : "indisponivel";
     }
 
     private void logarBannerInicio(LocalDateTime inicioCiclo, ExecucaoEtlRequest request) {

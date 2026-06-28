@@ -7,10 +7,15 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import java.awt.Color;
+import java.awt.Graphics2D;
+import java.awt.image.BufferedImage;
+import java.io.ByteArrayOutputStream;
 import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.function.Supplier;
 
+import javax.imageio.ImageIO;
 import javax.xml.namespace.QName;
 
 import jakarta.xml.soap.SOAPFactory;
@@ -132,7 +137,7 @@ class VedacitIntegrationServiceTest {
         when(imageDownloader.baixarImagemDaUrl(
                 "https://assinada.exemplo/canhoto.jpg",
                 "35260612345678000123570010000012341000012345"
-        )).thenReturn(new byte[] { 1, 2, 3 });
+        )).thenReturn(criarImagemJpegTeste());
         when(portaNFe.enviarDigitalizacaoCanhoto(any(Canhoto.class)))
                 .thenThrow(criarErroSoap("Canhoto duplicado"));
 
@@ -196,5 +201,20 @@ class VedacitIntegrationServiceTest {
                 mensagem,
                 new QName("http://schemas.xmlsoap.org/soap/envelope/", "Client")
         ));
+    }
+
+    private byte[] criarImagemJpegTeste() throws Exception {
+        BufferedImage imagem = new BufferedImage(1200, 800, BufferedImage.TYPE_INT_RGB);
+        Graphics2D g2d = imagem.createGraphics();
+
+        g2d.setColor(Color.WHITE);
+        g2d.fillRect(0, 0, 1200, 800);
+        g2d.setColor(Color.BLACK);
+        g2d.fillRect(50, 50, 1100, 700);
+        g2d.dispose();
+
+        ByteArrayOutputStream baos = new ByteArrayOutputStream();
+        ImageIO.write(imagem, "jpg", baos);
+        return baos.toByteArray();
     }
 }

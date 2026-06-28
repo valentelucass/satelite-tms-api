@@ -201,6 +201,16 @@ public class EtlFluxoDestinoService {
                     return resultadoDestino;
                 }
 
+                if (cursorRepetido(cursorAtual, cursorParaPersistir)) {
+                    log.info(
+                            "🏁 [DESTINO: {}] Fim de fila detectado: a origem não retornou um novo cursor (cursor repetido {}). Encerrando a paginação com sucesso.",
+                            destino,
+                            cursorParaPersistir
+                    );
+                    resultadoDestino = resultadoDestino.encerrar("Fim de fila: cursor repetido pela origem");
+                    return resultadoDestino;
+                }
+
                 ResultadoLoopPaginacao loopPaginacao = diagnosticarLoopPaginacao(
                         destino,
                         pagina,
@@ -522,6 +532,10 @@ public class EtlFluxoDestinoService {
 
     Long obterCursorRetornadoPelaEsl(EslLoteResponseDTO lote) {
         return lote.paging() != null ? lote.paging().nextId() : null;
+    }
+
+    boolean cursorRepetido(Long cursorAtual, Long cursorParaPersistir) {
+        return cursorAtual != null && cursorAtual.equals(cursorParaPersistir);
     }
 
     boolean paginaSemTrabalhoUtil(ResultadoPagina resultado) {

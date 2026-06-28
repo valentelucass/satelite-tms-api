@@ -740,7 +740,7 @@ class OrquestradorEtlServiceTest {
     }
 
     @Test
-    void deveEncerrarComErroCriticoQuandoApiEslRetornaMesmoNextIdDaRequisicao(CapturedOutput output) {
+    void deveEncerrarComSucessoQuandoApiEslRetornaMesmoNextIdDaRequisicao(CapturedOutput output) {
         Dependencias dependencias = criarDependencias();
         ReflectionTestUtils.setField(dependencias.service(), "maxPaginasPorCiclo", 10);
         ReflectionTestUtils.setField(dependencias.service(), "vedacitEnabled", false);
@@ -764,11 +764,12 @@ class OrquestradorEtlServiceTest {
 
         OrquestradorEtlService.ResultadoCiclo resultado = dependencias.service().executarFluxosComResultado();
 
-        assertTrue(resultado.erroCritico());
-        assertEquals(OrquestradorEtlService.CODIGO_SAIDA_ERRO_CRITICO, resultado.codigoSaida());
-        assertTrue(output.getOut().contains("API da ESL travou"));
-        assertTrue(output.getOut().contains("Loop crítico de paginação ESL"));
-        assertTrue(output.getOut().contains("next_id retornado pela API (99) é igual ao next_id requisitado"));
+        assertFalse(resultado.erroCritico());
+        assertEquals(OrquestradorEtlService.CODIGO_SAIDA_SUCESSO, resultado.codigoSaida());
+        assertTrue(output.getOut().contains("Fim de fila detectado"));
+        assertTrue(output.getOut().contains("cursor repetido 99"));
+        assertFalse(output.getOut().contains("API da ESL travou"));
+        assertFalse(output.getOut().contains("Loop crítico de paginação ESL"));
         verify(dependencias.rodogarciaClient()).buscarOcorrencias("Bearer token-ppg", null, null, null, 1);
         verify(dependencias.rodogarciaClient()).buscarOcorrencias("Bearer token-ppg", 99L, null, null, 1);
         verify(dependencias.controleCursorRepository(), times(1)).save(any());
@@ -813,8 +814,8 @@ class OrquestradorEtlServiceTest {
 
         assertFalse(resultado.erroCritico());
         assertEquals(OrquestradorEtlService.CODIGO_SAIDA_SUCESSO, resultado.codigoSaida());
-        assertTrue(output.getOut().contains("Fim da fila"));
-        assertTrue(output.getOut().contains("encerrando sem erro crítico"));
+        assertTrue(output.getOut().contains("Fim de fila detectado"));
+        assertTrue(output.getOut().contains("cursor repetido 99"));
         verify(dependencias.controleCursorRepository(), times(0)).save(any());
         verify(dependencias.rodogarciaClient(), times(0)).buscarComprovante(anyString(), anyString());
         verify(dependencias.vedacitIntegrationService(), times(0))
@@ -881,6 +882,7 @@ class OrquestradorEtlServiceTest {
         });
         EtlResilienciaService etlResilienciaService = new EtlResilienciaService();
         EtlEstadoIntegracaoService etlEstadoIntegracaoService = new EtlEstadoIntegracaoService(logIntegracaoRepository);
+        QuarentenaService quarentenaService = new QuarentenaService(logIntegracaoRepository);
         EtlRegistroService etlRegistroService = new EtlRegistroService(
                 rodogarciaClient,
                 eslRequestPolicyService,
@@ -910,12 +912,14 @@ class OrquestradorEtlServiceTest {
                 anyString()
         ))
                 .thenReturn(List.of());
+        when(logIntegracaoRepository.findQuarentenaByDestino(anyString())).thenReturn(List.of());
 
         OrquestradorEtlService service = new OrquestradorEtlService(
                 ppgIntegrationService,
                 vedacitIntegrationService,
                 etlEstadoIntegracaoService,
-                etlFluxoDestinoService
+                etlFluxoDestinoService,
+                quarentenaService
         );
         ReflectionTestUtils.setField(service, "tokenPpgEsl", "token-ppg");
         ReflectionTestUtils.setField(service, "tokenVedacitEsl", "token-vedacit");

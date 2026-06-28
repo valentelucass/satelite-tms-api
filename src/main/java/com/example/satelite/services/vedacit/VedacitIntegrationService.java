@@ -17,6 +17,7 @@ import com.example.satelite.services.ResultadoIntegracao;
 import com.example.satelite.services.etl.EslRequestPolicyService;
 import com.example.satelite.services.etl.EslRequestPolicyService.EslRequestTransientException;
 import com.example.satelite.utils.ImageDownloader;
+import com.example.satelite.utils.ImageUtils;
 import com.example.satelite.vedacit.cte.CTe;
 import com.example.satelite.vedacit.cte.ICTe;
 import com.example.satelite.vedacit.cte.sgt.RetornoOfstring;
@@ -317,10 +318,13 @@ public class VedacitIntegrationService {
         String cteKey = ocorrencia.freight().cteKey();
         String urlImagem = obterUrlImagem(comprovante);
         log.info("⬇️ [VEDACIT] NF {}: Baixando imagem do canhoto... CTe={}", chaveNfe, cteKey);
-        byte[] imagemBytes = imageDownloader.baixarImagemDaUrl(urlImagem, cteKey);
-        log.info("🖼️ [VEDACIT] NF {}: Imagem baixada com sucesso ({} bytes).", chaveNfe, imagemBytes.length);
+        byte[] imagemOriginal = imageDownloader.baixarImagemDaUrl(urlImagem, cteKey);
+        log.info("🖼️ [VEDACIT] NF {}: Imagem baixada com sucesso ({} bytes).", chaveNfe, imagemOriginal.length);
 
-        String imagemBase64Bruta = Base64.getEncoder().encodeToString(imagemBytes);
+        byte[] imagemComprimida = ImageUtils.comprimirImagemParaVedacit(imagemOriginal);
+        log.info("🖼️ [VEDACIT] NF {}: Imagem comprimida para {} bytes antes do Base64.", chaveNfe, imagemComprimida.length);
+
+        String imagemBase64Bruta = Base64.getEncoder().encodeToString(imagemComprimida);
         log.info("🛠️ [VEDACIT] NF {}: Imagem preparada para digitalização SOAP. tamanho_base64={}", chaveNfe, imagemBase64Bruta.length());
 
         com.example.satelite.vedacit.nfe.ObjectFactory factory = new com.example.satelite.vedacit.nfe.ObjectFactory();
