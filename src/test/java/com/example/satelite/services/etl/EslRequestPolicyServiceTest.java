@@ -97,7 +97,7 @@ class EslRequestPolicyServiceTest {
         EslRequestPolicyService.EslRequestTransientException erro = assertThrows(
                 EslRequestPolicyService.EslRequestTransientException.class,
                 () -> service.executar("buscarXmlCte", () -> {
-                    throw criarErroTooManyRequestsEsl();
+                    throw criarErroEsl(429, "Too Many Requests", "rate limit");
                 })
         );
 
@@ -105,7 +105,21 @@ class EslRequestPolicyServiceTest {
         assertEquals(429, erro.status());
     }
 
-    private FeignException criarErroTooManyRequestsEsl() {
+    @Test
+    void deveConverterHttp500HtmlEmExcecaoTransitoriaSemExporHtmlNaMensagem() {
+        EslRequestPolicyService.EslRequestTransientException erro = assertThrows(
+                EslRequestPolicyService.EslRequestTransientException.class,
+                () -> service.executar("buscarOcorrencias", () -> {
+                    throw criarErroEsl(500, "Internal Server Error", "<!doctype html><html>erro</html>");
+                })
+        );
+
+        assertEquals("buscarOcorrencias", erro.operacao());
+        assertEquals(500, erro.status());
+        assertFalse(erro.getMessage().contains("<!doctype html>"));
+    }
+
+    private FeignException criarErroEsl(int status, String reason, String body) {
         Request request = Request.create(
                 Request.HttpMethod.GET,
                 "https://rodogarcia.eslcloud.com.br/api/customer/invoice_occurrences",
@@ -115,10 +129,10 @@ class EslRequestPolicyServiceTest {
                 new RequestTemplate()
         );
         Response response = Response.builder()
-                .status(429)
-                .reason("Too Many Requests")
+                .status(status)
+                .reason(reason)
                 .request(request)
-                .body("rate limit", StandardCharsets.UTF_8)
+                .body(body, StandardCharsets.UTF_8)
                 .build();
 
         return FeignException.errorStatus("RodogarciaClient#buscarXmlCte", response);

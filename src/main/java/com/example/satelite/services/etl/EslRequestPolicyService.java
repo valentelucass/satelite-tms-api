@@ -5,6 +5,7 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.time.temporal.ChronoUnit;
 import java.util.Objects;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 import java.util.function.Supplier;
@@ -20,6 +21,7 @@ import feign.FeignException;
 public class EslRequestPolicyService {
 
     private static final Logger log = LoggerFactory.getLogger(EslRequestPolicyService.class);
+    private static final Set<Integer> CODIGOS_HTTP_TRANSITORIOS_ESL = Set.of(429, 500, 502, 503, 504);
 
     private final Object requisicaoLock = new Object();
     private final ConcurrentMap<String, Instant> proximaExtracaoPorPeriodo = new ConcurrentHashMap<>();
@@ -58,6 +60,10 @@ public class EslRequestPolicyService {
         } catch (FeignException e) {
             if (e.status() == 429) {
                 throw tratarTooManyRequests(operacao, e);
+            }
+
+            if (CODIGOS_HTTP_TRANSITORIOS_ESL.contains(e.status())) {
+                throw tratarFalhaTransitoria(operacao, e);
             }
 
             throw e;
@@ -123,6 +129,16 @@ public class EslRequestPolicyService {
                 e.getMessage()
         );
         pausarAposTooManyRequests();
+        return new EslRequestTransientException(operacaoNormalizada, e.status(), e);
+    }
+
+    private EslRequestTransientException tratarFalhaTransitoria(String operacao, FeignException e) {
+        String operacaoNormalizada = normalizarOperacao(operacao);
+        log.warn(
+                "ESL retornou HTTP {} em {}. Falha tratada como transitória; corpo da resposta omitido do log.",
+                e.status(),
+                operacaoNormalizada
+        );
         return new EslRequestTransientException(operacaoNormalizada, e.status(), e);
     }
 

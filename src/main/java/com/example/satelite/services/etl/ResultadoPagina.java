@@ -20,6 +20,21 @@ record ResultadoPagina(
         return new ResultadoPagina(0, 0, 0, 0, 0, 0, falhasInfraestruturaConsecutivas, false, false, false);
     }
 
+    static ResultadoPagina falhaInfraestruturaPagina(int falhasInfraestruturaConsecutivas) {
+        return new ResultadoPagina(
+                0,
+                0,
+                0,
+                0,
+                0,
+                1,
+                falhasInfraestruturaConsecutivas + 1,
+                false,
+                false,
+                false
+        );
+    }
+
     ResultadoPagina com(ResultadoRegistro registro) {
         return new ResultadoPagina(
                 recebidos + 1,

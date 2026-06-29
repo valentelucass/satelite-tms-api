@@ -148,6 +148,7 @@ public class EtlEstadoIntegracaoService {
     boolean deveAtualizarDataProcessamento(String statusAnterior, String statusNovo) {
         return statusNovo != null
                 && !ResultadoIntegracao.STATUS_NAO_APLICAVEL.equals(statusNovo)
+                && !ResultadoIntegracao.STATUS_PENDENTE_FOTO.equals(statusNovo)
                 && (STATUS_ERRO_DESTINO.equals(statusNovo) || !statusNovo.equals(statusAnterior));
     }
 

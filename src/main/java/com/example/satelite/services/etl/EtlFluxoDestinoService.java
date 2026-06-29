@@ -105,14 +105,37 @@ public class EtlFluxoDestinoService {
                         CODIGO_ENTREGA_REALIZADA
                 );
 
-                EslLoteResponseDTO lote = buscarOcorrenciasEsl(
-                        destino,
-                        pagina,
-                        headerAuth,
-                        cursorAtual,
-                        invoiceKeyParam,
-                        sinceParam
-                );
+                EslLoteResponseDTO lote;
+                try {
+                    lote = buscarOcorrenciasEsl(
+                            destino,
+                            pagina,
+                            headerAuth,
+                            cursorAtual,
+                            invoiceKeyParam,
+                            sinceParam
+                    );
+                } catch (EslRequestTransientException e) {
+                    if (!falhaPaginaNaoCritica(e)) {
+                        throw e;
+                    }
+
+                    ResultadoPagina resultadoFalhaPagina =
+                            ResultadoPagina.falhaInfraestruturaPagina(falhasInfraestruturaConsecutivas);
+                    resultadoDestino = resultadoDestino.comPagina(resultadoFalhaPagina).encerrar(
+                            "Falha transitoria da ESL na pagina " + pagina + "; cursor nao avancado"
+                    );
+                    log.warn(
+                            "⏸️ [DESTINO: {}] Página {} marcada como falha transitória da ESL. cursor={} operacao={} status={}. Cursor não avançado; próximo ciclo retomará do mesmo ponto.",
+                            destino,
+                            pagina,
+                            cursorAtual,
+                            e.operacao(),
+                            e.status()
+                    );
+                    return resultadoDestino;
+                }
+
                 if (loteVazio(lote)) {
                     log.info("📭 [DESTINO: {}] Nenhuma ocorrência encontrada a partir do cursor {}.", destino, cursorAtual);
                     resultadoDestino = resultadoDestino.encerrar("Nenhuma ocorrencia encontrada");
@@ -261,6 +284,20 @@ public class EtlFluxoDestinoService {
             resultadoDestino = resultadoDestino.encerrar("Limite de paginas por ciclo atingido");
             return resultadoDestino;
         } catch (EslRequestTransientException e) {
+            if (falhaPaginaNaoCritica(e)) {
+                log.warn(
+                        "⏸️ [DESTINO: {}] Ciclo encerrado sem erro crítico por falha transitória da ESL antes da paginação. operacao={} status={} mensagem={}",
+                        destino,
+                        e.operacao(),
+                        e.status(),
+                        e.getMessage()
+                );
+                resultadoDestino = resultadoDestino.comRegistros(
+                        ResultadoPagina.falhaInfraestruturaPagina(0)
+                ).encerrar("Falha transitoria da ESL antes da paginacao; cursor nao avancado");
+                return resultadoDestino;
+            }
+
             log.warn(
                     "⏸️ [DESTINO: {}] Ciclo suspenso por falha transitória da ESL. operacao={} status={} mensagem={}",
                     destino,
@@ -400,6 +437,10 @@ public class EtlFluxoDestinoService {
                         ? limiteFalhasInfraestruturaConsecutivasCircuitBreaker
                         : LIMITE_PADRAO_FALHAS_INFRAESTRUTURA_CONSECUTIVAS
         );
+    }
+
+    private boolean falhaPaginaNaoCritica(EslRequestTransientException e) {
+        return e.status() >= 500 && e.status() <= 599;
     }
 
     String obterSinceParam(ExecucaoEtlRequest request) {

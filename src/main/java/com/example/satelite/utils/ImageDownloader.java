@@ -23,8 +23,8 @@ public class ImageDownloader {
     private final long intervaloRetryMs;
 
     public ImageDownloader(
-            @Value("${IMAGE_DOWNLOAD_CONNECT_TIMEOUT_SECONDS:10}") long connectTimeoutSeconds,
-            @Value("${IMAGE_DOWNLOAD_REQUEST_TIMEOUT_SECONDS:30}") long requestTimeoutSeconds,
+            @Value("${IMAGE_DOWNLOAD_CONNECT_TIMEOUT_SECONDS:30}") long connectTimeoutSeconds,
+            @Value("${IMAGE_DOWNLOAD_REQUEST_TIMEOUT_SECONDS:60}") long requestTimeoutSeconds,
             @Value("${IMAGE_DOWNLOAD_MAX_ATTEMPTS:3}") int maxTentativas,
             @Value("${IMAGE_DOWNLOAD_RETRY_DELAY_MS:15000}") long intervaloRetryMs
     ) {

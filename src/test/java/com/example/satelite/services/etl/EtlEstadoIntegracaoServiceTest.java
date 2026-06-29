@@ -82,6 +82,24 @@ class EtlEstadoIntegracaoServiceTest {
     }
 
     @Test
+    void naoDeveIncrementarTentativaQuandoCanhotoFicaPendente() {
+        EtlEstadoIntegracaoService service = new EtlEstadoIntegracaoService(mock(LogIntegracaoRepository.class));
+        LogIntegracaoModel log = LogIntegracaoModel.builder()
+                .statusDados(ResultadoIntegracao.STATUS_RECEBIDO)
+                .statusCanhoto(ResultadoIntegracao.STATUS_RECEBIDO)
+                .tentativasDados(0)
+                .tentativasCanhoto(0)
+                .build();
+
+        service.aplicarResultadoIntegracao(log, ResultadoIntegracao.pendenteFotoPpg("cte ausente"));
+
+        assertEquals(ResultadoIntegracao.STATUS_PENDENTE_FOTO, log.getStatusCanhoto());
+        assertEquals(0, log.getTentativasDados());
+        assertEquals(0, log.getTentativasCanhoto());
+        assertNull(log.getDataProcessamentoCanhoto());
+    }
+
+    @Test
     void deveConverterResultadoIntegracaoParaResultadoRegistro() {
         EtlEstadoIntegracaoService service = new EtlEstadoIntegracaoService(mock(LogIntegracaoRepository.class));
 

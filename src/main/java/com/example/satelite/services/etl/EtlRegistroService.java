@@ -31,6 +31,9 @@ public class EtlRegistroService {
     private static final String STATUS_RECEBIDO = ResultadoIntegracao.STATUS_RECEBIDO;
     private static final String STATUS_PENDENTE_FOTO = ResultadoIntegracao.STATUS_PENDENTE_FOTO;
     private static final String URL_IMAGEM_TESTE_PADRAO = "https://www.w3.org/People/mimasa/test/imgformat/img/w3c_home.jpg";
+    private static final String MOTIVO_CANHOTO_INDISPONIVEL = "Canhoto ainda não disponível na ESL";
+    private static final String MOTIVO_CTE_AUSENTE =
+            "Chave CTe ausente na ocorrência ESL; busca do comprovante pulada";
 
     private final RodogarciaClient rodogarciaClient;
     private final EslRequestPolicyService eslRequestPolicyService;
@@ -209,7 +212,8 @@ public class EtlRegistroService {
             }
 
             log.info("📄 [{}] NF {}: Buscando comprovante de entrega na ESL...", destino, obterChaveNfe(ocorrencia));
-            ComprovanteEslDTO comprovante = buscarComprovanteEntregaOpcional(headerAuth, ocorrencia);
+            ResultadoBuscaComprovante buscaComprovante = buscarComprovanteEntregaOpcional(headerAuth, ocorrencia);
+            ComprovanteEslDTO comprovante = buscaComprovante.comprovante();
 
             String chave = obterChaveNfe(ocorrencia);
             ComprovanteEslDTO comprovanteProcessamento = prepararComprovanteParaModoTeste(comprovante, chave, destino);
@@ -218,11 +222,12 @@ public class EtlRegistroService {
             }
 
             if (DESTINO_PPG.equals(destino) && comprovanteProcessamento == null) {
-                ResultadoIntegracao resultadoPendente = ResultadoIntegracao.pendenteFotoPpg("Canhoto ainda não disponível na ESL");
+                String motivoPendente = normalizarMotivoCanhotoIndisponivel(buscaComprovante.motivoIndisponivel());
+                ResultadoIntegracao resultadoPendente = ResultadoIntegracao.pendenteFotoPpg(motivoPendente);
                 etlEstadoIntegracaoService.aplicarResultadoIntegracao(logIntegracao, resultadoPendente);
                 etlEstadoIntegracaoService.salvar(logIntegracao);
 
-                log.warn("⏳ [PPG] NF {}: Canhoto ainda não disponível na ESL. Payload não enviado.", chave);
+                log.warn("⏳ [PPG] NF {}: {}. Payload não enviado.", chave, motivoPendente);
                 return ResultadoRegistro.PENDENTE_FOTO;
             }
 
@@ -276,6 +281,22 @@ public class EtlRegistroService {
             return ResultadoRegistro.ENVIADO;
         } catch (EslRequestTransientException e) {
             throw e;
+        } catch (FalhaConsultaComprovanteException e) {
+            etlEstadoIntegracaoService.aplicarResultadoIntegracao(
+                    logIntegracao,
+                    ResultadoIntegracao.erroCanhoto(
+                            etlEstadoIntegracaoService.statusDadosAtualOuSucesso(logIntegracao),
+                            e.getMessage()
+                    )
+            );
+            etlEstadoIntegracaoService.salvar(logIntegracao);
+
+            log.error("❌ [{}] NF {}: Erro ao consultar comprovante - {}", destino, obterChaveNfe(ocorrencia), e.getMessage());
+            return etlResilienciaService.resultadoErroAposTentativa(
+                    destino,
+                    obterChaveNfe(ocorrencia),
+                    logIntegracao
+            );
         } catch (Exception e) {
             etlEstadoIntegracaoService.aplicarResultadoIntegracao(
                     logIntegracao,
@@ -329,23 +350,35 @@ public class EtlRegistroService {
         etlEstadoIntegracaoService.salvar(pendencia);
     }
 
-    private ComprovanteEslDTO buscarComprovanteEntregaOpcional(String headerAuth, EslOcorrenciaDTO ocorrencia) {
+    private ResultadoBuscaComprovante buscarComprovanteEntregaOpcional(String headerAuth, EslOcorrenciaDTO ocorrencia) {
         String cteKey = obterChaveCte(ocorrencia);
 
         if (cteKey == null || cteKey.isBlank()) {
-            throw new IllegalStateException("Chave CTe ausente para consulta do comprovante");
+            log.warn(
+                    "⏭️ NF {}: Chave CTe ausente na ocorrência ESL; busca do comprovante pulada.",
+                    obterChaveNfe(ocorrencia)
+            );
+            return ResultadoBuscaComprovante.semComprovante(MOTIVO_CTE_AUSENTE);
         }
 
-        ComprovanteEslDTO comprovante = eslRequestPolicyService.executar(
-                "buscarComprovante cte_key=" + cteKey,
-                () -> rodogarciaClient.buscarComprovante(headerAuth, cteKey)
-        );
+        ComprovanteEslDTO comprovante;
+        try {
+            comprovante = eslRequestPolicyService.executar(
+                    "buscarComprovante cte_key=" + cteKey,
+                    () -> rodogarciaClient.buscarComprovante(headerAuth, cteKey)
+            );
+        } catch (EslRequestTransientException e) {
+            throw new FalhaConsultaComprovanteException(
+                    "Falha transitória da ESL ao consultar comprovante: " + e.getMessage(),
+                    e
+            );
+        }
 
         if (comprovante == null || comprovante.data() == null || comprovante.data().isEmpty()) {
-            return null;
+            return ResultadoBuscaComprovante.semComprovante(MOTIVO_CANHOTO_INDISPONIVEL);
         }
 
-        return comprovante;
+        return ResultadoBuscaComprovante.encontrado(comprovante);
     }
 
     private ComprovanteEslDTO prepararComprovanteParaModoTeste(
@@ -363,6 +396,14 @@ public class EtlRegistroService {
                 chaveNfe
         );
         return criarComprovanteComImagemTeste();
+    }
+
+    private String normalizarMotivoCanhotoIndisponivel(String motivo) {
+        if (motivo == null || motivo.isBlank()) {
+            return MOTIVO_CANHOTO_INDISPONIVEL;
+        }
+
+        return motivo;
     }
 
     private boolean comprovanteTemUrlImagem(ComprovanteEslDTO comprovante) {
@@ -452,5 +493,21 @@ public class EtlRegistroService {
 
     private boolean loteVazio(EslLoteResponseDTO lote) {
         return lote == null || lote.data() == null || lote.data().isEmpty();
+    }
+
+    private record ResultadoBuscaComprovante(ComprovanteEslDTO comprovante, String motivoIndisponivel) {
+        static ResultadoBuscaComprovante encontrado(ComprovanteEslDTO comprovante) {
+            return new ResultadoBuscaComprovante(comprovante, null);
+        }
+
+        static ResultadoBuscaComprovante semComprovante(String motivoIndisponivel) {
+            return new ResultadoBuscaComprovante(null, motivoIndisponivel);
+        }
+    }
+
+    private static class FalhaConsultaComprovanteException extends RuntimeException {
+        private FalhaConsultaComprovanteException(String message, Throwable cause) {
+            super(message, cause);
+        }
     }
 }

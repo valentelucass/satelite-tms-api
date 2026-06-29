@@ -101,6 +101,25 @@ class OrquestradorEtlServiceTest {
     }
 
     @Test
+    void deveMarcarFalhaDePaginaSemErroCriticoQuandoEslRetorna500HtmlNaBuscaRaiz() {
+        Dependencias dependencias = criarDependencias();
+        ReflectionTestUtils.setField(dependencias.service(), "vedacitEnabled", false);
+
+        when(dependencias.controleCursorRepository().findBySistemaDestino(anyString())).thenReturn(Optional.empty());
+        when(dependencias.rodogarciaClient().buscarOcorrencias(eq("Bearer token-ppg"), isNull(), isNull(), isNull(), eq(1)))
+                .thenThrow(criarErroServidorEslHtml());
+
+        OrquestradorEtlService.ResultadoCiclo resultado = dependencias.service().executarFluxosComResultado();
+
+        assertFalse(resultado.erroCritico());
+        assertEquals(OrquestradorEtlService.CODIGO_SAIDA_ERRO_CRITICO, resultado.codigoSaida());
+        assertEquals(1, resultado.resultadoPpg().erros());
+        assertEquals(1, resultado.resultadoPpg().paginasProcessadas());
+        assertTrue(resultado.resultadoPpg().mensagemEncerramento().contains("cursor nao avancado"));
+        verify(dependencias.controleCursorRepository(), times(0)).save(any());
+    }
+
+    @Test
     void deveBuscarVedacitPorInvoiceKeyQuandoWhitelistEstiverAtiva() {
         Dependencias dependencias = criarDependencias();
         ReflectionTestUtils.setField(dependencias.etlFluxoDestinoService(), "vedacitNfeWhitelistEnabled", true);
@@ -236,6 +255,38 @@ class OrquestradorEtlServiceTest {
     }
 
     @Test
+    void deveMarcarRegistroComoErroCanhotoQuandoEslRetorna500HtmlNoComprovante() {
+        Dependencias dependencias = criarDependencias();
+        ReflectionTestUtils.setField(dependencias.service(), "ppgEnabled", false);
+
+        when(dependencias.controleCursorRepository().findBySistemaDestino(anyString())).thenReturn(Optional.empty());
+        when(dependencias.logIntegracaoRepository().save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        when(dependencias.rodogarciaClient().buscarOcorrencias(eq("Bearer token-vedacit"), isNull(), isNull(), isNull(), eq(1)))
+                .thenReturn(new EslLoteResponseDTO(
+                        List.of(criarOcorrencia(10L, 1, "cte-10")),
+                        new EslPagingDTO(99L, 1)
+                ));
+        when(dependencias.rodogarciaClient().buscarComprovante(eq("Bearer token-vedacit"), eq("cte-10")))
+                .thenThrow(criarErroServidorEslHtml());
+
+        OrquestradorEtlService.ResultadoCiclo resultado = dependencias.service().executarFluxosComResultado();
+
+        assertFalse(resultado.erroCritico());
+        assertEquals(1, resultado.resultadoVedacit().erros());
+
+        ArgumentCaptor<LogIntegracaoModel> logCaptor = ArgumentCaptor.forClass(LogIntegracaoModel.class);
+        verify(dependencias.logIntegracaoRepository(), atLeastOnce()).save(logCaptor.capture());
+        assertTrue(logCaptor.getAllValues().stream()
+                .anyMatch(log -> ResultadoIntegracao.STATUS_ERRO_DESTINO.equals(log.getStatusCanhoto())
+                        && log.getMensagemErroCanhoto() != null
+                        && log.getMensagemErroCanhoto().contains("HTTP 500")
+                        && !log.getMensagemErroCanhoto().contains("<!doctype html>")));
+        verify(dependencias.rodogarciaClient(), times(3)).buscarComprovante("Bearer token-vedacit", "cte-10");
+        verify(dependencias.vedacitIntegrationService(), times(0))
+                .processarOcorrencia(any(), any(), anyBoolean(), anyBoolean());
+    }
+
+    @Test
     void deveAvancarCursorQuandoPaginaNaoTemErros() {
         Dependencias dependencias = criarDependencias();
         when(dependencias.controleCursorRepository().findBySistemaDestino(anyString())).thenReturn(Optional.empty());
@@ -259,9 +310,10 @@ class OrquestradorEtlServiceTest {
     }
 
     @Test
-    void naoDeveAvancarCursorQuandoPaginaTemErro() {
+    void deveMarcarPendenteFotoQuandoCteAusenteSemConsumirErro() {
         Dependencias dependencias = criarDependencias();
         when(dependencias.controleCursorRepository().findBySistemaDestino(anyString())).thenReturn(Optional.empty());
+        when(dependencias.controleCursorRepository().save(any())).thenAnswer(invocation -> invocation.getArgument(0));
         when(dependencias.logIntegracaoRepository().save(any())).thenAnswer(invocation -> invocation.getArgument(0));
         when(dependencias.rodogarciaClient().buscarOcorrencias(eq("Bearer token-ppg"), isNull(), isNull(), isNull(), eq(1)))
                 .thenReturn(new EslLoteResponseDTO(
@@ -273,8 +325,15 @@ class OrquestradorEtlServiceTest {
 
         dependencias.service().executarFluxos();
 
-        verify(dependencias.logIntegracaoRepository(), atLeastOnce()).save(any());
-        verify(dependencias.controleCursorRepository(), times(0)).save(any());
+        ArgumentCaptor<LogIntegracaoModel> logCaptor = ArgumentCaptor.forClass(LogIntegracaoModel.class);
+        verify(dependencias.logIntegracaoRepository(), atLeastOnce()).save(logCaptor.capture());
+        assertTrue(logCaptor.getAllValues().stream()
+                .anyMatch(log -> ResultadoIntegracao.STATUS_PENDENTE_FOTO.equals(log.getStatusCanhoto())
+                        && Integer.valueOf(0).equals(log.getTentativasDados())
+                        && Integer.valueOf(0).equals(log.getTentativasCanhoto())));
+        verify(dependencias.rodogarciaClient(), times(0)).buscarComprovante(anyString(), anyString());
+        verify(dependencias.ppgIntegrationService(), times(0)).processarOcorrencia(any(), any());
+        verify(dependencias.controleCursorRepository(), times(1)).save(any());
     }
 
     @Test
@@ -396,12 +455,16 @@ class OrquestradorEtlServiceTest {
                         List.of(criarOcorrencia(
                                 10L,
                                 1,
-                                null,
+                                "cte-10",
                                 "2026-06-17T10:30:00-03:00",
                                 null
                         )),
                         new EslPagingDTO(99L, 1)
                 ));
+        when(dependencias.rodogarciaClient().buscarComprovante("Bearer token-ppg", "cte-10"))
+                .thenReturn(criarComprovanteComImagem());
+        when(dependencias.ppgIntegrationService().processarOcorrencia(any(), any()))
+                .thenThrow(new RuntimeException("falha destino"));
         when(dependencias.rodogarciaClient().buscarOcorrencias(
                 eq("Bearer token-ppg"),
                 eq(99L),
@@ -869,7 +932,7 @@ class OrquestradorEtlServiceTest {
             try {
                 return chamada.get();
             } catch (FeignException e) {
-                if (e.status() == 429) {
+                if (e.status() == 429 || (e.status() >= 500 && e.status() <= 599)) {
                     throw new EslRequestPolicyService.EslRequestTransientException(
                             invocation.getArgument(0),
                             e.status(),
@@ -946,6 +1009,14 @@ class OrquestradorEtlServiceTest {
     }
 
     private FeignException criarErroTooManyRequestsEsl() {
+        return criarErroEsl(429, "Too Many Requests", "rate limit");
+    }
+
+    private FeignException criarErroServidorEslHtml() {
+        return criarErroEsl(500, "Internal Server Error", "<!doctype html><html>erro</html>");
+    }
+
+    private FeignException criarErroEsl(int status, String reason, String body) {
         Request request = Request.create(
                 Request.HttpMethod.GET,
                 "https://rodogarcia.eslcloud.com.br/api/customer/invoice_occurrences",
@@ -955,10 +1026,10 @@ class OrquestradorEtlServiceTest {
                 new RequestTemplate()
         );
         Response response = Response.builder()
-                .status(429)
-                .reason("Too Many Requests")
+                .status(status)
+                .reason(reason)
                 .request(request)
-                .body("rate limit", StandardCharsets.UTF_8)
+                .body(body, StandardCharsets.UTF_8)
                 .build();
 
         return FeignException.errorStatus("RodogarciaClient#buscarOcorrencias", response);

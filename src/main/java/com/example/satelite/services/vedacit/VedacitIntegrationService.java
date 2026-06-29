@@ -40,6 +40,7 @@ import org.tempuri.Ocorrencias;
 
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.io.IOException;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.text.Normalizer;
@@ -82,10 +83,10 @@ public class VedacitIntegrationService {
     @Value("${VEDACIT_NFE_WHITELIST_ENABLED:true}")
     private boolean whitelistEnabled;
 
-    @Value("${VEDACIT_SOAP_CONNECT_TIMEOUT_MS:15000}")
+    @Value("${VEDACIT_SOAP_CONNECT_TIMEOUT_MS:30000}")
     private int soapConnectTimeoutMs;
 
-    @Value("${VEDACIT_SOAP_READ_TIMEOUT_MS:45000}")
+    @Value("${VEDACIT_SOAP_READ_TIMEOUT_MS:60000}")
     private int soapReadTimeoutMs;
 
     private final ImageDownloader imageDownloader;
@@ -321,7 +322,7 @@ public class VedacitIntegrationService {
         byte[] imagemOriginal = imageDownloader.baixarImagemDaUrl(urlImagem, cteKey);
         log.info("🖼️ [VEDACIT] NF {}: Imagem baixada com sucesso ({} bytes).", chaveNfe, imagemOriginal.length);
 
-        byte[] imagemComprimida = ImageUtils.comprimirImagemParaVedacit(imagemOriginal);
+        byte[] imagemComprimida = comprimirImagemParaVedacit(chaveNfe, cteKey, imagemOriginal);
         log.info("🖼️ [VEDACIT] NF {}: Imagem comprimida para {} bytes antes do Base64.", chaveNfe, imagemComprimida.length);
 
         String imagemBase64Bruta = Base64.getEncoder().encodeToString(imagemComprimida);
@@ -343,6 +344,20 @@ public class VedacitIntegrationService {
         canhoto.setObservacao(factory.createCanhotoObservacao(OBSERVACAO_CANHOTO));
 
         return canhoto;
+    }
+
+    private byte[] comprimirImagemParaVedacit(String chaveNfe, String cteKey, byte[] imagemOriginal) throws IOException {
+        try {
+            return ImageUtils.comprimirImagemParaVedacit(imagemOriginal);
+        } catch (IOException | IllegalArgumentException e) {
+            log.warn(
+                    "⚠️ [VEDACIT] NF {}: Canhoto com formato/tamanho inválido para compressão. CTe={} mensagem={}",
+                    chaveNfe,
+                    cteKey,
+                    e.getMessage()
+            );
+            throw new IOException("Canhoto com formato/tamanho invalido para Vedacit: " + e.getMessage(), e);
+        }
     }
 
     private void enviarCanhoto(Canhoto canhoto, String chaveNfe, String cteKey) throws Exception {

@@ -17,8 +17,8 @@ public class EtlResilienciaService {
     private static final Logger log = LoggerFactory.getLogger(EtlResilienciaService.class);
 
     private static final String STATUS_ERRO_DESTINO = ResultadoIntegracao.STATUS_ERRO_DESTINO;
-    private static final Set<Integer> CODIGOS_HTTP_TRANSITORIOS = Set.of(429, 502, 503, 504);
-    private static final Set<Integer> CODIGOS_HTTP_INFRAESTRUTURA = Set.of(502, 503, 504);
+    private static final Set<Integer> CODIGOS_HTTP_TRANSITORIOS = Set.of(429, 500, 502, 503, 504);
+    private static final Set<Integer> CODIGOS_HTTP_INFRAESTRUTURA = Set.of(500, 502, 503, 504);
 
     @Value("${INTEGRATION_MAX_RETRY_ATTEMPTS:3}")
     private int maxTentativasReprocessamento = 3;
