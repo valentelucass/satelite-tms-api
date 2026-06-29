@@ -1,7 +1,10 @@
 package com.example.satelite.services.auditoria;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.LocalTime;
+import java.time.format.DateTimeParseException;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -9,10 +12,13 @@ import java.util.Optional;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.util.MultiValueMap;
+import org.springframework.web.server.ResponseStatusException;
 
 import com.example.satelite.dto.auditoria.AuditoriaIntegracoesClientesResponseDTO;
+import com.example.satelite.dto.auditoria.IntegracaoEvolucaoDiariaDTO;
 import com.example.satelite.dto.auditoria.MetricaConsolidadaDTO;
 import com.example.satelite.dto.auditoria.PaginacaoDTO;
 import com.example.satelite.dto.auditoria.PendenciasPaginadasDTO;
@@ -21,6 +27,7 @@ import com.example.satelite.repositories.IntegracaoAuditoriaQueryRepository;
 import com.example.satelite.repositories.IntegracaoAuditoriaQueryRepository.Filtros;
 import com.example.satelite.repositories.IntegracaoAuditoriaQueryRepository.PendenciasResultado;
 import com.example.satelite.repositories.LogIntegracaoRepository;
+import com.example.satelite.repositories.LogIntegracaoRepository.IntegracaoEvolucaoDiariaProjection;
 import com.example.satelite.repositories.LogIntegracaoRepository.MetricaIntegracaoClienteProjection;
 
 @Service
@@ -35,7 +42,12 @@ public class IntegracaoAuditoriaService {
     private static final String PARAM_SORT_FIELD = "sortField";
     private static final String PARAM_SORT_DIRECTION = "sortDirection";
     private static final String PARAM_ESCOPO = "escopo";
+    private static final String PARAM_DATA_INICIAL = "dataInicial";
+    private static final String PARAM_DATA_FINAL = "dataFinal";
     private static final String PREFIXO_FILTRO_COLUNA = "f.tabelaColuna.";
+    private static final LocalDateTime SQL_DATA_INICIAL_PADRAO = LocalDate.of(1900, 1, 1).atStartOfDay();
+    private static final LocalDateTime SQL_DATA_FINAL_LIMITE_PADRAO =
+            LocalDateTime.of(LocalDate.of(9999, 12, 31), LocalTime.of(23, 59, 59, 999_000_000));
     private static final List<String> CAMPOS_IMAGEM_CANHOTO = List.of(
             "foto",
             "imagemBase64",
@@ -59,18 +71,27 @@ public class IntegracaoAuditoriaService {
     public AuditoriaIntegracoesClientesResponseDTO consultarIntegracoesClientes(
             int pagina,
             int tamanho,
+            String dataInicial,
+            String dataFinal,
             MultiValueMap<String, String> params
     ) {
         int paginaNormalizada = normalizarPagina(pagina);
         int tamanhoNormalizado = normalizarTamanho(tamanho);
+        PeriodoFiltro periodo = lerPeriodoOpcional(
+                primeiroTexto(dataInicial, primeiroValor(params, PARAM_DATA_INICIAL)),
+                primeiroTexto(dataFinal, primeiroValor(params, PARAM_DATA_FINAL))
+        );
 
-        List<MetricaConsolidadaDTO> metricas = logIntegracaoRepository.buscarMetricasIntegracoesClientes()
+        List<MetricaConsolidadaDTO> metricas = logIntegracaoRepository.buscarMetricasIntegracoesClientes(
+                        periodo.dataInicialSql(),
+                        periodo.dataFinalLimitSql()
+                )
                 .stream()
                 .map(this::mapearMetrica)
                 .toList();
 
         PendenciasResultado pendencias = integracaoAuditoriaQueryRepository.buscarPendencias(
-                lerFiltros(params),
+                lerFiltros(params, periodo),
                 paginaNormalizada,
                 tamanhoNormalizado
         );
@@ -92,12 +113,32 @@ public class IntegracaoAuditoriaService {
         );
     }
 
+    public List<IntegracaoEvolucaoDiariaDTO> consultarEvolucaoDiaria(String dataInicial, String dataFinal) {
+        PeriodoFiltro periodo = lerPeriodoObrigatorio(dataInicial, dataFinal);
+        return logIntegracaoRepository.buscarEvolucaoDiariaIntegracoes(
+                        periodo.dataInicialSql(),
+                        periodo.dataFinalLimitSql()
+                )
+                .stream()
+                .map(this::mapearEvolucaoDiaria)
+                .toList();
+    }
+
     private MetricaConsolidadaDTO mapearMetrica(MetricaIntegracaoClienteProjection metrica) {
         return new MetricaConsolidadaDTO(
                 metrica.getSistemaDestino(),
                 valorOuZero(metrica.getTotalRegistros()),
                 percentualOuZero(metrica.getPercentualXmlSucesso()),
                 percentualOuZero(metrica.getPercentualCanhotoSucesso())
+        );
+    }
+
+    private IntegracaoEvolucaoDiariaDTO mapearEvolucaoDiaria(IntegracaoEvolucaoDiariaProjection item) {
+        return new IntegracaoEvolucaoDiariaDTO(
+                item.getData(),
+                inteiroOuZero(item.getTotal()),
+                inteiroOuZero(item.getSucessos()),
+                inteiroOuZero(item.getErros())
         );
     }
 
@@ -178,7 +219,7 @@ public class IntegracaoAuditoriaService {
         return Math.min(tamanho, TAMANHO_MAXIMO);
     }
 
-    private Filtros lerFiltros(MultiValueMap<String, String> params) {
+    private Filtros lerFiltros(MultiValueMap<String, String> params, PeriodoFiltro periodo) {
         return new Filtros(
                 primeiroValor(params, PARAM_TABELA_BUSCA),
                 primeiroValor(params, PARAM_TABELA_CODIGO),
@@ -186,7 +227,9 @@ public class IntegracaoAuditoriaService {
                 filtrosColuna(params),
                 primeiroValor(params, PARAM_ESCOPO),
                 primeiroValor(params, PARAM_SORT_FIELD),
-                primeiroValor(params, PARAM_SORT_DIRECTION)
+                primeiroValor(params, PARAM_SORT_DIRECTION),
+                periodo.dataInicial(),
+                periodo.dataFinal()
         );
     }
 
@@ -218,6 +261,11 @@ public class IntegracaoAuditoriaService {
         }
 
         return normalizarTexto(params.getFirst(chave));
+    }
+
+    private String primeiroTexto(String valorPreferencial, String valorFallback) {
+        String valor = normalizarTexto(valorPreferencial);
+        return valor != null ? valor : normalizarTexto(valorFallback);
     }
 
     private List<String> valores(MultiValueMap<String, String> params, String chave) {
@@ -263,5 +311,71 @@ public class IntegracaoAuditoriaService {
 
     private BigDecimal percentualOuZero(BigDecimal percentual) {
         return percentual != null ? percentual : BigDecimal.ZERO;
+    }
+
+    private int inteiroOuZero(Integer valor) {
+        return valor != null ? valor : 0;
+    }
+
+    private PeriodoFiltro lerPeriodoOpcional(String dataInicial, String dataFinal) {
+        String inicioTexto = normalizarTexto(dataInicial);
+        String finalTexto = normalizarTexto(dataFinal);
+        if (inicioTexto == null && finalTexto == null) {
+            return PeriodoFiltro.semFiltro();
+        }
+
+        if (inicioTexto == null || finalTexto == null) {
+            throw erroPeriodo("Informe dataInicial e dataFinal para filtrar a auditoria de integracoes.");
+        }
+
+        return montarPeriodo(inicioTexto, finalTexto);
+    }
+
+    private PeriodoFiltro lerPeriodoObrigatorio(String dataInicial, String dataFinal) {
+        String inicioTexto = normalizarTexto(dataInicial);
+        String finalTexto = normalizarTexto(dataFinal);
+        if (inicioTexto == null || finalTexto == null) {
+            throw erroPeriodo("Informe dataInicial e dataFinal para consultar a evolucao diaria.");
+        }
+
+        return montarPeriodo(inicioTexto, finalTexto);
+    }
+
+    private PeriodoFiltro montarPeriodo(String dataInicial, String dataFinal) {
+        LocalDate inicio = parseData(dataInicial, "dataInicial");
+        LocalDate fim = parseData(dataFinal, "dataFinal");
+        if (fim.isBefore(inicio)) {
+            throw erroPeriodo("dataFinal nao pode ser anterior a dataInicial.");
+        }
+
+        return new PeriodoFiltro(
+                dataInicial,
+                dataFinal,
+                inicio.atStartOfDay(),
+                fim.plusDays(1).atStartOfDay()
+        );
+    }
+
+    private LocalDate parseData(String valor, String nomeParametro) {
+        try {
+            return LocalDate.parse(valor);
+        } catch (DateTimeParseException ex) {
+            throw erroPeriodo(nomeParametro + " deve estar no formato yyyy-MM-dd.");
+        }
+    }
+
+    private ResponseStatusException erroPeriodo(String mensagem) {
+        return new ResponseStatusException(HttpStatus.BAD_REQUEST, mensagem);
+    }
+
+    private record PeriodoFiltro(
+            String dataInicial,
+            String dataFinal,
+            LocalDateTime dataInicialSql,
+            LocalDateTime dataFinalLimitSql
+    ) {
+        static PeriodoFiltro semFiltro() {
+            return new PeriodoFiltro(null, null, SQL_DATA_INICIAL_PADRAO, SQL_DATA_FINAL_LIMITE_PADRAO);
+        }
     }
 }

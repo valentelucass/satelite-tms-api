@@ -1,5 +1,7 @@
 package com.example.satelite.controllers;
 
+import java.util.List;
+
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.util.MultiValueMap;
@@ -10,6 +12,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.example.satelite.dto.auditoria.AuditoriaIntegracoesClientesResponseDTO;
+import com.example.satelite.dto.auditoria.IntegracaoEvolucaoDiariaDTO;
 import com.example.satelite.services.auditoria.IntegracaoAuditoriaService;
 
 @RestController
@@ -26,9 +29,19 @@ public class IntegracaoAuditoriaController {
     public AuditoriaIntegracoesClientesResponseDTO consultarIntegracoesClientes(
             @RequestParam(defaultValue = "0") int pagina,
             @RequestParam(defaultValue = "100") int tamanho,
+            @RequestParam(required = false) String dataInicial,
+            @RequestParam(required = false) String dataFinal,
             @RequestParam MultiValueMap<String, String> params
     ) {
-        return integracaoAuditoriaService.consultarIntegracoesClientes(pagina, tamanho, params);
+        return integracaoAuditoriaService.consultarIntegracoesClientes(pagina, tamanho, dataInicial, dataFinal, params);
+    }
+
+    @GetMapping("/integracoes-clientes/evolucao-diaria")
+    public List<IntegracaoEvolucaoDiariaDTO> consultarEvolucaoDiaria(
+            @RequestParam String dataInicial,
+            @RequestParam String dataFinal
+    ) {
+        return integracaoAuditoriaService.consultarEvolucaoDiaria(dataInicial, dataFinal);
     }
 
     @GetMapping(value = "/logs/{id}/imagem", produces = MediaType.TEXT_PLAIN_VALUE)

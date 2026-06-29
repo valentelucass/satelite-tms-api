@@ -1,6 +1,7 @@
 package com.example.satelite.repositories;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
@@ -84,10 +85,45 @@ public interface LogIntegracaoRepository extends JpaRepository<LogIntegracaoMode
             FROM (VALUES ('VEDACIT'), ('PPG')) AS d(sistema_destino)
             LEFT JOIN dbo.tb_log_integracao l
                 ON l.sistema_destino = d.sistema_destino
+               AND l.data_processamento >= :dataInicial
+               AND l.data_processamento < :dataFinalLimit
             GROUP BY d.sistema_destino
             ORDER BY d.sistema_destino
             """, nativeQuery = true)
-    List<MetricaIntegracaoClienteProjection> buscarMetricasIntegracoesClientes();
+    List<MetricaIntegracaoClienteProjection> buscarMetricasIntegracoesClientes(
+            @Param("dataInicial") LocalDateTime dataInicial,
+            @Param("dataFinalLimit") LocalDateTime dataFinalLimit
+    );
+
+    @Query(value = """
+            SELECT
+                CAST(l.data_processamento AS DATE) AS data,
+                COUNT(l.id) AS total,
+                SUM(CASE
+                    WHEN (
+                        COALESCE(UPPER(NULLIF(TRIM(l.status), '')), '') IN ('SUCESSO', 'ENVIADO', 'PROCESSADO')
+                        OR COALESCE(UPPER(NULLIF(TRIM(l.status_dados), '')), '') IN ('SUCESSO', 'ENVIADO', 'PROCESSADO')
+                        OR COALESCE(UPPER(NULLIF(TRIM(l.status_canhoto), '')), '') IN ('SUCESSO', 'ENVIADO', 'PROCESSADO')
+                    )
+                    THEN 1 ELSE 0 END) AS sucessos,
+                SUM(CASE
+                    WHEN (
+                        COALESCE(UPPER(NULLIF(TRIM(l.status), '')), '') IN ('SUCESSO', 'ENVIADO', 'PROCESSADO')
+                        OR COALESCE(UPPER(NULLIF(TRIM(l.status_dados), '')), '') IN ('SUCESSO', 'ENVIADO', 'PROCESSADO')
+                        OR COALESCE(UPPER(NULLIF(TRIM(l.status_canhoto), '')), '') IN ('SUCESSO', 'ENVIADO', 'PROCESSADO')
+                    )
+                    THEN 0 ELSE 1 END) AS erros
+            FROM dbo.tb_log_integracao l
+            WHERE l.sistema_destino IN ('VEDACIT', 'PPG')
+              AND l.data_processamento >= :dataInicial
+              AND l.data_processamento < :dataFinalLimit
+            GROUP BY CAST(l.data_processamento AS DATE)
+            ORDER BY data ASC
+            """, nativeQuery = true)
+    List<IntegracaoEvolucaoDiariaProjection> buscarEvolucaoDiariaIntegracoes(
+            @Param("dataInicial") LocalDateTime dataInicial,
+            @Param("dataFinalLimit") LocalDateTime dataFinalLimit
+    );
 
     @Query(
             value = """
@@ -144,6 +180,16 @@ public interface LogIntegracaoRepository extends JpaRepository<LogIntegracaoMode
         BigDecimal getPercentualXmlSucesso();
 
         BigDecimal getPercentualCanhotoSucesso();
+    }
+
+    interface IntegracaoEvolucaoDiariaProjection {
+        LocalDate getData();
+
+        Integer getTotal();
+
+        Integer getSucessos();
+
+        Integer getErros();
     }
 
     interface PendenciaIntegracaoClienteProjection {

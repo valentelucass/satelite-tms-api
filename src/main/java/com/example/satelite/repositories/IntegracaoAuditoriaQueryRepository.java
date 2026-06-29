@@ -3,6 +3,7 @@ package com.example.satelite.repositories;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Timestamp;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -116,6 +117,7 @@ public class IntegracaoAuditoriaQueryRepository {
         adicionarCodigo(where, params, filtros.tabelaCodigo());
         adicionarStatus(where, params, filtros.tabelaStatus());
         adicionarFiltrosColuna(where, params, filtros.filtrosColuna());
+        adicionarFiltroPeriodo(where, params, filtros.dataInicial(), filtros.dataFinal());
 
         return new QueryParts(where, params);
     }
@@ -234,6 +236,30 @@ public class IntegracaoAuditoriaQueryRepository {
         where.add("(" + String.join(" OR ", condicoes) + ")");
     }
 
+    private void adicionarFiltroPeriodo(
+            List<String> where,
+            MapSqlParameterSource params,
+            String dataInicial,
+            String dataFinal
+    ) {
+        String inicioTexto = normalizarTexto(dataInicial);
+        String finalTexto = normalizarTexto(dataFinal);
+        if (inicioTexto == null || finalTexto == null) {
+            return;
+        }
+
+        LocalDate inicio = LocalDate.parse(inicioTexto);
+        LocalDate fim = LocalDate.parse(finalTexto);
+        if (fim.isBefore(inicio)) {
+            throw new IllegalArgumentException("Data final da auditoria nao pode ser anterior a data inicial");
+        }
+
+        params.addValue("dataInicial", inicio.atStartOfDay());
+        params.addValue("dataFinalLimit", fim.plusDays(1).atStartOfDay());
+        where.add("l.data_processamento >= :dataInicial");
+        where.add("l.data_processamento < :dataFinalLimit");
+    }
+
     private String montarOrdenacao(Filtros filtros) {
         String sortField = normalizarTexto(filtros.sortField());
         if (sortField == null) {
@@ -330,7 +356,9 @@ public class IntegracaoAuditoriaQueryRepository {
             Map<String, List<String>> filtrosColuna,
             String escopo,
             String sortField,
-            String sortDirection
+            String sortDirection,
+            String dataInicial,
+            String dataFinal
     ) {
     }
 
