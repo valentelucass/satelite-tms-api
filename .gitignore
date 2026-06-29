@@ -9,14 +9,39 @@ HELP.md
 *.local
 application-local.properties
 application-*.local.properties
+**/*credentials*.json
+**/*secret*.json
+**/*token*.json
+**/*api-key*.json
+**/*apikey*.json
+*.pem
+*.key
+*.p8
+*.p12
+*.pfx
+*.jks
+*.keystore
+*.ppk
 
 # Runtime logs and process files
 logs/
 *.log
 *.log.*
+*.out
+*.err
 *.pid
+*.pid.lock
 *.tmp
 *.temp
+
+# Local process manager configs
+ecosystem.config.js
+ecosystem.config.cjs
+ecosystem.*.config.js
+ecosystem.*.config.cjs
+pm2*.json
+.pm2/
+dump.pm2
 
 # Java / Maven build output
 target/
@@ -29,6 +54,18 @@ target/
 hs_err_pid*
 replay_pid*
 .attach_pid*
+*.hprof
+*.heapdump
+
+# Local databases, backups and generated payloads
+*.db
+*.sqlite
+*.sqlite3
+*.bak
+*.backup
+*.dump
+*.sql.gz
+*.sql.zip
 
 ### STS ###
 .apt_generated/
