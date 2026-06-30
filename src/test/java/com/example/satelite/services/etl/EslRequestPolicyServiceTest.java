@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.nio.charset.StandardCharsets;
+import java.net.SocketTimeoutException;
 import java.time.Duration;
 import java.time.LocalDate;
 import java.util.Collections;
@@ -17,6 +18,7 @@ import feign.FeignException;
 import feign.Request;
 import feign.RequestTemplate;
 import feign.Response;
+import feign.RetryableException;
 
 class EslRequestPolicyServiceTest {
 
@@ -119,8 +121,40 @@ class EslRequestPolicyServiceTest {
         assertFalse(erro.getMessage().contains("<!doctype html>"));
     }
 
+    @Test
+    void deveConverterTimeoutFeignEmExcecaoTransitoriaSanitizada() {
+        EslRequestPolicyService.EslRequestTransientException erro = assertThrows(
+                EslRequestPolicyService.EslRequestTransientException.class,
+                () -> service.executar("buscarOcorrencias", () -> {
+                    throw new RetryableException(
+                            -1,
+                            "Read timed out",
+                            Request.HttpMethod.GET,
+                            new SocketTimeoutException("Read timed out"),
+                            (Long) null,
+                            criarRequestEsl()
+                    );
+                })
+        );
+
+        assertEquals("buscarOcorrencias", erro.operacao());
+        assertEquals(EslRequestPolicyService.STATUS_SEM_RESPOSTA_HTTP, erro.status());
+        assertTrue(erro.getMessage().contains("Timeout na comunicacao com a ESL"));
+    }
+
     private FeignException criarErroEsl(int status, String reason, String body) {
-        Request request = Request.create(
+        Response response = Response.builder()
+                .status(status)
+                .reason(reason)
+                .request(criarRequestEsl())
+                .body(body, StandardCharsets.UTF_8)
+                .build();
+
+        return FeignException.errorStatus("RodogarciaClient#buscarXmlCte", response);
+    }
+
+    private Request criarRequestEsl() {
+        return Request.create(
                 Request.HttpMethod.GET,
                 "https://rodogarcia.eslcloud.com.br/api/customer/invoice_occurrences",
                 Collections.emptyMap(),
@@ -128,13 +162,5 @@ class EslRequestPolicyServiceTest {
                 StandardCharsets.UTF_8,
                 new RequestTemplate()
         );
-        Response response = Response.builder()
-                .status(status)
-                .reason(reason)
-                .request(request)
-                .body(body, StandardCharsets.UTF_8)
-                .build();
-
-        return FeignException.errorStatus("RodogarciaClient#buscarXmlCte", response);
     }
 }

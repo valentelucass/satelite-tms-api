@@ -440,7 +440,8 @@ public class EtlFluxoDestinoService {
     }
 
     private boolean falhaPaginaNaoCritica(EslRequestTransientException e) {
-        return e.status() >= 500 && e.status() <= 599;
+        return e.status() == EslRequestPolicyService.STATUS_SEM_RESPOSTA_HTTP
+                || (e.status() >= 500 && e.status() <= 599);
     }
 
     String obterSinceParam(ExecucaoEtlRequest request) {

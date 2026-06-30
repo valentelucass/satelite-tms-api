@@ -123,6 +123,49 @@ public class EtlRegistroService {
         return resultado;
     }
 
+    public ResultadoRegistro reprocessarLogExistente(
+            String destino,
+            String headerAuth,
+            LogIntegracaoModel logIntegracao,
+            ProcessadorDestino processadorDestino
+    ) {
+        if (logIntegracao == null) {
+            return ResultadoRegistro.ERRO;
+        }
+
+        try {
+            Optional<EslOcorrenciaDTO> ocorrencia = buscarOcorrenciaPendente(headerAuth, logIntegracao);
+            if (ocorrencia.isEmpty()) {
+                return registrarErroRepescagem(
+                        destino,
+                        logIntegracao,
+                        new IllegalStateException("Ocorrência não encontrada na ESL para repescagem por invoice_key")
+                );
+            }
+
+            EslOcorrenciaDTO ocorrenciaRepescagem = ocorrencia.get();
+            return etlResilienciaService.processarOcorrenciaComRetentativas(
+                    destino,
+                    obterChaveNfe(ocorrenciaRepescagem),
+                    logIntegracao,
+                    () -> processarOcorrenciaComLog(
+                            destino,
+                            headerAuth,
+                            logIntegracao.getCursorNextId(),
+                            ocorrenciaRepescagem,
+                            processadorDestino,
+                            logIntegracao
+                    )
+            );
+        } catch (Exception e) {
+            if (e instanceof InterruptedException) {
+                Thread.currentThread().interrupt();
+            }
+
+            return registrarErroRepescagem(destino, logIntegracao, e);
+        }
+    }
+
     public ResultadoRegistro processarOcorrencia(
             String destino,
             String headerAuth,
@@ -338,6 +381,30 @@ public class EtlRegistroService {
                 .filter(ocorrencia -> pendencia.getOccurrenceId() == null
                         || pendencia.getOccurrenceId().equals(ocorrencia.id()))
                 .findFirst();
+    }
+
+    private ResultadoRegistro registrarErroRepescagem(
+            String destino,
+            LogIntegracaoModel logIntegracao,
+            Exception erro
+    ) {
+        etlEstadoIntegracaoService.aplicarResultadoIntegracao(
+                logIntegracao,
+                etlEstadoIntegracaoService.criarResultadoErroGenerico(destino, erro)
+        );
+        etlEstadoIntegracaoService.salvar(logIntegracao);
+
+        log.error(
+                "❌ [DESTINO: {}] NF {}: Erro durante repescagem - {}",
+                destino,
+                logIntegracao.getChaveNfe(),
+                erro.getMessage()
+        );
+        return etlResilienciaService.resultadoErroAposTentativa(
+                destino,
+                logIntegracao.getChaveNfe(),
+                logIntegracao
+        );
     }
 
     private void manterPendenteSemOcorrencia(LogIntegracaoModel pendencia) {

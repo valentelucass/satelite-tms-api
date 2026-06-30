@@ -4,7 +4,9 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.contains;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import java.awt.Color;
@@ -130,6 +132,28 @@ class VedacitIntegrationServiceTest {
     }
 
     @Test
+    void deveRetornarErroDadosLimpoQuandoXmlCteHabilitadoSemChaveCte() {
+        RodogarciaClient rodogarciaClient = mock(RodogarciaClient.class);
+        EslRequestPolicyService politicaEsl = criarPoliticaEslExecutora();
+        VedacitIntegrationService service = new VedacitIntegrationService(
+                mock(ImageDownloader.class),
+                rodogarciaClient,
+                politicaEsl
+        );
+        ReflectionTestUtils.setField(service, "envioOcorrenciaHabilitado", false);
+        ReflectionTestUtils.setField(service, "envioXmlCteHabilitado", true);
+        ReflectionTestUtils.setField(service, "envioCanhotoHabilitado", false);
+
+        ResultadoIntegracao resultado = service.processarOcorrencia(criarOcorrenciaSemCte(), null);
+
+        assertEquals(ResultadoIntegracao.STATUS_ERRO_DESTINO, resultado.status());
+        assertEquals(ResultadoIntegracao.STATUS_ERRO_DESTINO, resultado.statusDados());
+        assertEquals("Chave CTe ausente para envio do XML CT-e", resultado.mensagemErroDados());
+        verify(politicaEsl, never()).executar(contains("buscarXmlCte"), any());
+        verifyNoInteractions(rodogarciaClient);
+    }
+
+    @Test
     void deveConciliarDuplicidadeSoapNoCanhotoComoCanhotoEnviado() throws Exception {
         ImageDownloader imageDownloader = mock(ImageDownloader.class);
         INFe portaNFe = mock(INFe.class);
@@ -171,6 +195,16 @@ class VedacitIntegrationServiceTest {
                 OffsetDateTime.parse("2026-06-17T10:30:00-03:00"),
                 new EslInvoiceDTO(20L, "35260612345678000123550010000012341000012345", "1", "1234"),
                 new EslFreightDTO(30L, "35260612345678000123570010000012341000012345"),
+                new EslOccurrenceDefDTO(40L, 1, "Entrega Realizada")
+        );
+    }
+
+    private EslOcorrenciaDTO criarOcorrenciaSemCte() {
+        return new EslOcorrenciaDTO(
+                10L,
+                OffsetDateTime.parse("2026-06-17T10:30:00-03:00"),
+                new EslInvoiceDTO(20L, "35260612345678000123550010000012341000012345", "1", "1234"),
+                new EslFreightDTO(30L, null),
                 new EslOccurrenceDefDTO(40L, 1, "Entrega Realizada")
         );
     }

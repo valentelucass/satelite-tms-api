@@ -149,6 +149,12 @@ public class VedacitIntegrationService {
                 }
 
                 if (envioXmlCteHabilitado) {
+                    if (chaveCteAusente(ocorrencia)) {
+                        String mensagem = "Chave CTe ausente para envio do XML CT-e";
+                        log.warn("⏭️ [VEDACIT] NF {}: {}. Requisição do XML não executada.", chaveNfe, mensagem);
+                        return ResultadoIntegracao.erroDados(mensagem);
+                    }
+
                     fluxoDadosHabilitado = true;
                     byte[] xmlCte = baixarXmlCte(ocorrencia, chaveNfe);
                     enviarXmlCte(xmlCte, chaveNfe, cteKey);
@@ -592,14 +598,18 @@ public class VedacitIntegrationService {
     }
 
     private String obterChaveCteObrigatoria(EslOcorrenciaDTO ocorrencia) {
-        if (ocorrencia == null
-                || ocorrencia.freight() == null
-                || ocorrencia.freight().cteKey() == null
-                || ocorrencia.freight().cteKey().isBlank()) {
+        if (chaveCteAusente(ocorrencia)) {
             throw new IllegalStateException("Chave CTe ausente para consulta do XML");
         }
 
         return ocorrencia.freight().cteKey();
+    }
+
+    private boolean chaveCteAusente(EslOcorrenciaDTO ocorrencia) {
+        return ocorrencia == null
+                || ocorrencia.freight() == null
+                || ocorrencia.freight().cteKey() == null
+                || ocorrencia.freight().cteKey().isBlank();
     }
 
     private String obterTokenCteXmlEsl() {

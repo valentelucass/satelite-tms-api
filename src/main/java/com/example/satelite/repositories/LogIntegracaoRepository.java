@@ -37,6 +37,33 @@ public interface LogIntegracaoRepository extends JpaRepository<LogIntegracaoMode
             """)
     List<LogIntegracaoModel> findQuarentenaByDestino(@Param("destino") String destino);
 
+    @Query("""
+            SELECT l
+            FROM LogIntegracaoModel l
+            WHERE l.status = 'ERRO_DESTINO'
+              AND (l.tentativasDados >= 3 OR l.tentativasCanhoto >= 3)
+              AND l.dataProcessamento >= :inicioCiclo
+            ORDER BY l.dataProcessamento ASC, l.id ASC
+            """)
+    List<LogIntegracaoModel> findErrosManuaisDesde(@Param("inicioCiclo") LocalDateTime inicioCiclo);
+
+    @Query(
+            value = """
+                    SELECT l
+                    FROM LogIntegracaoModel l
+                    WHERE l.status = 'ERRO_DESTINO'
+                      AND (l.tentativasDados >= 3 OR l.tentativasCanhoto >= 3)
+                    ORDER BY l.dataProcessamento DESC, l.id DESC
+                    """,
+            countQuery = """
+                    SELECT COUNT(l)
+                    FROM LogIntegracaoModel l
+                    WHERE l.status = 'ERRO_DESTINO'
+                      AND (l.tentativasDados >= 3 OR l.tentativasCanhoto >= 3)
+                    """
+    )
+    Page<LogIntegracaoModel> findErrosManuais(Pageable pageable);
+
     @Modifying(clearAutomatically = true, flushAutomatically = true)
     @Query("""
             UPDATE LogIntegracaoModel l

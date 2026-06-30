@@ -29,6 +29,7 @@ public class OrquestradorEtlService {
     private final EtlEstadoIntegracaoService etlEstadoIntegracaoService;
     private final EtlFluxoDestinoService etlFluxoDestinoService;
     private final QuarentenaService quarentenaService;
+    private final EtlRepescagemService etlRepescagemService;
 
     @Value("${RODOGARCIA_TOKEN_PPG}")
     private String tokenPpgEsl;
@@ -53,13 +54,15 @@ public class OrquestradorEtlService {
             VedacitIntegrationService vedacitIntegrationService,
             EtlEstadoIntegracaoService etlEstadoIntegracaoService,
             EtlFluxoDestinoService etlFluxoDestinoService,
-            QuarentenaService quarentenaService
+            QuarentenaService quarentenaService,
+            EtlRepescagemService etlRepescagemService
     ) {
         this.ppgIntegrationService = ppgIntegrationService;
         this.vedacitIntegrationService = vedacitIntegrationService;
         this.etlEstadoIntegracaoService = etlEstadoIntegracaoService;
         this.etlFluxoDestinoService = etlFluxoDestinoService;
         this.quarentenaService = quarentenaService;
+        this.etlRepescagemService = etlRepescagemService;
     }
 
     public void executarFluxos() {
@@ -118,6 +121,8 @@ public class OrquestradorEtlService {
                 resultadoVedacit = ResultadoDestino.desabilitado(DESTINO_VEDACIT);
             }
         } finally {
+            executarRepescagemComSeguranca(inicioCiclo);
+
             LocalDateTime fimCiclo = LocalDateTime.now();
             int recebidasTotal = resultadoPpg.recebidos() + resultadoVedacit.recebidos();
             int ignoradasTotal = resultadoPpg.ignorados() + resultadoVedacit.ignorados();
@@ -207,6 +212,14 @@ public class OrquestradorEtlService {
         return resultadoCiclo;
     }
 
+    private void executarRepescagemComSeguranca(LocalDateTime inicioCiclo) {
+        try {
+            etlRepescagemService.executarRepescagem(inicioCiclo);
+        } catch (Exception e) {
+            log.warn("⚠️ Repescagem final do ciclo falhou antes do relatório: {}", e.getMessage(), e);
+        }
+    }
+
     private void logarRelatorioQuarentena() {
         try {
             List<LogIntegracaoModel> quarentenaPpg = buscarQuarentena(DESTINO_PPG);
@@ -220,7 +233,7 @@ public class OrquestradorEtlService {
                     .append(quebraLinha)
                     .append(LINHA_BANNER)
                     .append(quebraLinha)
-                    .append("📋 RELATÓRIO DE QUARENTENA - AÇÃO MANUAL REQUERIDA")
+                    .append("📋 RELATÓRIO FINAL DE QUARENTENA - COPIAR PARA OPERAÇÃO")
                     .append(quebraLinha)
                     .append(LINHA_BANNER)
                     .append(quebraLinha);
@@ -249,40 +262,16 @@ public class OrquestradorEtlService {
             return;
         }
 
-        relatorio.append("Destino: ").append(destino).append(System.lineSeparator());
         for (LogIntegracaoModel registro : registros) {
             relatorio
-                    .append("NF: ")
+                    .append("[")
+                    .append(destino)
+                    .append("] NF ")
                     .append(valorLog(registro.getChaveNfe()))
-                    .append(" | Tentativas: ")
-                    .append(maiorTentativas(registro))
-                    .append(" | Erro: ")
-                    .append(valorLog(mensagemErro(registro)))
+                    .append(" - ")
+                    .append(valorLog(quarentenaService.erroLimpo(registro)))
                     .append(System.lineSeparator());
         }
-    }
-
-    private int maiorTentativas(LogIntegracaoModel registro) {
-        return Math.max(
-                valorTentativas(registro.getTentativasDados()),
-                valorTentativas(registro.getTentativasCanhoto())
-        );
-    }
-
-    private int valorTentativas(Integer tentativas) {
-        return tentativas != null ? tentativas : 0;
-    }
-
-    private String mensagemErro(LogIntegracaoModel registro) {
-        if (registro.getErro() != null && !registro.getErro().isBlank()) {
-            return registro.getErro();
-        }
-
-        if (registro.getMensagemErroDados() != null && !registro.getMensagemErroDados().isBlank()) {
-            return registro.getMensagemErroDados();
-        }
-
-        return registro.getMensagemErroCanhoto();
     }
 
     private String valorLog(String valor) {

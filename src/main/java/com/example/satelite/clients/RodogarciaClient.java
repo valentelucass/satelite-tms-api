@@ -5,11 +5,12 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RequestHeader;
 
+import com.example.satelite.config.RodogarciaFeignConfig;
 import com.example.satelite.dto.rodogarcia.ComprovanteEslDTO;
 import com.example.satelite.dto.rodogarcia.CteResponseDTO;
 import com.example.satelite.dto.rodogarcia.EslLoteResponseDTO;
 
-@FeignClient(name = "rodogarciaClient", url = "${RODOGARCIA_API_BASE_URL}")
+@FeignClient(name = "rodogarciaClient", url = "${RODOGARCIA_API_BASE_URL}", configuration = RodogarciaFeignConfig.class)
 public interface RodogarciaClient {
 
     @GetMapping("${RODOGARCIA_CUSTOMER_OCCURRENCES_PATH:/api/customer/invoice_occurrences}")

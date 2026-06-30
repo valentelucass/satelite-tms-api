@@ -15,6 +15,7 @@ import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import java.net.SocketTimeoutException;
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -53,6 +54,7 @@ import feign.FeignException;
 import feign.Request;
 import feign.RequestTemplate;
 import feign.Response;
+import feign.RetryableException;
 
 @ExtendWith(OutputCaptureExtension.class)
 class OrquestradorEtlServiceTest {
@@ -108,6 +110,25 @@ class OrquestradorEtlServiceTest {
         when(dependencias.controleCursorRepository().findBySistemaDestino(anyString())).thenReturn(Optional.empty());
         when(dependencias.rodogarciaClient().buscarOcorrencias(eq("Bearer token-ppg"), isNull(), isNull(), isNull(), eq(1)))
                 .thenThrow(criarErroServidorEslHtml());
+
+        OrquestradorEtlService.ResultadoCiclo resultado = dependencias.service().executarFluxosComResultado();
+
+        assertFalse(resultado.erroCritico());
+        assertEquals(OrquestradorEtlService.CODIGO_SAIDA_ERRO_CRITICO, resultado.codigoSaida());
+        assertEquals(1, resultado.resultadoPpg().erros());
+        assertEquals(1, resultado.resultadoPpg().paginasProcessadas());
+        assertTrue(resultado.resultadoPpg().mensagemEncerramento().contains("cursor nao avancado"));
+        verify(dependencias.controleCursorRepository(), times(0)).save(any());
+    }
+
+    @Test
+    void deveMarcarFalhaDePaginaSemErroCriticoQuandoEslDaTimeoutNaBuscaRaiz() {
+        Dependencias dependencias = criarDependencias();
+        ReflectionTestUtils.setField(dependencias.service(), "vedacitEnabled", false);
+
+        when(dependencias.controleCursorRepository().findBySistemaDestino(anyString())).thenReturn(Optional.empty());
+        when(dependencias.rodogarciaClient().buscarOcorrencias(eq("Bearer token-ppg"), isNull(), isNull(), isNull(), eq(1)))
+                .thenThrow(criarTimeoutEsl());
 
         OrquestradorEtlService.ResultadoCiclo resultado = dependencias.service().executarFluxosComResultado();
 
@@ -931,6 +952,13 @@ class OrquestradorEtlServiceTest {
             Supplier<?> chamada = invocation.getArgument(1);
             try {
                 return chamada.get();
+            } catch (RetryableException e) {
+                throw new EslRequestPolicyService.EslRequestTransientException(
+                        invocation.getArgument(0),
+                        EslRequestPolicyService.STATUS_SEM_RESPOSTA_HTTP,
+                        "Timeout na comunicacao com a ESL em " + invocation.getArgument(0),
+                        e
+                );
             } catch (FeignException e) {
                 if (e.status() == 429 || (e.status() >= 500 && e.status() <= 599)) {
                     throw new EslRequestPolicyService.EslRequestTransientException(
@@ -946,6 +974,7 @@ class OrquestradorEtlServiceTest {
         EtlResilienciaService etlResilienciaService = new EtlResilienciaService();
         EtlEstadoIntegracaoService etlEstadoIntegracaoService = new EtlEstadoIntegracaoService(logIntegracaoRepository);
         QuarentenaService quarentenaService = new QuarentenaService(logIntegracaoRepository);
+        EtlRepescagemService etlRepescagemService = mock(EtlRepescagemService.class);
         EtlRegistroService etlRegistroService = new EtlRegistroService(
                 rodogarciaClient,
                 eslRequestPolicyService,
@@ -982,7 +1011,8 @@ class OrquestradorEtlServiceTest {
                 vedacitIntegrationService,
                 etlEstadoIntegracaoService,
                 etlFluxoDestinoService,
-                quarentenaService
+                quarentenaService,
+                etlRepescagemService
         );
         ReflectionTestUtils.setField(service, "tokenPpgEsl", "token-ppg");
         ReflectionTestUtils.setField(service, "tokenVedacitEsl", "token-vedacit");
@@ -1000,7 +1030,8 @@ class OrquestradorEtlServiceTest {
                 etlResilienciaService,
                 etlEstadoIntegracaoService,
                 etlRegistroService,
-                etlFluxoDestinoService
+                etlFluxoDestinoService,
+                etlRepescagemService
         );
     }
 
@@ -1016,8 +1047,30 @@ class OrquestradorEtlServiceTest {
         return criarErroEsl(500, "Internal Server Error", "<!doctype html><html>erro</html>");
     }
 
+    private RetryableException criarTimeoutEsl() {
+        return new RetryableException(
+                -1,
+                "Read timed out",
+                Request.HttpMethod.GET,
+                new SocketTimeoutException("Read timed out"),
+                (Long) null,
+                criarRequestEsl()
+        );
+    }
+
     private FeignException criarErroEsl(int status, String reason, String body) {
-        Request request = Request.create(
+        Response response = Response.builder()
+                .status(status)
+                .reason(reason)
+                .request(criarRequestEsl())
+                .body(body, StandardCharsets.UTF_8)
+                .build();
+
+        return FeignException.errorStatus("RodogarciaClient#buscarOcorrencias", response);
+    }
+
+    private Request criarRequestEsl() {
+        return Request.create(
                 Request.HttpMethod.GET,
                 "https://rodogarcia.eslcloud.com.br/api/customer/invoice_occurrences",
                 Collections.emptyMap(),
@@ -1025,14 +1078,6 @@ class OrquestradorEtlServiceTest {
                 StandardCharsets.UTF_8,
                 new RequestTemplate()
         );
-        Response response = Response.builder()
-                .status(status)
-                .reason(reason)
-                .request(request)
-                .body(body, StandardCharsets.UTF_8)
-                .build();
-
-        return FeignException.errorStatus("RodogarciaClient#buscarOcorrencias", response);
     }
 
     private ComprovanteEslDTO criarComprovanteComImagem() {
@@ -1104,7 +1149,8 @@ class OrquestradorEtlServiceTest {
             EtlResilienciaService etlResilienciaService,
             EtlEstadoIntegracaoService etlEstadoIntegracaoService,
             EtlRegistroService etlRegistroService,
-            EtlFluxoDestinoService etlFluxoDestinoService
+            EtlFluxoDestinoService etlFluxoDestinoService,
+            EtlRepescagemService etlRepescagemService
     ) {
     }
 }
