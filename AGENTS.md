@@ -37,3 +37,10 @@ Respeite a separação de responsabilidades. Não misture regras de domínio com
 * Todo script SQL DEVE iniciar com `SET ANSI_NULLS ON;` e `SET QUOTED_IDENTIFIER ON;` após o comando `USE` para evitar falhas com o `sqlcmd`.
 * Os scripts DEVEM ser 100% idempotentes, permitindo múltiplas execuções sem falhas.
 * A única ação requerida pelo usuário para atualizar o banco de dados deve ser executar o arquivo `subir_database.bat`.
+
+## Diretrizes de Sincronização de Estado (states.md)
+1. Antes de iniciar a implementação de qualquer código, você DEVE ler o arquivo `states.md` para compreender o contexto arquitetural e as regras de negócio vigentes, garantindo que as novas implementações não quebrem o estado atual.
+2. Leia a seção "Tarefas Pendentes" no `states.md` para entender o escopo exato do que precisa ser desenvolvido.
+3. Após finalizar a escrita e modificação do código, você DEVE atualizar o arquivo `states.md`.
+4. A atualização consiste em: remover a tarefa concluída da seção "Tarefas Pendentes" e atualizar as seções "Arquitetura e Padrões", "Fluxo de Dados" ou "Regras de Negócio Consolidadas" refletindo exatamente o novo estado do sistema.
+5. NUNCA entregue ou finalize uma modificação de código sem antes reescrever e atualizar o `states.md` para refletir o presente.
