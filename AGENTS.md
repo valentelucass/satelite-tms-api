@@ -4,6 +4,10 @@
 
 Sempre que gerar código ou sugerir soluções, obedeça estritamente às diretrizes abaixo:
 
+## 0. Garantia de Contexto Antes de Agir
+* **Leitura obrigatória:** Antes de qualquer planejamento, análise ou escrita de código, leia este `AGENTS.md`, o `states.md` local e o `CONTEXTO_GLOBAL.md` do ecossistema quando presente no workspace.
+* **Hierarquia de regras:** O `CONTEXTO_GLOBAL.md` dita as regras imutáveis do ecossistema; este `AGENTS.md` dita as regras locais do Satélite; o `states.md` registra o estado atual e as tarefas pendentes. Em caso de conflito, preserve a integridade arquitetural e explicite a decisão.
+
 ## 1. Topologia e Arquitetura em Camadas
 Respeite a separação de responsabilidades. Não misture regras de domínio com chamadas HTTP.
 * `models`: Apenas entidades JPA da tabela de auditoria (`tb_log_integracao`).
@@ -30,6 +34,7 @@ Respeite a separação de responsabilidades. Não misture regras de domínio com
 * **Filtro de Negócio:** O orquestrador só deve repassar para os destinos os registros que possuam `occurrence.code == 1` (Entrega Realizada).
 * **Database Permitida:** Toda ação manual, script, teste ou automação que toque SQL Server deve usar exclusivamente a base deste repositório: `SATELITE_TMS_AUDITORIA` (`satelite_tms_auditoria`). É proibido executar `TRUNCATE`, `DROP`, migração, carga, limpeza ou qualquer DDL/DML em `ETL_SISTEMA` ou em qualquer outra database.
 * **Banco de Dados (Auditoria):** O banco de dados é apenas para log e rastreabilidade (`tb_log_integracao`). Nenhuma NF, imagem ou dados de domínio devem ser persistidos fisicamente no banco.
+* **🚨 Exclusão Lógica (Soft Delete Obrigatório):** É ESTRITAMENTE PROIBIDO apagar fisicamente logs, auditorias, cursores, quarentenas ou estados técnicos de integração por hard delete (`DELETE FROM`) ou `TRUNCATE` em rotinas comuns. Correções operacionais devem preservar rastreabilidade via status, flags como `ativo = 0`, `deleted_at`, `arquivado = 1` ou campos equivalentes; leituras de produção devem filtrar registros inativos quando aplicável.
 * **Tratamento de Exceções:** Falhas em integrações HTTP (4xx, 5xx) ou conversões de uma NF não devem derrubar o lote inteiro. Use blocos `try/catch` individualizados por registro e grave o resultado (ex: `ERRO_VALIDACAO` ou `ERRO_DESTINO`) na tabela de log.
 
 ## 5. Regras de Banco de Dados e Migrations

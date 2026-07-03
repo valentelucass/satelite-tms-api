@@ -23,6 +23,7 @@
 - `EslRequestPolicyService` impõe intervalo mínimo entre chamadas ESL, trata HTTP 429/5xx e falhas de transporte como transitórias e controla cooldown para consultas por período.
 - Banco versionado por scripts SQL idempotentes em `database/sql/schema` e `database/sql/migration`; todo script deve usar `USE`, `SET ANSI_NULLS ON` e `SET QUOTED_IDENTIFIER ON`.
 - Classes SOAP da Vedacit são geradas em `target/generated-sources/wsimport*`; não devem ser editadas manualmente.
+- Logs, auditorias, cursores, quarentenas e estados técnicos de integração usam exclusão lógica obrigatória quando precisarem sair das leituras operacionais. Hard delete/`DELETE FROM`/`TRUNCATE` em rotinas comuns é proibido; use status, `ativo`, `deleted_at`, `arquivado` ou campo equivalente, com filtros explícitos nas consultas de produção.
 
 ## Fluxo de Dados e Integrações
 - Origem principal: Rodogarcia/ESL Cloud via REST OpenFeign em `RodogarciaClient`.
@@ -58,8 +59,11 @@
 - Toda credencial, URL e token deve vir de `.env`, `application.properties` ou variável de ambiente; não pode haver segredo hardcoded.
 - DTOs REST próprios devem preferir `record`, camelCase no Java e `@JsonProperty` para nomes externos divergentes; DTO raiz deve tolerar campos desconhecidos.
 - Qualquer alteração de banco deve ser script SQL versionado e idempotente; a atualização operacional esperada é executar `database/subir_database.bat`.
+- Registros de auditoria e logs devem preservar rastreabilidade histórica; limpezas físicas só podem existir como política técnica excepcional, documentada, versionada, idempotente e restrita ao banco `SATELITE_TMS_AUDITORIA`.
 
 ## Protocolo de Planejamento de Requisições
+- Antes de iniciar qualquer planejamento ou escrita de código, a IA DEVE OBRIGATORIAMENTE ler `AGENTS.md` do projeto local e `CONTEXTO_GLOBAL.md` quando presente no workspace.
+- O `CONTEXTO_GLOBAL.md` dita as regras do ecossistema e o `AGENTS.md` dita as regras locais. Falhar em ler e aplicar essas regras resulta em quebra arquitetural.
 - Ao receber uma nova requisição para este projeto, atuar como Arquiteto de Software e usar este `states.md` como ESTADO ATUAL.
 - A análise deve respeitar a stack, a arquitetura, as fronteiras de banco e os contratos de dados descritos neste arquivo.
 - A resposta de planejamento deve retornar somente o bloco `## Tarefas Pendentes`, formatado em Markdown.
@@ -67,4 +71,4 @@
 - É proibido incluir saudações, conclusões, explicações fora dos bullets ou reescrever outras seções durante a resposta de planejamento.
 
 ## Tarefas Pendentes
-- Nenhuma. (Deixe esta seção vazia por enquanto).
+- Nenhuma tarefa pendente registrada.
