@@ -31,6 +31,7 @@ public class EtlFluxoDestinoService {
             DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss.SSSXXX");
     private static final String DESTINO_PPG = "PPG";
     private static final String DESTINO_VEDACIT = "VEDACIT";
+    private static final int LOOKBACK_INCREMENTAL_HORAS_PADRAO = 24;
     private static final int LIMITE_PADRAO_FALHAS_INFRAESTRUTURA_CONSECUTIVAS = 10;
 
     private final RodogarciaClient rodogarciaClient;
@@ -52,6 +53,9 @@ public class EtlFluxoDestinoService {
 
     @Value("${ETL_CIRCUIT_BREAKER_TRANSIENT_FAILURE_THRESHOLD:10}")
     private int limiteFalhasInfraestruturaConsecutivasCircuitBreaker;
+
+    @Value("${ETL_INCREMENTAL_LOOKBACK_HOURS:24}")
+    private int lookbackIncrementalHoras = LOOKBACK_INCREMENTAL_HORAS_PADRAO;
 
     public EtlFluxoDestinoService(
             RodogarciaClient rodogarciaClient,
@@ -445,13 +449,19 @@ public class EtlFluxoDestinoService {
     }
 
     String obterSinceParam(ExecucaoEtlRequest request) {
-        if (!request.retroativo()) {
+        if (request.retroativo()) {
+            return request.dataInicial()
+                    .atStartOfDay()
+                    .atOffset(OFFSET_SINCE_ESL)
+                    .format(ESL_SINCE_FORMATTER);
+        }
+
+        if (lookbackIncrementalHoras <= 0) {
             return null;
         }
 
-        return request.dataInicial()
-                .atStartOfDay()
-                .atOffset(OFFSET_SINCE_ESL)
+        return OffsetDateTime.now(OFFSET_SINCE_ESL)
+                .minusHours(lookbackIncrementalHoras)
                 .format(ESL_SINCE_FORMATTER);
     }
 

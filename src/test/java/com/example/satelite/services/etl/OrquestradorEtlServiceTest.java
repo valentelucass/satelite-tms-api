@@ -20,6 +20,7 @@ import java.nio.charset.StandardCharsets;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
 import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
@@ -82,6 +83,40 @@ class OrquestradorEtlServiceTest {
         verify(dependencias.rodogarciaClient()).buscarOcorrencias("Bearer token-ppg", 123L, null, null, 1);
         verify(dependencias.rodogarciaClient()).buscarOcorrencias("Bearer token-vedacit", 123L, null, null, 1);
         verify(dependencias.eslRequestPolicyService(), times(2)).executar(anyString(), any());
+    }
+
+    @Test
+    void deveBuscarOcorrenciasIncrementaisComLookbackDe24Horas() {
+        Dependencias dependencias = criarDependencias();
+        ReflectionTestUtils.setField(dependencias.service(), "vedacitEnabled", false);
+        ReflectionTestUtils.setField(dependencias.etlFluxoDestinoService(), "lookbackIncrementalHoras", 24);
+
+        OffsetDateTime antes = OffsetDateTime.now(ZoneOffset.of("-03:00")).minusHours(24);
+        when(dependencias.controleCursorRepository().findBySistemaDestino(anyString())).thenReturn(Optional.empty());
+        when(dependencias.rodogarciaClient().buscarOcorrencias(
+                eq("Bearer token-ppg"),
+                isNull(),
+                isNull(),
+                anyString(),
+                eq(1)
+        ))
+                .thenReturn(loteVazio());
+
+        dependencias.service().executarFluxos();
+
+        ArgumentCaptor<String> sinceCaptor = ArgumentCaptor.forClass(String.class);
+        verify(dependencias.rodogarciaClient()).buscarOcorrencias(
+                eq("Bearer token-ppg"),
+                isNull(),
+                isNull(),
+                sinceCaptor.capture(),
+                eq(1)
+        );
+
+        OffsetDateTime depois = OffsetDateTime.now(ZoneOffset.of("-03:00")).minusHours(24);
+        OffsetDateTime since = OffsetDateTime.parse(sinceCaptor.getValue());
+        assertFalse(since.isBefore(antes.minusSeconds(1)));
+        assertFalse(since.isAfter(depois.plusSeconds(1)));
     }
 
     @Test
@@ -989,6 +1024,7 @@ class OrquestradorEtlServiceTest {
                 eslRequestPolicyService,
                 etlRegistroService
         );
+        ReflectionTestUtils.setField(etlFluxoDestinoService, "lookbackIncrementalHoras", 0);
         when(ppgIntegrationService.notaFiscalPermitida(any())).thenReturn(true);
         when(ppgIntegrationService.processarOcorrencia(any(), any())).thenReturn(ResultadoIntegracao.enviado());
         when(vedacitIntegrationService.notaFiscalPermitida(any())).thenReturn(true);

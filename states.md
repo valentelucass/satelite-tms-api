@@ -28,7 +28,7 @@
 ## Fluxo de Dados e Integrações
 - Origem principal: Rodogarcia/ESL Cloud via REST OpenFeign em `RodogarciaClient`.
 - Endpoint ESL de ocorrências: `GET ${RODOGARCIA_API_BASE_URL}${RODOGARCIA_CUSTOMER_OCCURRENCES_PATH}`, padrão `/api/customer/invoice_occurrences`, com `Authorization: Bearer <token>`.
-- Parâmetros usados na origem: `start` para cursor, `invoice_key` para whitelists/repescagem, `since` para retroativo e `occurrence_code=1`.
+- Parâmetros usados na origem: `start` para cursor, `invoice_key` para whitelists/repescagem, `since` para retroativo e para lookback incremental das últimas 24 horas, e `occurrence_code=1`.
 - Comprovantes ESL: `GET /api/customer/freight_delivery_receipts?cte_key=...`.
 - XML de CT-e ESL: `GET ${RODOGARCIA_CTE_XML_PATH:/api/ctes}?key=...`, usado quando `VEDACIT_SEND_CTE_XML_ENABLED=true` e com token `RODOGARCIA_MASTER_API_REST`.
 - Destinos ativos: `PPG` com token ESL próprio `RODOGARCIA_TOKEN_PPG` e `VEDACIT` com token ESL próprio `RODOGARCIA_TOKEN_VEDACIT`; cada destino mantém cursor independente.
@@ -45,6 +45,7 @@
 - Ações SQL manuais ou automatizadas devem atingir exclusivamente `SATELITE_TMS_AUDITORIA`; é proibido tocar `ETL_SISTEMA`, `DASHBOARDS` ou qualquer outra database.
 - O banco guarda apenas auditoria, status, cursor e erros. Não persistir fisicamente NF completa, imagem de canhoto ou massa operacional de domínio.
 - O cursor só avança depois do processamento/auditoria da página. Em erro de registro no modo incremental, o cursor não avança para permitir retry.
+- O modo incremental consulta a ESL com `since` calculado como agora menos `ETL_INCREMENTAL_LOOKBACK_HOURS`, padrão 24 horas, mantendo o cursor por destino para paginação e avanço seguro.
 - Em carga retroativa, erros por registro são registrados e a paginação pode avançar em memória para não travar o histórico.
 - Cada destino tem whitelists independentes de NF-e: `PPG_NFE_WHITELIST_ENABLED/PPG_NFE_WHITELIST` e `VEDACIT_NFE_WHITELIST_ENABLED/VEDACIT_NFE_WHITELIST`.
 - Registros com status final `ENVIADO` ou `IGNORADO` não são reenviados automaticamente.
@@ -71,4 +72,4 @@
 - É proibido incluir saudações, conclusões, explicações fora dos bullets ou reescrever outras seções durante a resposta de planejamento.
 
 ## Tarefas Pendentes
-- Nenhuma tarefa pendente registrada.
+
