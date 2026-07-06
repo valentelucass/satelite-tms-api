@@ -4,7 +4,7 @@
         xmlns:xs="http://www.w3.org/2001/XMLSchema"
         version="3.0">
 
-    <jaxb:bindings schemaLocation="https://vedacit.multihomo.com.br/SGT.WebService/Ocorrencias.svc?xsd=xsd8" node="/xs:schema">
+    <jaxb:bindings schemaLocation="https://vedacit.multiembarcador.com.br/SGT.WebService/Ocorrencias.svc?xsd=xsd8" node="/xs:schema">
         <jaxb:schemaBindings>
             <jaxb:package name="org.datacontract.schemas._2004._07.dominio.objetosdevalor.embarcador.localidade"/>
         </jaxb:schemaBindings>
@@ -22,7 +22,7 @@
         </jaxb:bindings>
     </jaxb:bindings>
 
-    <jaxb:bindings schemaLocation="https://vedacit.multihomo.com.br/SGT.WebService/Ocorrencias.svc?xsd=xsd16" node="/xs:schema">
+    <jaxb:bindings schemaLocation="https://vedacit.multiembarcador.com.br/SGT.WebService/Ocorrencias.svc?xsd=xsd15" node="/xs:schema">
         <jaxb:schemaBindings>
             <jaxb:package name="org.datacontract.schemas._2004._07.dominio.objetosdevalor.embarcador.financeiro"/>
         </jaxb:schemaBindings>
@@ -31,7 +31,7 @@
         </jaxb:bindings>
     </jaxb:bindings>
 
-    <jaxb:bindings schemaLocation="https://vedacit.multihomo.com.br/SGT.WebService/Ocorrencias.svc?xsd=xsd21" node="/xs:schema">
+    <jaxb:bindings schemaLocation="https://vedacit.multiembarcador.com.br/SGT.WebService/Ocorrencias.svc?xsd=xsd20" node="/xs:schema">
         <jaxb:schemaBindings>
             <jaxb:package name="org.datacontract.schemas._2004._07.dominio.objetosdevalor.embarcador.pedido"/>
         </jaxb:schemaBindings>
@@ -43,7 +43,7 @@
         </jaxb:bindings>
     </jaxb:bindings>
 
-    <jaxb:bindings schemaLocation="https://vedacit.multihomo.com.br/SGT.WebService/Ocorrencias.svc?xsd=xsd23" node="/xs:schema">
+    <jaxb:bindings schemaLocation="https://vedacit.multiembarcador.com.br/SGT.WebService/Ocorrencias.svc?xsd=xsd22" node="/xs:schema">
         <jaxb:schemaBindings>
             <jaxb:package name="org.datacontract.schemas._2004._07.dominio.objetosdevalor.embarcador.configuracaocontabil"/>
         </jaxb:schemaBindings>

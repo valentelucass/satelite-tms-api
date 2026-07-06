@@ -20,7 +20,8 @@ import org.springframework.stereotype.Component;
 public class CicloRetroativoEtlRunner implements CommandLineRunner, ExitCodeGenerator {
 
     private static final Logger log = LoggerFactory.getLogger(CicloRetroativoEtlRunner.class);
-    private static final int MAX_PAGINAS_RETROATIVO_PADRAO = 10000;
+    private static final int MAX_PAGINAS_RETROATIVO_PADRAO = 10;
+    private static final String PROPRIEDADE_MAX_PAGINAS_CICLO = "INTEGRATION_MAX_PAGES_PER_CYCLE";
     private static final DateTimeFormatter FORMATO_DATA_RETROATIVA = DateTimeFormatter.ISO_LOCAL_DATE;
 
     private final OrquestradorEtlService orquestradorEtlService;
@@ -51,10 +52,15 @@ public class CicloRetroativoEtlRunner implements CommandLineRunner, ExitCodeGene
             LocalDate dataInicial = obterDataObrigatoria("retroactive.start", "RETROACTIVE_START");
             LocalDate dataFinal = obterDataObrigatoria("retroactive.end", "RETROACTIVE_END");
             String destino = obterDestino();
-            int maxPaginas = obterInteiro("retroactive.max-pages", obterInteiro(
-                    "RETROACTIVE_MAX_PAGES",
+            int maxPaginasOperacional = obterInteiro(
+                    PROPRIEDADE_MAX_PAGINAS_CICLO,
                     MAX_PAGINAS_RETROATIVO_PADRAO
+            );
+            int maxPaginasSolicitadas = obterInteiro("retroactive.max-pages", obterInteiro(
+                    "RETROACTIVE_MAX_PAGES",
+                    maxPaginasOperacional
             ));
+            int maxPaginas = limitarMaxPaginas(maxPaginasSolicitadas, maxPaginasOperacional);
 
             ExecucaoEtlRequest request = ExecucaoEtlRequest.retroativo(
                     dataInicial,
@@ -147,6 +153,21 @@ public class CicloRetroativoEtlRunner implements CommandLineRunner, ExitCodeGene
                     ex
             );
         }
+    }
+
+    private int limitarMaxPaginas(int maxPaginasSolicitadas, int maxPaginasOperacional) {
+        int maxPaginas = Math.min(maxPaginasSolicitadas, maxPaginasOperacional);
+        if (maxPaginasSolicitadas > maxPaginasOperacional) {
+            log.warn(
+                    "Limite retroativo solicitado ({}) excede {}={}. Usando maxPaginas={}.",
+                    maxPaginasSolicitadas,
+                    PROPRIEDADE_MAX_PAGINAS_CICLO,
+                    maxPaginasOperacional,
+                    maxPaginas
+            );
+        }
+
+        return maxPaginas;
     }
 
     private void validarCooldown(String destino, LocalDate dataInicial, LocalDate dataFinal) {

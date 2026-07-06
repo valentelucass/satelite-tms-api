@@ -18,18 +18,17 @@ import com.example.satelite.services.etl.EslRequestPolicyService;
 import com.example.satelite.services.etl.EslRequestPolicyService.EslRequestTransientException;
 import com.example.satelite.utils.ImageDownloader;
 import com.example.satelite.utils.ImageUtils;
+import com.example.satelite.vedacit.cte.CTe;
 import com.example.satelite.vedacit.cte.ICTe;
 import com.example.satelite.vedacit.cte.sgt.RetornoOfstring;
 import com.example.satelite.vedacit.nfe.Canhoto;
 import com.example.satelite.vedacit.nfe.INFe;
+import com.example.satelite.vedacit.nfe.NFe;
 import com.example.satelite.vedacit.nfe.RetornoOfboolean;
-
-import javax.xml.namespace.QName;
 
 import jakarta.xml.ws.Binding;
 import jakarta.xml.ws.BindingProvider;
 import jakarta.xml.ws.handler.Handler;
-import jakarta.xml.ws.soap.SOAPBinding;
 import jakarta.xml.ws.soap.SOAPFaultException;
 
 import org.datacontract.schemas._2004._07.dominio_objetosdevalor_embarcador.ObjectFactory;
@@ -37,10 +36,12 @@ import org.datacontract.schemas._2004._07.dominio_objetosdevalor_embarcador.Ocor
 import org.datacontract.schemas._2004._07.dominio_objetosdevalor_embarcador.TipoOcorrencia;
 import org.datacontract.schemas._2004._07.sgt.RetornoOfint;
 import org.tempuri.IOcorrencias;
+import org.tempuri.Ocorrencias;
 
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.io.IOException;
+import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.text.Normalizer;
 import java.time.LocalDateTime;
@@ -456,44 +457,23 @@ public class VedacitIntegrationService {
     }
 
     protected IOcorrencias criarPortaOcorrencias() throws Exception {
-        return criarPortaSoap(
-                IOcorrencias.class,
-                "Ocorrencias",
-                "BasicHttpBinding_IOcorrencias",
-                montarEndpointOcorrencias()
-        );
+        Ocorrencias servico = new Ocorrencias(URI.create(montarEndpointOcorrencias() + "?wsdl").toURL());
+        IOcorrencias porta = servico.getBasicHttpBindingIOcorrencias();
+        configurarPortaSoap(porta, montarEndpointOcorrencias());
+        return porta;
     }
 
     protected INFe criarPortaNFe() throws Exception {
-        return criarPortaSoap(
-                INFe.class,
-                "NFe",
-                "BasicHttpBinding_INFe",
-                montarEndpointNFe()
-        );
+        NFe servico = new NFe(URI.create(montarEndpointNFe() + "?wsdl").toURL());
+        INFe porta = servico.getBasicHttpBindingINFe();
+        configurarPortaSoap(porta, montarEndpointNFe());
+        return porta;
     }
 
     protected ICTe criarPortaCte() throws Exception {
-        return criarPortaSoap(
-                ICTe.class,
-                "CTe",
-                "BasicHttpBinding_ICTe",
-                montarEndpointCte()
-        );
-    }
-
-    private <T> T criarPortaSoap(
-            Class<T> tipoPorta,
-            String nomeServico,
-            String nomePorta,
-            String endpoint
-    ) {
-        QName serviceName = new QName("http://tempuri.org/", nomeServico);
-        QName portName = new QName("http://tempuri.org/", nomePorta);
-        jakarta.xml.ws.Service servico = jakarta.xml.ws.Service.create(serviceName);
-        servico.addPort(portName, SOAPBinding.SOAP11HTTP_BINDING, endpoint);
-        T porta = servico.getPort(portName, tipoPorta);
-        configurarPortaSoap(porta, endpoint);
+        CTe servico = new CTe(URI.create(montarEndpointCte() + "?wsdl").toURL());
+        ICTe porta = servico.getBasicHttpBindingICTe();
+        configurarPortaSoap(porta, montarEndpointCte());
         return porta;
     }
 

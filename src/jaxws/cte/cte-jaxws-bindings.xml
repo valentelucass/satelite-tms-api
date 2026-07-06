@@ -2,7 +2,7 @@
 <jaxws:bindings
         xmlns:jaxws="https://jakarta.ee/xml/ns/jaxws"
         xmlns:wsdl="http://schemas.xmlsoap.org/wsdl/"
-        wsdlLocation="https://vedacit.multihomo.com.br/SGT.WebService/CTe.svc?wsdl"
+        wsdlLocation="https://vedacit.multiembarcador.com.br/SGT.WebService/CTe.svc?wsdl"
         version="3.0">
     <jaxws:package name="com.example.satelite.vedacit.cte"/>
 </jaxws:bindings>

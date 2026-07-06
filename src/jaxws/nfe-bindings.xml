@@ -4,7 +4,7 @@
         xmlns:xs="http://www.w3.org/2001/XMLSchema"
         version="3.0">
 
-    <jaxb:bindings schemaLocation="https://vedacit.multihomo.com.br/SGT.WebService/NFe.svc?xsd=xsd3" node="/xs:schema">
+    <jaxb:bindings schemaLocation="https://vedacit.multiembarcador.com.br/SGT.WebService/NFe.svc?xsd=xsd3" node="/xs:schema">
         <jaxb:bindings node="xs:element[@name='ArrayOfBoleto']">
             <jaxb:factoryMethod name="createNFeArrayOfBoletoElement"/>
         </jaxb:bindings>
@@ -64,13 +64,13 @@
         </jaxb:bindings>
     </jaxb:bindings>
 
-    <jaxb:bindings schemaLocation="https://vedacit.multihomo.com.br/SGT.WebService/NFe.svc?xsd=xsd6" node="/xs:schema">
+    <jaxb:bindings schemaLocation="https://vedacit.multiembarcador.com.br/SGT.WebService/NFe.svc?xsd=xsd6" node="/xs:schema">
         <jaxb:bindings node="xs:element[@name='Empresa']">
             <jaxb:factoryMethod name="createPessoasEmpresaElement"/>
         </jaxb:bindings>
     </jaxb:bindings>
 
-    <jaxb:bindings schemaLocation="https://vedacit.multihomo.com.br/SGT.WebService/NFe.svc?xsd=xsd7" node="/xs:schema">
+    <jaxb:bindings schemaLocation="https://vedacit.multiembarcador.com.br/SGT.WebService/NFe.svc?xsd=xsd7" node="/xs:schema">
         <jaxb:bindings node="xs:element[@name='Endereco']">
             <jaxb:factoryMethod name="createNFeEnderecoElement"/>
         </jaxb:bindings>
@@ -85,13 +85,13 @@
         </jaxb:bindings>
     </jaxb:bindings>
 
-    <jaxb:bindings schemaLocation="https://vedacit.multihomo.com.br/SGT.WebService/NFe.svc?xsd=xsd8" node="/xs:schema">
+    <jaxb:bindings schemaLocation="https://vedacit.multiembarcador.com.br/SGT.WebService/NFe.svc?xsd=xsd8" node="/xs:schema">
         <jaxb:bindings node="xs:element[@name='Empresa']">
             <jaxb:factoryMethod name="createDominioEmpresaElement"/>
         </jaxb:bindings>
     </jaxb:bindings>
 
-    <jaxb:bindings schemaLocation="https://vedacit.multihomo.com.br/SGT.WebService/NFe.svc?xsd=xsd21" node="/xs:schema">
+    <jaxb:bindings schemaLocation="https://vedacit.multiembarcador.com.br/SGT.WebService/NFe.svc?xsd=xsd20" node="/xs:schema">
         <jaxb:bindings node="xs:element[@name='ArrayOfNotaFiscal']">
             <jaxb:factoryMethod name="createCargaArrayOfNotaFiscalElement"/>
         </jaxb:bindings>
