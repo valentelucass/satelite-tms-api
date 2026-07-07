@@ -25,8 +25,20 @@ public class IntegracaoAuditoriaQueryRepository {
     private static final String SERIE_NF_EXPR = "SUBSTRING(l.chave_nfe, 23, 3)";
     private static final String STATUS_DADOS_EXPR =
             "COALESCE(NULLIF(TRIM(l.status_dados), ''), NULLIF(TRIM(l.status), ''))";
-    private static final String STATUS_CANHOTO_EXPR =
-            "COALESCE(NULLIF(TRIM(l.status_canhoto), ''), NULLIF(TRIM(l.status), ''))";
+    private static final String FILTRO_ERRO_PARCIAL_CANHOTO_RETRY = """
+            (
+                l.status = 'ERRO_DESTINO'
+                AND l.status_dados = 'SUCESSO'
+                AND l.status_canhoto = 'ERRO_DESTINO'
+                AND l.tentativas_canhoto < 3
+            )
+            """;
+    private static final String STATUS_CANHOTO_EXPR = """
+            CASE
+                WHEN %s THEN 'Erro Parcial - Aguarda Retry'
+                ELSE COALESCE(NULLIF(TRIM(l.status_canhoto), ''), NULLIF(TRIM(l.status), ''))
+            END
+            """.formatted(FILTRO_ERRO_PARCIAL_CANHOTO_RETRY);
     private static final String NUMERO_NF_TEXTO_EXPR = "CAST(" + NUMERO_NF_EXPR + " AS VARCHAR(32))";
     private static final String ESCOPO_SUCESSO = "SUCESSO";
     private static final String ESCOPO_TODOS = "TODOS";
@@ -34,10 +46,11 @@ public class IntegracaoAuditoriaQueryRepository {
             (
                 l.status_canhoto = 'PENDENTE_FOTO'
                 OR l.status_dados = 'ERRO_DESTINO'
+                OR %s
                 OR (l.status_canhoto IS NULL AND l.status = 'PENDENTE_FOTO')
                 OR (l.status_dados IS NULL AND l.status = 'ERRO_DESTINO')
             )
-            """;
+            """.formatted(FILTRO_ERRO_PARCIAL_CANHOTO_RETRY);
     private static final String FILTRO_SUCESSO = """
             (
                 l.status IN ('ENVIADO', 'PROCESSADO')

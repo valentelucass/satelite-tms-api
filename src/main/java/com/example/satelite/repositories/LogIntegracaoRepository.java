@@ -30,6 +30,17 @@ public interface LogIntegracaoRepository extends JpaRepository<LogIntegracaoMode
     @Query("""
             SELECT l
             FROM LogIntegracaoModel l
+            WHERE l.status = 'ERRO_DESTINO'
+              AND l.statusDados = 'SUCESSO'
+              AND l.statusCanhoto = 'ERRO_DESTINO'
+              AND l.tentativasCanhoto < 3
+            ORDER BY l.dataProcessamento ASC, l.id ASC
+            """)
+    List<LogIntegracaoModel> findErrosParciaisCanhotoPendentesRetry();
+
+    @Query("""
+            SELECT l
+            FROM LogIntegracaoModel l
             WHERE l.sistemaDestino = :destino
               AND l.status = 'ERRO_DESTINO'
               AND (l.tentativasDados >= 3 OR l.tentativasCanhoto >= 3)
@@ -163,7 +174,14 @@ public interface LogIntegracaoRepository extends JpaRepository<LogIntegracaoMode
                         TRY_CAST(SUBSTRING(l.chave_nfe, 26, 9) AS BIGINT) AS numero_nf,
                         SUBSTRING(l.chave_nfe, 23, 3) AS serie_nf,
                         COALESCE(NULLIF(TRIM(l.status_dados), ''), NULLIF(TRIM(l.status), '')) AS statusDados,
-                        COALESCE(NULLIF(TRIM(l.status_canhoto), ''), NULLIF(TRIM(l.status), '')) AS statusCanhoto,
+                        CASE
+                            WHEN l.status = 'ERRO_DESTINO'
+                             AND l.status_dados = 'SUCESSO'
+                             AND l.status_canhoto = 'ERRO_DESTINO'
+                             AND l.tentativas_canhoto < 3
+                            THEN 'Erro Parcial - Aguarda Retry'
+                            ELSE COALESCE(NULLIF(TRIM(l.status_canhoto), ''), NULLIF(TRIM(l.status), ''))
+                        END AS statusCanhoto,
                         l.mensagem_erro_dados AS mensagemErroDados,
                         l.mensagem_erro_canhoto AS mensagemErroCanhoto,
                         l.canhoto_referencia AS canhotoReferencia,
@@ -179,6 +197,12 @@ public interface LogIntegracaoRepository extends JpaRepository<LogIntegracaoMode
                       AND (
                           l.status_canhoto = 'PENDENTE_FOTO'
                           OR l.status_dados = 'ERRO_DESTINO'
+                          OR (
+                              l.status = 'ERRO_DESTINO'
+                              AND l.status_dados = 'SUCESSO'
+                              AND l.status_canhoto = 'ERRO_DESTINO'
+                              AND l.tentativas_canhoto < 3
+                          )
                           OR (l.status_canhoto IS NULL AND l.status = 'PENDENTE_FOTO')
                           OR (l.status_dados IS NULL AND l.status = 'ERRO_DESTINO')
                       )
@@ -191,6 +215,12 @@ public interface LogIntegracaoRepository extends JpaRepository<LogIntegracaoMode
                       AND (
                           l.status_canhoto = 'PENDENTE_FOTO'
                           OR l.status_dados = 'ERRO_DESTINO'
+                          OR (
+                              l.status = 'ERRO_DESTINO'
+                              AND l.status_dados = 'SUCESSO'
+                              AND l.status_canhoto = 'ERRO_DESTINO'
+                              AND l.tentativas_canhoto < 3
+                          )
                           OR (l.status_canhoto IS NULL AND l.status = 'PENDENTE_FOTO')
                           OR (l.status_dados IS NULL AND l.status = 'ERRO_DESTINO')
                       )

@@ -30,6 +30,8 @@ public class EtlRegistroService {
     private static final String DESTINO_VEDACIT = "VEDACIT";
     private static final String STATUS_RECEBIDO = ResultadoIntegracao.STATUS_RECEBIDO;
     private static final String STATUS_PENDENTE_FOTO = ResultadoIntegracao.STATUS_PENDENTE_FOTO;
+    private static final String STATUS_ERRO_DESTINO = ResultadoIntegracao.STATUS_ERRO_DESTINO;
+    private static final String STATUS_SUCESSO = ResultadoIntegracao.STATUS_SUCESSO;
     private static final String URL_IMAGEM_TESTE_PADRAO = "https://www.w3.org/People/mimasa/test/imgformat/img/w3c_home.jpg";
     private static final String MOTIVO_CANHOTO_INDISPONIVEL = "Canhoto ainda não disponível na ESL";
     private static final String MOTIVO_CTE_AUSENTE =
@@ -388,9 +390,15 @@ public class EtlRegistroService {
             LogIntegracaoModel logIntegracao,
             Exception erro
     ) {
+        ResultadoIntegracao resultado = ehErroParcialCanhoto(logIntegracao)
+                ? ResultadoIntegracao.erroCanhoto(
+                        etlEstadoIntegracaoService.statusDadosAtualOuSucesso(logIntegracao),
+                        erro.getMessage()
+                )
+                : etlEstadoIntegracaoService.criarResultadoErroGenerico(destino, erro);
         etlEstadoIntegracaoService.aplicarResultadoIntegracao(
                 logIntegracao,
-                etlEstadoIntegracaoService.criarResultadoErroGenerico(destino, erro)
+                resultado
         );
         etlEstadoIntegracaoService.salvar(logIntegracao);
 
@@ -405,6 +413,13 @@ public class EtlRegistroService {
                 logIntegracao.getChaveNfe(),
                 logIntegracao
         );
+    }
+
+    private boolean ehErroParcialCanhoto(LogIntegracaoModel logIntegracao) {
+        return logIntegracao != null
+                && STATUS_ERRO_DESTINO.equals(logIntegracao.getStatus())
+                && STATUS_SUCESSO.equals(logIntegracao.getStatusDados())
+                && STATUS_ERRO_DESTINO.equals(logIntegracao.getStatusCanhoto());
     }
 
     private void manterPendenteSemOcorrencia(LogIntegracaoModel pendencia) {

@@ -1,6 +1,7 @@
 package com.example.satelite.services.etl;
 
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 
@@ -52,18 +53,23 @@ public class EtlRepescagemService {
     }
 
     public void executarRepescagem(LocalDateTime inicioCiclo) {
-        if (inicioCiclo == null) {
-            log.warn("⏭️ Repescagem ignorada: início do ciclo não informado.");
+        List<LogIntegracaoModel> errosDefinitivos = buscarErrosDefinitivosDoCiclo(inicioCiclo);
+        List<LogIntegracaoModel> errosParciaisCanhoto = buscarErrosParciaisCanhotoPendentesRetry();
+        List<LogIntegracaoModel> registros = new ArrayList<>(errosDefinitivos.size() + errosParciaisCanhoto.size());
+        registros.addAll(errosDefinitivos);
+        registros.addAll(errosParciaisCanhoto);
+
+        if (registros.isEmpty()) {
+            log.info("🎣 Repescagem: nenhum erro definitivo ou parcial de canhoto pendente encontrado.");
             return;
         }
 
-        List<LogIntegracaoModel> registros = logIntegracaoRepository.findErrosManuaisDesde(inicioCiclo);
-        if (registros == null || registros.isEmpty()) {
-            log.info("🎣 Repescagem: nenhum erro definitivo encontrado para o ciclo atual.");
-            return;
-        }
-
-        log.warn("🎣 Repescagem lenta iniciada para {} registro(s) com erro definitivo neste ciclo.", registros.size());
+        log.warn(
+                "🎣 Repescagem ativa iniciada para {} registro(s): definitivos_do_ciclo={} parciais_canhoto_retry={}.",
+                registros.size(),
+                errosDefinitivos.size(),
+                errosParciaisCanhoto.size()
+        );
         for (int indice = 0; indice < registros.size(); indice++) {
             LogIntegracaoModel registro = registros.get(indice);
             reprocessarRegistro(registro);
@@ -74,7 +80,22 @@ public class EtlRepescagemService {
             }
         }
 
-        log.warn("🎣 Repescagem lenta finalizada.");
+        log.warn("🎣 Repescagem ativa finalizada.");
+    }
+
+    private List<LogIntegracaoModel> buscarErrosDefinitivosDoCiclo(LocalDateTime inicioCiclo) {
+        if (inicioCiclo == null) {
+            log.warn("⏭️ Repescagem de erros definitivos do ciclo ignorada: início do ciclo não informado.");
+            return List.of();
+        }
+
+        List<LogIntegracaoModel> registros = logIntegracaoRepository.findErrosManuaisDesde(inicioCiclo);
+        return registros != null ? registros : List.of();
+    }
+
+    private List<LogIntegracaoModel> buscarErrosParciaisCanhotoPendentesRetry() {
+        List<LogIntegracaoModel> registros = logIntegracaoRepository.findErrosParciaisCanhotoPendentesRetry();
+        return registros != null ? registros : List.of();
     }
 
     private void reprocessarRegistro(LogIntegracaoModel registro) {
@@ -89,7 +110,7 @@ public class EtlRepescagemService {
         }
 
         log.warn(
-                "🎣 [{}] NF {}: iniciando tentativa final de repescagem. tentativas_dados={} tentativas_canhoto={}",
+                "🎣 [{}] NF {}: iniciando repescagem. tentativas_dados={} tentativas_canhoto={}",
                 destino,
                 registro.getChaveNfe(),
                 valorTentativas(registro.getTentativasDados()),

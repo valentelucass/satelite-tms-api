@@ -19,6 +19,7 @@
 - `OrquestradorEtlService` coordena os destinos PPG e Vedacit, respeitando toggles `APP_PPG_ENABLED`, `APP_VEDACIT_ENABLED`, `APP_SCHEDULER_ENABLED`, modo ciclo único e modo retroativo, e delega a cadência contínua de paginação/backoff para os serviços de fluxo e política ESL.
 - `EtlFluxoDestinoService` encapsula paginação por destino, cursor, whitelists, filtro de ocorrência, detecção de loop de cursor, circuit breaker por falhas de infraestrutura, avanço seguro do cursor e pacing por lote de páginas.
 - `EtlRegistroService` aplica idempotência por log existente, processa pendências de canhoto, baixa comprovantes da ESL e atualiza o estado por registro.
+- `EtlRepescagemService` executa repescagem de erros definitivos do ciclo e repescagem ativa, sem janela de tempo, para falhas parciais de canhoto Vedacit com dados já integrados.
 - `EtlEstadoIntegracaoService` centraliza status, tentativas, datas de processamento e conversão para resultado operacional.
 - `EtlResilienciaService` encapsula retries por erro transitório, backoff e limite de tentativas.
 - `EslRequestPolicyService` impõe intervalo mínimo entre chamadas ESL, trata HTTP 429 com backoff bloqueante e retry transparente da mesma chamada, trata HTTP 5xx/falhas de transporte como transitórias e controla cooldown para consultas por período.
@@ -59,6 +60,9 @@
 - Status consolidados atuais: `RECEBIDO`, `IGNORADO`, `ENVIADO`, `PARCIAL`, `PENDENTE_FOTO`, `ERRO_DESTINO`, `SUCESSO` e `NAO_APLICAVEL`.
 - PPG exige canhoto disponível; sem imagem, o registro fica `PENDENTE_FOTO` e não envia payload.
 - Vedacit pode concluir dados e canhoto separadamente; se canhoto faltar, o registro pode ficar parcial com `status_canhoto=PENDENTE_FOTO`.
+- Registros Vedacit com `status=ERRO_DESTINO`, `status_dados=SUCESSO`, `status_canhoto=ERRO_DESTINO` e `tentativas_canhoto < 3` são resgatados pela repescagem ativa sem limite de janela; o XML/dados é considerado já integrado e o retry executa somente download, compressão e envio SOAP do canhoto.
+- Falhas parciais de canhoto preservam `status_dados=SUCESSO`, incrementam `tentativas_canhoto` a cada nova falha e entram na quarentena natural ao alcançar `tentativas_canhoto >= 3`.
+- O dashboard de pendências deve exibir falhas parciais de canhoto ainda retryáveis como `Erro Parcial - Aguarda Retry`, evitando invisibilidade operacional.
 - Duplicidade retornada por PPG ou Vedacit é conciliada como sucesso, não como erro fatal.
 - O runtime Vedacit não deve ler WSDL por caminho de filesystem como `src/main/resources`; a leitura deve ser por classpath (`getResource`) e falhar explicitamente se o WSDL local não estiver empacotado.
 - Erros HTTP transitórios ou de infraestrutura incluem 500, 502, 503, 504, timeouts e falhas de transporte; há backoff e limite de tentativas antes de quarentena/bloqueio de retry automático.

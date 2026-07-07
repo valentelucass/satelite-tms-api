@@ -36,6 +36,9 @@ class IntegracaoAuditoriaQueryRepositoryTest {
         String sql = capturarSqlTabela(jdbcTemplate);
         assertTrue(sql.contains("l.status_canhoto = 'PENDENTE_FOTO'"));
         assertTrue(sql.contains("l.status_dados = 'ERRO_DESTINO'"));
+        assertTrue(sql.contains("l.status_dados = 'SUCESSO'"));
+        assertTrue(sql.contains("l.tentativas_canhoto < 3"));
+        assertTrue(sql.contains("Erro Parcial - Aguarda Retry"));
         assertTrue(sql.contains("possuiImagemPayload"));
         assertTrue(sql.contains("l.canhoto_referencia AS canhotoReferencia"));
         assertTrue(sql.contains("l.canhoto_mime_type AS canhotoMimeType"));
@@ -53,6 +56,7 @@ class IntegracaoAuditoriaQueryRepositoryTest {
         String sql = capturarSqlTabela(jdbcTemplate);
         assertTrue(sql.contains("l.status_canhoto = 'PENDENTE_FOTO'"));
         assertTrue(sql.contains("l.status_dados = 'ERRO_DESTINO'"));
+        assertTrue(sql.contains("l.tentativas_canhoto < 3"));
         assertTrue(sql.contains("l.chave_nfe LIKE :filtroTabelaBusca"));
         assertTrue(sql.contains("possuiImagemPayload"));
         assertFalse(sql.contains("request_payload"));
@@ -68,6 +72,7 @@ class IntegracaoAuditoriaQueryRepositoryTest {
         String sql = capturarSqlTabela(jdbcTemplate);
         assertTrue(sql.contains("l.status_canhoto = 'PENDENTE_FOTO'"));
         assertTrue(sql.contains("l.status_dados = 'ERRO_DESTINO'"));
+        assertTrue(sql.contains("l.tentativas_canhoto < 3"));
         assertTrue(sql.contains("TRY_CAST(SUBSTRING(l.chave_nfe, 26, 9) AS BIGINT) = :filtroTabelaCodigoNumero"));
         assertTrue(sql.contains("possuiImagemPayload"));
         assertFalse(sql.contains("request_payload"));
