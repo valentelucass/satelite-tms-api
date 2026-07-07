@@ -95,16 +95,19 @@ class EslRequestPolicyServiceTest {
     }
 
     @Test
-    void deveConverterHttp429EmExcecaoTransitoriaDoExecutor() {
-        EslRequestPolicyService.EslRequestTransientException erro = assertThrows(
-                EslRequestPolicyService.EslRequestTransientException.class,
-                () -> service.executar("buscarXmlCte", () -> {
-                    throw criarErroEsl(429, "Too Many Requests", "rate limit");
-                })
-        );
+    void deveAplicarBackoffERepetirHttp429AteSucesso() {
+        AtomicInteger chamadas = new AtomicInteger();
 
-        assertEquals("buscarXmlCte", erro.operacao());
-        assertEquals(429, erro.status());
+        String retorno = service.executar("buscarXmlCte", () -> {
+            if (chamadas.incrementAndGet() == 1) {
+                    throw criarErroEsl(429, "Too Many Requests", "rate limit");
+            }
+
+            return "ok";
+        });
+
+        assertEquals("ok", retorno);
+        assertEquals(2, chamadas.get());
     }
 
     @Test

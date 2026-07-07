@@ -85,9 +85,11 @@ Interpretacao:
 2. Ler `paging.next_id`.
 3. Persistir o cursor por cliente/token.
 4. Proxima consulta com `?next_id=<valor_persistido>`.
-5. Encerrar a pagina do ciclo quando `paging.next_id` vier ausente ou `data` vier vazio.
+5. Repetir ate `data` vir vazio ou a janela retroativa ultrapassar a data final.
+6. Ao completar cada lote de `INTEGRATION_MAX_PAGES_PER_CYCLE` paginas, pausar por `ETL_PAGINATION_PACING_PAUSE_MS` e retomar do cursor mantido em memoria.
 
 Aplicar intervalo minimo de 2 segundos entre chamadas a origem ESL (`ESL_MIN_INTERVAL_BETWEEN_REQUESTS_MS=2000`).
+Quando a origem retornar HTTP 429, aplicar pausa bloqueante (`ESL_TOO_MANY_REQUESTS_BACKOFF_MS`, padrao 120000 ms) e repetir a mesma chamada sem encerrar o destino.
 
 Exemplo:
 

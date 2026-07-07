@@ -30,7 +30,7 @@ public class EslRequestPolicyService {
 
     private static final Logger log = LoggerFactory.getLogger(EslRequestPolicyService.class);
     public static final int STATUS_SEM_RESPOSTA_HTTP = -1;
-    private static final Set<Integer> CODIGOS_HTTP_TRANSITORIOS_ESL = Set.of(429, 500, 502, 503, 504);
+    private static final Set<Integer> CODIGOS_HTTP_TRANSITORIOS_ESL = Set.of(500, 502, 503, 504);
 
     private final Object requisicaoLock = new Object();
     private final ConcurrentMap<String, Instant> proximaExtracaoPorPeriodo = new ConcurrentHashMap<>();
@@ -43,7 +43,7 @@ public class EslRequestPolicyService {
 
     public EslRequestPolicyService(
             @Value("${ESL_MIN_INTERVAL_BETWEEN_REQUESTS_MS:2000}") long intervaloMinimoRequisicoesMs,
-            @Value("${ESL_TOO_MANY_REQUESTS_BACKOFF_MS:30000}") long cooldownTooManyRequestsMs,
+            @Value("${ESL_TOO_MANY_REQUESTS_BACKOFF_MS:120000}") long cooldownTooManyRequestsMs,
             @Value("${ESL_PERIOD_FREE_LIMIT_DAYS:30}") long limiteDiasPeriodoLivre,
             @Value("${ESL_PERIOD_MEDIUM_LIMIT_DAYS:183}") long limiteDiasPeriodoMedio,
             @Value("${ESL_PERIOD_MEDIUM_COOLDOWN_MS:3600000}") long cooldownPeriodoMedioMs,
@@ -59,41 +59,46 @@ public class EslRequestPolicyService {
 
     public <T> T executar(String operacao, Supplier<T> chamada) {
         Objects.requireNonNull(chamada, "Chamada ESL deve ser informada");
+        String operacaoNormalizada = normalizarOperacao(operacao);
 
-        aguardarProximaRequisicao();
+        while (true) {
+            aguardarProximaRequisicao();
 
-        try {
-            return chamada.get();
-        } catch (RetryableException e) {
-            if (e.status() == 429) {
-                throw tratarTooManyRequests(operacao, e);
+            try {
+                return chamada.get();
+            } catch (RetryableException e) {
+                if (e.status() == 429) {
+                    tratarTooManyRequests(operacaoNormalizada, e);
+                    continue;
+                }
+
+                if (CODIGOS_HTTP_TRANSITORIOS_ESL.contains(e.status())) {
+                    throw tratarFalhaTransitoria(operacaoNormalizada, e);
+                }
+
+                throw tratarFalhaTransporte(operacaoNormalizada, e);
+            } catch (FeignException.TooManyRequests e) {
+                tratarTooManyRequests(operacaoNormalizada, e);
+            } catch (FeignException e) {
+                if (e.status() == 429) {
+                    tratarTooManyRequests(operacaoNormalizada, e);
+                    continue;
+                }
+
+                if (CODIGOS_HTTP_TRANSITORIOS_ESL.contains(e.status())) {
+                    throw tratarFalhaTransitoria(operacaoNormalizada, e);
+                }
+
+                throw e;
+            } catch (EslRequestTransientException e) {
+                throw e;
+            } catch (RuntimeException e) {
+                if (falhaTransporteOuTimeout(e)) {
+                    throw tratarFalhaTransporte(operacaoNormalizada, e);
+                }
+
+                throw e;
             }
-
-            if (CODIGOS_HTTP_TRANSITORIOS_ESL.contains(e.status())) {
-                throw tratarFalhaTransitoria(operacao, e);
-            }
-
-            throw tratarFalhaTransporte(operacao, e);
-        } catch (FeignException.TooManyRequests e) {
-            throw tratarTooManyRequests(operacao, e);
-        } catch (FeignException e) {
-            if (e.status() == 429) {
-                throw tratarTooManyRequests(operacao, e);
-            }
-
-            if (CODIGOS_HTTP_TRANSITORIOS_ESL.contains(e.status())) {
-                throw tratarFalhaTransitoria(operacao, e);
-            }
-
-            throw e;
-        } catch (EslRequestTransientException e) {
-            throw e;
-        } catch (RuntimeException e) {
-            if (falhaTransporteOuTimeout(e)) {
-                throw tratarFalhaTransporte(operacao, e);
-            }
-
-            throw e;
         }
     }
 
@@ -148,15 +153,13 @@ public class EslRequestPolicyService {
         proximaExtracaoPorPeriodo.put(chave, Instant.now().plus(cooldown));
     }
 
-    private EslRequestTransientException tratarTooManyRequests(String operacao, FeignException e) {
-        String operacaoNormalizada = normalizarOperacao(operacao);
+    private void tratarTooManyRequests(String operacaoNormalizada, FeignException e) {
         log.warn(
-                "ESL retornou HTTP 429 em {}. Aplicando backoff antes de suspender a chamada. mensagem={}",
+                "ESL retornou HTTP 429 em {}. Aplicando backoff bloqueante antes de repetir a chamada. mensagem={}",
                 operacaoNormalizada,
                 e.getMessage()
         );
         pausarAposTooManyRequests();
-        return new EslRequestTransientException(operacaoNormalizada, e.status(), e);
     }
 
     private EslRequestTransientException tratarFalhaTransitoria(String operacao, FeignException e) {

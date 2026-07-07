@@ -14,6 +14,8 @@ Este documento registra o fluxo oficial validado para extracao Rodogarcia / ESL 
 | `RODOGARCIA_TOKEN_PPG` | Token de cliente Rodogarcia para extracao das ocorrencias destinadas a PPG / OK Entrega. |
 | `RODOGARCIA_TOKEN_VEDACIT` | Token de cliente Rodogarcia para extracao das ocorrencias destinadas a Vedacit / MultiTMS. |
 | `ESL_MIN_INTERVAL_BETWEEN_REQUESTS_MS` | Intervalo minimo entre chamadas a origem ESL. Valor padrao: `2000` ms. |
+| `ESL_TOO_MANY_REQUESTS_BACKOFF_MS` | Pausa bloqueante antes de repetir chamadas ESL que retornem HTTP 429. Valor padrao: `120000` ms. |
+| `ETL_PAGINATION_PACING_PAUSE_MS` | Pausa aplicada apos cada lote de `INTEGRATION_MAX_PAGES_PER_CYCLE` paginas processadas. Valor padrao: `30000` ms. |
 | `ESL_PERIOD_FREE_LIMIT_DAYS` | Janela consultada sem cooldown adicional. Valor padrao: `30` dias. |
 | `ESL_PERIOD_MEDIUM_LIMIT_DAYS` | Limite da janela media antes do cooldown longo. Valor padrao: `183` dias. |
 | `ESL_PERIOD_MEDIUM_COOLDOWN_MS` | Cooldown para nova extracao de janelas entre 31 dias e 6 meses. Valor padrao: `3600000` ms. |
@@ -133,7 +135,8 @@ Fluxo:
 2. Ler `paging.next_id` da resposta.
 3. Se `paging.next_id` existir, persistir o valor como proximo cursor do cliente.
 4. Executar a proxima chamada informando o cursor como parametro `next_id`.
-5. Repetir ate a pagina retornar sem `next_id`, com `data` vazio ou ate atingir limite operacional do ciclo.
+5. Repetir ate a pagina retornar com `data` vazio ou ate ultrapassar a data final retroativa.
+6. Ao completar cada lote de `INTEGRATION_MAX_PAGES_PER_CYCLE` paginas, pausar por `ETL_PAGINATION_PACING_PAUSE_MS` e retomar do `next_id` mantido em memoria.
 
 Formato esperado da chamada paginada:
 
@@ -152,6 +155,8 @@ Regras de persistencia:
 | Avanco seguro | Persistir `next_id` somente depois de registrar os itens da pagina recebida para auditoria. |
 | Reprocessamento | A tabela de log deve impedir duplicidade por `occurrence_id`, `chave_nfe` e `sistema_destino`. |
 | Falha parcial | Se um item falhar, manter o registro em estado de erro e permitir retentativa sem perder o cursor ja recebido. |
+
+HTTP 429 da ESL nao encerra o destino: a chamada fica bloqueada por `ESL_TOO_MANY_REQUESTS_BACKOFF_MS` e e repetida de forma transparente.
 
 ## 4.1 Limites por periodo consultado
 

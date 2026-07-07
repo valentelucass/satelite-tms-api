@@ -221,6 +221,7 @@
 								<bindingFile>vedacit-bindings.xml</bindingFile>
 							</bindingFiles>
 							<xjcArgs>
+								<xjcArg>-XautoNameResolution</xjcArg>
 								<xjcArg>-no-header</xjcArg>
 							</xjcArgs>
 							<sourceDestDir>${project.build.directory}/generated-sources/wsimport</sourceDestDir>

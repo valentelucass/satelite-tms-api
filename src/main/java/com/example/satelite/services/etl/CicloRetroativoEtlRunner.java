@@ -73,7 +73,7 @@ public class CicloRetroativoEtlRunner implements CommandLineRunner, ExitCodeGene
             eslRequestPolicyService.registrarExtracaoPeriodo(destino, dataInicial, dataFinal);
 
             log.info(
-                    "🏁 Modo retroativo ativo. destino={} inicio={} fim={} maxPaginas={}",
+                    "🏁 Modo retroativo ativo. destino={} inicio={} fim={} paginasPorLoteAntesDePausa={}",
                     destino,
                     dataInicial,
                     dataFinal,
@@ -159,7 +159,7 @@ public class CicloRetroativoEtlRunner implements CommandLineRunner, ExitCodeGene
         int maxPaginas = Math.min(maxPaginasSolicitadas, maxPaginasOperacional);
         if (maxPaginasSolicitadas > maxPaginasOperacional) {
             log.warn(
-                    "Limite retroativo solicitado ({}) excede {}={}. Usando maxPaginas={}.",
+                    "Lote retroativo solicitado ({}) excede {}={}. Usando paginasPorLoteAntesDePausa={}.",
                     maxPaginasSolicitadas,
                     PROPRIEDADE_MAX_PAGINAS_CICLO,
                     maxPaginasOperacional,

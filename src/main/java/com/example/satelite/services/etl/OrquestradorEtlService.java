@@ -287,7 +287,7 @@ public class OrquestradorEtlService {
                 🕒 Início: {}
                 🧭 Modo: {}
                 📅 Janela retroativa: {} até {}
-                📄 Máximo de páginas por destino: {}
+                📄 Páginas por lote antes de pausa: {}
                 {}
                 """,
                 LINHA_BANNER,

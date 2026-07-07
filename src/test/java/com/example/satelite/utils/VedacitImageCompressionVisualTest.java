@@ -20,16 +20,16 @@ class VedacitImageCompressionVisualTest {
     private static final String URL_ASSINADA_PROPERTY = "vedacit.visual.image.url";
     private static final String URL_ASSINADA_ENV = "VEDACIT_VISUAL_IMAGE_URL";
 
-    private static final Path DIRETORIO_TEMP = Path.of("C:\\temp");
-    private static final Path ARQUIVO_FALLBACK = DIRETORIO_TEMP.resolve("teste_vedacit.jpg");
-    private static final Path ARQUIVO_ORIGINAL = DIRETORIO_TEMP.resolve("canhoto_vedacit_original.jpg");
-    private static final Path ARQUIVO_COMPRIMIDO = DIRETORIO_TEMP.resolve("canhoto_vedacit_comprimido.jpg");
+    private static final Path ARQUIVO_FALLBACK = Path.of("C:\\temp").resolve("teste_vedacit.jpg");
+    private static final Path DIRETORIO_SAIDA = Path.of("target", "vedacit-visual");
+    private static final Path ARQUIVO_ORIGINAL = DIRETORIO_SAIDA.resolve("canhoto_vedacit_original.jpg");
+    private static final Path ARQUIVO_COMPRIMIDO = DIRETORIO_SAIDA.resolve("canhoto_vedacit_comprimido.jpg");
 
     @Test
     void deveGerarArquivosParaValidacaoVisualDaCompressaoVedacit() throws Exception {
         byte[] imagemOriginal = obterImagemOriginal();
 
-        Files.createDirectories(DIRETORIO_TEMP);
+        Files.createDirectories(DIRETORIO_SAIDA);
         Files.write(ARQUIVO_ORIGINAL, imagemOriginal);
 
         byte[] imagemComprimida = ImageUtils.comprimirImagemParaVedacit(imagemOriginal);

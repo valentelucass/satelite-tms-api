@@ -1,6 +1,7 @@
 package com.example.satelite.services.vedacit;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.contains;
 import static org.mockito.Mockito.mock;
@@ -46,6 +47,23 @@ import org.datacontract.schemas._2004._07.dominio_objetosdevalor_embarcador.Ocor
 import org.tempuri.IOcorrencias;
 
 class VedacitIntegrationServiceTest {
+
+    @Test
+    void deveCriarPortasSoapComWsdlLocalNoClasspath() throws Exception {
+        VedacitIntegrationService service = new VedacitIntegrationService(
+                mock(ImageDownloader.class),
+                mock(RodogarciaClient.class),
+                criarPoliticaEslExecutora()
+        );
+        ReflectionTestUtils.setField(service, "vedacitToken", "token-vedacit");
+        ReflectionTestUtils.setField(service, "vedacitApiBaseUrl", "https://vedacit.multiembarcador.com.br/SGT.WebService");
+        ReflectionTestUtils.setField(service, "soapConnectTimeoutMs", 30000);
+        ReflectionTestUtils.setField(service, "soapReadTimeoutMs", 60000);
+
+        assertNotNull(service.criarPortaOcorrencias());
+        assertNotNull(service.criarPortaNFe());
+        assertNotNull(service.criarPortaCte());
+    }
 
     @Test
     void deveManterCanhotoPendenteQuandoDadosJaForamEnviadosEFotoNaoExiste() {

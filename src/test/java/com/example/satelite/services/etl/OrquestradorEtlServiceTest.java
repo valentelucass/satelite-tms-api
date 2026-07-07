@@ -120,19 +120,20 @@ class OrquestradorEtlServiceTest {
     }
 
     @Test
-    void deveSuspenderCicloQuandoEslRetorna429NaBuscaRaiz() {
+    void deveRetomarBuscaQuandoEslRetorna429NaBuscaRaiz() {
         Dependencias dependencias = criarDependencias();
         ReflectionTestUtils.setField(dependencias.service(), "vedacitEnabled", false);
 
         when(dependencias.controleCursorRepository().findBySistemaDestino(anyString())).thenReturn(Optional.empty());
         when(dependencias.rodogarciaClient().buscarOcorrencias(eq("Bearer token-ppg"), isNull(), isNull(), isNull(), eq(1)))
-                .thenThrow(criarErroTooManyRequestsEsl());
+                .thenThrow(criarErroTooManyRequestsEsl())
+                .thenReturn(loteVazio());
 
         OrquestradorEtlService.ResultadoCiclo resultado = dependencias.service().executarFluxosComResultado();
 
-        assertTrue(resultado.erroCritico());
-        assertEquals(OrquestradorEtlService.CODIGO_SAIDA_ERRO_CRITICO, resultado.codigoSaida());
-        verify(dependencias.rodogarciaClient(), times(1))
+        assertFalse(resultado.erroCritico());
+        assertEquals(OrquestradorEtlService.CODIGO_SAIDA_SUCESSO, resultado.codigoSaida());
+        verify(dependencias.rodogarciaClient(), times(2))
                 .buscarOcorrencias("Bearer token-ppg", null, null, null, 1);
         verify(dependencias.eslRequestPolicyService(), times(1)).executar(anyString(), any());
     }
@@ -363,6 +364,43 @@ class OrquestradorEtlServiceTest {
 
         assertEquals("PPG", captor.getValue().getSistemaDestino());
         assertEquals(99L, captor.getValue().getCursorNextId());
+    }
+
+    @Test
+    void deveContinuarPaginacaoAposLoteDePacingAteFimDaFila() {
+        Dependencias dependencias = criarDependencias();
+        ReflectionTestUtils.setField(dependencias.service(), "vedacitEnabled", false);
+
+        when(dependencias.controleCursorRepository().findBySistemaDestino(anyString())).thenReturn(Optional.empty());
+        when(dependencias.controleCursorRepository().save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        when(dependencias.logIntegracaoRepository().save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        when(dependencias.rodogarciaClient().buscarOcorrencias(eq("Bearer token-ppg"), isNull(), isNull(), isNull(), eq(1)))
+                .thenReturn(new EslLoteResponseDTO(
+                        List.of(criarOcorrencia(10L, 1, "cte-10")),
+                        new EslPagingDTO(99L, 1)
+                ));
+        when(dependencias.rodogarciaClient().buscarOcorrencias(eq("Bearer token-ppg"), eq(99L), isNull(), isNull(), eq(1)))
+                .thenReturn(new EslLoteResponseDTO(
+                        List.of(criarOcorrencia(11L, 1, "cte-11")),
+                        new EslPagingDTO(100L, 1)
+                ));
+        when(dependencias.rodogarciaClient().buscarOcorrencias(eq("Bearer token-ppg"), eq(100L), isNull(), isNull(), eq(1)))
+                .thenReturn(loteVazio());
+        when(dependencias.rodogarciaClient().buscarComprovante(anyString(), anyString()))
+                .thenReturn(criarComprovanteComImagem());
+
+        OrquestradorEtlService.ResultadoCiclo resultado = dependencias.service().executarFluxosComResultado();
+
+        assertFalse(resultado.erroCritico());
+        assertEquals(2, resultado.resultadoPpg().paginasProcessadas());
+        assertEquals(2, resultado.resultadoPpg().enviados());
+        verify(dependencias.rodogarciaClient()).buscarOcorrencias("Bearer token-ppg", null, null, null, 1);
+        verify(dependencias.rodogarciaClient()).buscarOcorrencias("Bearer token-ppg", 99L, null, null, 1);
+        verify(dependencias.rodogarciaClient()).buscarOcorrencias("Bearer token-ppg", 100L, null, null, 1);
+
+        ArgumentCaptor<ControleCursor> captor = ArgumentCaptor.forClass(ControleCursor.class);
+        verify(dependencias.controleCursorRepository(), times(2)).save(captor.capture());
+        assertEquals(List.of(99L, 100L), captor.getAllValues().stream().map(ControleCursor::getCursorNextId).toList());
     }
 
     @Test
@@ -985,25 +1023,35 @@ class OrquestradorEtlServiceTest {
         EslRequestPolicyService eslRequestPolicyService = mock(EslRequestPolicyService.class);
         when(eslRequestPolicyService.executar(anyString(), any())).thenAnswer(invocation -> {
             Supplier<?> chamada = invocation.getArgument(1);
-            try {
-                return chamada.get();
-            } catch (RetryableException e) {
-                throw new EslRequestPolicyService.EslRequestTransientException(
-                        invocation.getArgument(0),
-                        EslRequestPolicyService.STATUS_SEM_RESPOSTA_HTTP,
-                        "Timeout na comunicacao com a ESL em " + invocation.getArgument(0),
-                        e
-                );
-            } catch (FeignException e) {
-                if (e.status() == 429 || (e.status() >= 500 && e.status() <= 599)) {
+            while (true) {
+                try {
+                    return chamada.get();
+                } catch (RetryableException e) {
+                    if (e.status() == 429) {
+                        continue;
+                    }
+
                     throw new EslRequestPolicyService.EslRequestTransientException(
                             invocation.getArgument(0),
-                            e.status(),
+                            EslRequestPolicyService.STATUS_SEM_RESPOSTA_HTTP,
+                            "Timeout na comunicacao com a ESL em " + invocation.getArgument(0),
                             e
                     );
-                }
+                } catch (FeignException e) {
+                    if (e.status() == 429) {
+                        continue;
+                    }
 
-                throw e;
+                    if (e.status() >= 500 && e.status() <= 599) {
+                        throw new EslRequestPolicyService.EslRequestTransientException(
+                                invocation.getArgument(0),
+                                e.status(),
+                                e
+                        );
+                    }
+
+                    throw e;
+                }
             }
         });
         EtlResilienciaService etlResilienciaService = new EtlResilienciaService();
@@ -1025,6 +1073,7 @@ class OrquestradorEtlServiceTest {
                 etlRegistroService
         );
         ReflectionTestUtils.setField(etlFluxoDestinoService, "lookbackIncrementalHoras", 0);
+        ReflectionTestUtils.setField(etlFluxoDestinoService, "pausaPacingPaginacaoMs", 0L);
         when(ppgIntegrationService.notaFiscalPermitida(any())).thenReturn(true);
         when(ppgIntegrationService.processarOcorrencia(any(), any())).thenReturn(ResultadoIntegracao.enviado());
         when(vedacitIntegrationService.notaFiscalPermitida(any())).thenReturn(true);

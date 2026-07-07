@@ -33,6 +33,7 @@ public class EtlFluxoDestinoService {
     private static final String DESTINO_VEDACIT = "VEDACIT";
     private static final int LOOKBACK_INCREMENTAL_HORAS_PADRAO = 24;
     private static final int LIMITE_PADRAO_FALHAS_INFRAESTRUTURA_CONSECUTIVAS = 10;
+    private static final long PAUSA_PADRAO_PACING_PAGINACAO_MS = 30000L;
 
     private final RodogarciaClient rodogarciaClient;
     private final ControleCursorRepository controleCursorRepository;
@@ -56,6 +57,9 @@ public class EtlFluxoDestinoService {
 
     @Value("${ETL_INCREMENTAL_LOOKBACK_HOURS:24}")
     private int lookbackIncrementalHoras = LOOKBACK_INCREMENTAL_HORAS_PADRAO;
+
+    @Value("${ETL_PAGINATION_PACING_PAUSE_MS:30000}")
+    private long pausaPacingPaginacaoMs = PAUSA_PADRAO_PACING_PAGINACAO_MS;
 
     public EtlFluxoDestinoService(
             RodogarciaClient rodogarciaClient,
@@ -93,11 +97,12 @@ public class EtlFluxoDestinoService {
             }
 
             int pagina = 1;
+            int paginasDesdeUltimaPausa = 0;
             int falhasInfraestruturaConsecutivas = 0;
             AssinaturaPagina assinaturaPaginaAnterior = null;
             String sinceParam = obterSinceParam(request);
 
-            while (pagina <= request.maxPaginas()) {
+            while (true) {
                 String invoiceKeyParam = request.retroativo() ? null : obterInvoiceKeyParam(destino);
                 log.info(
                         "🔎 [DESTINO: {}] Página {}: buscando ocorrências a partir do cursor {}. invoice_key={} since={} occurrence_code={}",
@@ -278,15 +283,13 @@ public class EtlFluxoDestinoService {
                 assinaturaPaginaAnterior = assinaturaPaginaAtual;
                 cursorAtual = cursorParaPersistir;
                 pagina++;
-            }
+                paginasDesdeUltimaPausa++;
 
-            log.warn(
-                    "⏸️ [DESTINO: {}] Limite de {} página(s) por ciclo atingido.",
-                    destino,
-                    request.maxPaginas()
-            );
-            resultadoDestino = resultadoDestino.encerrar("Limite de paginas por ciclo atingido");
-            return resultadoDestino;
+                if (devePausarPorPacing(request, paginasDesdeUltimaPausa)) {
+                    pausarPorPacing(destino, request, paginasDesdeUltimaPausa, cursorAtual);
+                    paginasDesdeUltimaPausa = 0;
+                }
+            }
         } catch (EslRequestTransientException e) {
             if (falhaPaginaNaoCritica(e)) {
                 log.warn(
@@ -446,6 +449,42 @@ public class EtlFluxoDestinoService {
     private boolean falhaPaginaNaoCritica(EslRequestTransientException e) {
         return e.status() == EslRequestPolicyService.STATUS_SEM_RESPOSTA_HTTP
                 || (e.status() >= 500 && e.status() <= 599);
+    }
+
+    private boolean devePausarPorPacing(ExecucaoEtlRequest request, int paginasDesdeUltimaPausa) {
+        return paginasDesdeUltimaPausa >= request.maxPaginas();
+    }
+
+    private void pausarPorPacing(
+            String destino,
+            ExecucaoEtlRequest request,
+            int paginasDesdeUltimaPausa,
+            Long proximoCursor
+    ) {
+        long pausaMs = pausaPacingPaginacaoMs();
+        log.info(
+                "⏸️ [DESTINO: {}] Lote de {} página(s) processado no modo {}. Pausando {} ms antes de retomar do cursor {}.",
+                destino,
+                paginasDesdeUltimaPausa,
+                request.modo(),
+                pausaMs,
+                proximoCursor
+        );
+
+        if (pausaMs <= 0) {
+            return;
+        }
+
+        try {
+            Thread.sleep(pausaMs);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException("Pausa de pacing da paginacao ESL interrompida", e);
+        }
+    }
+
+    private long pausaPacingPaginacaoMs() {
+        return Math.max(0, pausaPacingPaginacaoMs);
     }
 
     String obterSinceParam(ExecucaoEtlRequest request) {
