@@ -22,7 +22,7 @@
 - `EtlResilienciaService` encapsula retries por erro transitório, backoff e limite de tentativas.
 - `EslRequestPolicyService` impõe intervalo mínimo entre chamadas ESL, trata HTTP 429/5xx e falhas de transporte como transitórias e controla cooldown para consultas por período.
 - Banco versionado por scripts SQL idempotentes em `database/sql/schema` e `database/sql/migration`; todo script deve usar `USE`, `SET ANSI_NULLS ON` e `SET QUOTED_IDENTIFIER ON`.
-- Classes SOAP da Vedacit são geradas em `target/generated-sources/wsimport*`; não devem ser editadas manualmente.
+- Classes SOAP da Vedacit são geradas em `target/generated-sources/wsimport*`, devem usar as interfaces geradas pelo Maven e não devem ser editadas manualmente; dumps locais de WSDL/XSD são cache operacional e não devem ser versionados.
 - Logs, auditorias, cursores, quarentenas e estados técnicos de integração usam exclusão lógica obrigatória quando precisarem sair das leituras operacionais. Hard delete/`DELETE FROM`/`TRUNCATE` em rotinas comuns é proibido; use status, `ativo`, `deleted_at`, `arquivado` ou campo equivalente, com filtros explícitos nas consultas de produção.
 
 ## Fluxo de Dados e Integrações
@@ -33,7 +33,7 @@
 - XML de CT-e ESL: `GET ${RODOGARCIA_CTE_XML_PATH:/api/ctes}?key=...`, usado quando `VEDACIT_SEND_CTE_XML_ENABLED=true` e com token `RODOGARCIA_MASTER_API_REST`.
 - Destinos ativos: `PPG` com token ESL próprio `RODOGARCIA_TOKEN_PPG` e `VEDACIT` com token ESL próprio `RODOGARCIA_TOKEN_VEDACIT`; cada destino mantém cursor independente.
 - Destino PPG/OK Entrega: `PpgClient` faz login em `/assets/ws/ws.0.loginapp.php` e envia ocorrência em `/assets/ws/ws.0.ocorrenciaentregacache_api.php`; `PpgAuthService` mantém token em memória por 13 dias.
-- Destino Vedacit/MultiTMS: SOAP em `Ocorrencias.svc`, `NFe.svc` e `CTe.svc`, com token em header SOAP e timeouts configuráveis.
+- Destino Vedacit/MultiTMS: SOAP em `Ocorrencias.svc`, `NFe.svc` e `CTe.svc`, com token em header SOAP, timeouts configuráveis e endpoints finais definidos por `VEDACIT_API_BASE_URL`.
 - Canhotos PPG: imagem baixada da ESL, convertida para RGB/JPEG, recortada, redimensionada para `1536x240`, gravada a 150 DPI e enviada com prefixo `data:image/jpeg;base64,`.
 - Canhotos Vedacit: imagem ou primeira página de PDF é convertida/comprimida em JPEG, limite máximo de 400 KB, Base64 bruto sem prefixo MIME.
 - Persistência técnica: `dbo.tb_log_integracao` registra ocorrência, chave NFe, frete, cursor, status geral, status de dados, status de canhoto, tentativas, mensagens de erro, payloads e referência de canhoto; `dbo.tb_controle_cursor` armazena cursor por `sistema_destino`.
@@ -47,6 +47,7 @@
 - O cursor só avança depois do processamento/auditoria da página. Em erro de registro no modo incremental, o cursor não avança para permitir retry.
 - O modo incremental consulta a ESL com `since` calculado como agora menos `ETL_INCREMENTAL_LOOKBACK_HOURS`, padrão 24 horas, mantendo o cursor por destino para paginação e avanço seguro.
 - Em carga retroativa, erros por registro são registrados e a paginação pode avançar em memória para não travar o histórico.
+- Em carga retroativa, `RETROACTIVE_MAX_PAGES`/`retroactive.max-pages` não podem ultrapassar o teto operacional `INTEGRATION_MAX_PAGES_PER_CYCLE`, padrão 10.
 - Cada destino tem whitelists independentes de NF-e: `PPG_NFE_WHITELIST_ENABLED/PPG_NFE_WHITELIST` e `VEDACIT_NFE_WHITELIST_ENABLED/VEDACIT_NFE_WHITELIST`.
 - Registros com status final `ENVIADO` ou `IGNORADO` não são reenviados automaticamente.
 - Status consolidados atuais: `RECEBIDO`, `IGNORADO`, `ENVIADO`, `PARCIAL`, `PENDENTE_FOTO`, `ERRO_DESTINO`, `SUCESSO` e `NAO_APLICAVEL`.
@@ -72,4 +73,3 @@
 - É proibido incluir saudações, conclusões, explicações fora dos bullets ou reescrever outras seções durante a resposta de planejamento.
 
 ## Tarefas Pendentes
-
