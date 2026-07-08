@@ -23,6 +23,7 @@
 - `EtlEstadoIntegracaoService` centraliza status, tentativas, datas de processamento e conversão para resultado operacional.
 - `EtlResilienciaService` encapsula retries por erro transitório, backoff e limite de tentativas.
 - `EslRequestPolicyService` impõe intervalo mínimo entre chamadas ESL, trata HTTP 429 com backoff bloqueante e retry transparente da mesma chamada, trata HTTP 5xx/falhas de transporte como transitórias e controla cooldown para consultas por período.
+- `IntegracaoAuditoriaQueryRepository` concentra as consultas analíticas de auditoria operacional do Dashboard, incluindo evolução diária e resumo por entidade operacional, sempre com agregação, classificação de status e filtros temporais executados no SQL Server.
 - Banco versionado por scripts SQL idempotentes em `database/sql/schema` e `database/sql/migration`; todo script deve usar `USE`, `SET ANSI_NULLS ON` e `SET QUOTED_IDENTIFIER ON`.
 - Classes SOAP da Vedacit são geradas em `target/generated-sources/wsimport*`, devem usar as interfaces geradas pelo Maven e não devem ser editadas manualmente.
 - Proxies SOAP da Vedacit são criados em `VedacitIntegrationService` pelas classes `Ocorrencias`, `NFe` e `CTe` geradas pelo `jaxws-maven-plugin`, carregando WSDLs locais por `getResource` a partir de `/wsdl/vedacit/...` para funcionar dentro do Fat JAR.
@@ -43,7 +44,7 @@
 - Canhotos PPG: imagem baixada da ESL, convertida para RGB/JPEG, recortada, redimensionada para `1536x240`, gravada a 150 DPI e enviada com prefixo `data:image/jpeg;base64,`.
 - Canhotos Vedacit: imagem ou primeira página de PDF é convertida/comprimida em JPEG, limite máximo de 400 KB, Base64 bruto sem prefixo MIME.
 - Persistência técnica: `dbo.tb_log_integracao` registra ocorrência, chave NFe, frete, cursor, status geral, status de dados, status de canhoto, tentativas, mensagens de erro, payloads e referência de canhoto; `dbo.tb_controle_cursor` armazena cursor por `sistema_destino`.
-- Endpoints auxiliares expostos: `/api/auditoria/integracoes-clientes`, `/api/auditoria/integracoes-clientes/evolucao-diaria`, `/api/auditoria/logs/{id}/imagem`, `/api/etl/quarentena/erros` e `/api/etl/quarentena/{destino}/reprocessar`.
+- Endpoints auxiliares expostos: `/api/auditoria/integracoes-clientes`, `/api/auditoria/integracoes-clientes/evolucao-diaria`, `/api/auditoria/integracoes-clientes/resumo-tabelas`, `/api/auditoria/logs/{id}/imagem`, `/api/etl/quarentena/erros` e `/api/etl/quarentena/{destino}/reprocessar`.
 
 ## Regras de Negócio Consolidadas
 - O fluxo principal só deve processar entrega realizada: `occurrence.code == 1`. Outros códigos são ignorados e auditados.
@@ -63,6 +64,7 @@
 - Registros Vedacit com `status=ERRO_DESTINO`, `status_dados=SUCESSO`, `status_canhoto=ERRO_DESTINO` e `tentativas_canhoto < 3` são resgatados pela repescagem ativa sem limite de janela; o XML/dados é considerado já integrado e o retry executa somente download, compressão e envio SOAP do canhoto.
 - Falhas parciais de canhoto preservam `status_dados=SUCESSO`, incrementam `tentativas_canhoto` a cada nova falha e entram na quarentena natural ao alcançar `tentativas_canhoto >= 3`.
 - O dashboard de pendências deve exibir falhas parciais de canhoto ainda retryáveis como `Erro Parcial - Aguarda Retry`, evitando invisibilidade operacional.
+- O resumo analítico de integrações para o Dashboard deve agrupar no SQL Server por entidade operacional derivada de `tb_log_integracao`: `sistema_destino - XML/Dados` e `sistema_destino - Canhoto`. Como o banco de auditoria não persiste uma coluna física de tabela de negócio (`tabela_codigo`/`tabela_busca`), não se deve inventar essa dimensão no Dashboard nem agregar os logs em memória.
 - Duplicidade retornada por PPG ou Vedacit é conciliada como sucesso, não como erro fatal.
 - O runtime Vedacit não deve ler WSDL por caminho de filesystem como `src/main/resources`; a leitura deve ser por classpath (`getResource`) e falhar explicitamente se o WSDL local não estiver empacotado.
 - Erros HTTP transitórios ou de infraestrutura incluem 500, 502, 503, 504, timeouts e falhas de transporte; há backoff e limite de tentativas antes de quarentena/bloqueio de retry automático.

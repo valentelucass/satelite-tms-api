@@ -13,6 +13,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 import com.example.satelite.dto.auditoria.AuditoriaIntegracoesClientesResponseDTO;
 import com.example.satelite.dto.auditoria.IntegracaoEvolucaoDiariaDTO;
+import com.example.satelite.dto.auditoria.ResumoTabelaIntegracaoDTO;
 import com.example.satelite.services.auditoria.IntegracaoAuditoriaService;
 
 @RestController
@@ -42,6 +43,14 @@ public class IntegracaoAuditoriaController {
             @RequestParam String dataFinal
     ) {
         return integracaoAuditoriaService.consultarEvolucaoDiaria(dataInicial, dataFinal);
+    }
+
+    @GetMapping("/integracoes-clientes/resumo-tabelas")
+    public List<ResumoTabelaIntegracaoDTO> consultarResumoTabelas(
+            @RequestParam String dataInicial,
+            @RequestParam String dataFinal
+    ) {
+        return integracaoAuditoriaService.consultarResumoTabelas(dataInicial, dataFinal);
     }
 
     @GetMapping(value = "/logs/{id}/imagem", produces = MediaType.TEXT_PLAIN_VALUE)

@@ -22,6 +22,7 @@ import com.example.satelite.dto.auditoria.IntegracaoEvolucaoDiariaDTO;
 import com.example.satelite.dto.auditoria.MetricaConsolidadaDTO;
 import com.example.satelite.dto.auditoria.PaginacaoDTO;
 import com.example.satelite.dto.auditoria.PendenciasPaginadasDTO;
+import com.example.satelite.dto.auditoria.ResumoTabelaIntegracaoDTO;
 import com.example.satelite.models.LogIntegracaoModel;
 import com.example.satelite.repositories.IntegracaoAuditoriaQueryRepository;
 import com.example.satelite.repositories.IntegracaoAuditoriaQueryRepository.Filtros;
@@ -122,6 +123,14 @@ public class IntegracaoAuditoriaService {
                 .stream()
                 .map(this::mapearEvolucaoDiaria)
                 .toList();
+    }
+
+    public List<ResumoTabelaIntegracaoDTO> consultarResumoTabelas(String dataInicial, String dataFinal) {
+        PeriodoFiltro periodo = lerPeriodoObrigatorio(dataInicial, dataFinal);
+        return integracaoAuditoriaQueryRepository.buscarResumoTabelas(
+                periodo.dataInicialSql(),
+                periodo.dataFinalLimitSql()
+        );
     }
 
     private MetricaConsolidadaDTO mapearMetrica(MetricaIntegracaoClienteProjection metrica) {

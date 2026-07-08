@@ -22,6 +22,7 @@ import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 
 import com.example.satelite.dto.auditoria.PendenciaDTO;
+import com.example.satelite.dto.auditoria.ResumoTabelaIntegracaoDTO;
 import com.example.satelite.repositories.IntegracaoAuditoriaQueryRepository.Filtros;
 
 class IntegracaoAuditoriaQueryRepositoryTest {
@@ -120,6 +121,41 @@ class IntegracaoAuditoriaQueryRepositoryTest {
         assertFalse(consulta.sql().contains("CAST(l.data_processamento AS DATE)"));
         assertEquals(LocalDateTime.of(2026, 6, 1, 0, 0), consulta.params().getValue("dataInicial"));
         assertEquals(LocalDateTime.of(2026, 7, 1, 0, 0), consulta.params().getValue("dataFinalLimit"));
+    }
+
+    @Test
+    void buscarResumoTabelasDeveAgruparEntidadesOperacionaisNoSqlServer() {
+        NamedParameterJdbcTemplate jdbcTemplate = criarJdbcTemplate();
+        IntegracaoAuditoriaQueryRepository repository = new IntegracaoAuditoriaQueryRepository(jdbcTemplate);
+
+        repository.buscarResumoTabelas(
+                LocalDateTime.of(2026, 6, 1, 0, 0),
+                LocalDateTime.of(2026, 7, 1, 0, 0)
+        );
+
+        ArgumentCaptor<String> sqlCaptor = ArgumentCaptor.forClass(String.class);
+        ArgumentCaptor<MapSqlParameterSource> paramsCaptor = ArgumentCaptor.forClass(MapSqlParameterSource.class);
+        verify(jdbcTemplate).query(
+                sqlCaptor.capture(),
+                paramsCaptor.capture(),
+                ArgumentMatchers.<RowMapper<ResumoTabelaIntegracaoDTO>>any()
+        );
+
+        String sql = sqlCaptor.getValue();
+        assertTrue(sql.contains("CONCAT(l.sistema_destino, N' - ', etapa.entidade) AS entidade_tabela"));
+        assertTrue(sql.contains("CROSS APPLY (VALUES"));
+        assertTrue(sql.contains("N'XML/Dados'"));
+        assertTrue(sql.contains("N'Canhoto'"));
+        assertTrue(sql.contains("l.data_processamento >= :dataInicial"));
+        assertTrue(sql.contains("l.data_processamento < :dataFinalLimit"));
+        assertTrue(sql.contains("COUNT_BIG(1) AS total_processado"));
+        assertTrue(sql.contains("SUM(CASE WHEN classe_status = N'SUCESSO' THEN 1 ELSE 0 END) AS total_sucesso"));
+        assertTrue(sql.contains("SUM(CASE WHEN classe_status = N'ERRO' THEN 1 ELSE 0 END) AS total_erro"));
+        assertTrue(sql.contains("SUM(CASE WHEN classe_status = N'QUARENTENA' THEN 1 ELSE 0 END) AS total_quarentena"));
+        assertTrue(sql.contains("GROUP BY entidade_tabela"));
+        assertFalse(sql.contains("CAST(l.data_processamento AS DATE)"));
+        assertEquals(LocalDateTime.of(2026, 6, 1, 0, 0), paramsCaptor.getValue().getValue("dataInicial"));
+        assertEquals(LocalDateTime.of(2026, 7, 1, 0, 0), paramsCaptor.getValue().getValue("dataFinalLimit"));
     }
 
     private NamedParameterJdbcTemplate criarJdbcTemplate() {
