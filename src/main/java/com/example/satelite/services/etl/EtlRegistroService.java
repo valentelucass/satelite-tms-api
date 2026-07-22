@@ -6,6 +6,7 @@ import java.util.Optional;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
@@ -18,6 +19,7 @@ import com.example.satelite.models.LogIntegracaoModel;
 import com.example.satelite.services.ResultadoIntegracao;
 import com.example.satelite.services.etl.EslRequestPolicyService.EslRequestTransientException;
 import com.example.satelite.services.ppg.PpgIntegrationService;
+import com.example.satelite.services.selia.SeliaIntegrationService;
 import com.example.satelite.services.vedacit.VedacitIntegrationService;
 
 @Service
@@ -27,6 +29,7 @@ public class EtlRegistroService {
 
     private static final int CODIGO_ENTREGA_REALIZADA = 1;
     private static final String DESTINO_PPG = "PPG";
+    private static final String DESTINO_SELIA = "SELIA";
     private static final String DESTINO_VEDACIT = "VEDACIT";
     private static final String STATUS_RECEBIDO = ResultadoIntegracao.STATUS_RECEBIDO;
     private static final String STATUS_PENDENTE_FOTO = ResultadoIntegracao.STATUS_PENDENTE_FOTO;
@@ -43,12 +46,32 @@ public class EtlRegistroService {
     private final EtlEstadoIntegracaoService etlEstadoIntegracaoService;
     private final PpgIntegrationService ppgIntegrationService;
     private final VedacitIntegrationService vedacitIntegrationService;
+    private final SeliaIntegrationService seliaIntegrationService;
 
     @Value("${APP_E2E_IMAGE_TEST_MODE:false}")
     private boolean modoTesteE2eImagem;
 
     @Value("${APP_E2E_TEST_IMAGE_URL:" + URL_IMAGEM_TESTE_PADRAO + "}")
     private String urlImagemTesteE2e;
+
+    @Autowired
+    public EtlRegistroService(
+            RodogarciaClient rodogarciaClient,
+            EslRequestPolicyService eslRequestPolicyService,
+            EtlResilienciaService etlResilienciaService,
+            EtlEstadoIntegracaoService etlEstadoIntegracaoService,
+            PpgIntegrationService ppgIntegrationService,
+            VedacitIntegrationService vedacitIntegrationService,
+            SeliaIntegrationService seliaIntegrationService
+    ) {
+        this.rodogarciaClient = rodogarciaClient;
+        this.eslRequestPolicyService = eslRequestPolicyService;
+        this.etlResilienciaService = etlResilienciaService;
+        this.etlEstadoIntegracaoService = etlEstadoIntegracaoService;
+        this.ppgIntegrationService = ppgIntegrationService;
+        this.vedacitIntegrationService = vedacitIntegrationService;
+        this.seliaIntegrationService = seliaIntegrationService;
+    }
 
     public EtlRegistroService(
             RodogarciaClient rodogarciaClient,
@@ -58,12 +81,15 @@ public class EtlRegistroService {
             PpgIntegrationService ppgIntegrationService,
             VedacitIntegrationService vedacitIntegrationService
     ) {
-        this.rodogarciaClient = rodogarciaClient;
-        this.eslRequestPolicyService = eslRequestPolicyService;
-        this.etlResilienciaService = etlResilienciaService;
-        this.etlEstadoIntegracaoService = etlEstadoIntegracaoService;
-        this.ppgIntegrationService = ppgIntegrationService;
-        this.vedacitIntegrationService = vedacitIntegrationService;
+        this(
+                rodogarciaClient,
+                eslRequestPolicyService,
+                etlResilienciaService,
+                etlEstadoIntegracaoService,
+                ppgIntegrationService,
+                vedacitIntegrationService,
+                null
+        );
     }
 
     public ResultadoPagina processarPendenciasDestino(
@@ -266,13 +292,13 @@ public class EtlRegistroService {
                 comprovanteProcessamento = null;
             }
 
-            if (DESTINO_PPG.equals(destino) && comprovanteProcessamento == null) {
+            if ((DESTINO_PPG.equals(destino) || DESTINO_SELIA.equals(destino)) && comprovanteProcessamento == null) {
                 String motivoPendente = normalizarMotivoCanhotoIndisponivel(buscaComprovante.motivoIndisponivel());
-                ResultadoIntegracao resultadoPendente = ResultadoIntegracao.pendenteFotoPpg(motivoPendente);
+                ResultadoIntegracao resultadoPendente = ResultadoIntegracao.pendenteFotoObrigatorio(motivoPendente);
                 etlEstadoIntegracaoService.aplicarResultadoIntegracao(logIntegracao, resultadoPendente);
                 etlEstadoIntegracaoService.salvar(logIntegracao);
 
-                log.warn("⏳ [PPG] NF {}: {}. Payload não enviado.", chave, motivoPendente);
+                log.warn("⏳ [{}] NF {}: {}. Payload não enviado.", destino, chave, motivoPendente);
                 return ResultadoRegistro.PENDENTE_FOTO;
             }
 
@@ -564,6 +590,10 @@ public class EtlRegistroService {
 
         if (DESTINO_VEDACIT.equals(destino)) {
             return vedacitIntegrationService.notaFiscalPermitida(ocorrencia);
+        }
+
+        if (DESTINO_SELIA.equals(destino)) {
+            return seliaIntegrationService != null && seliaIntegrationService.notaFiscalPermitida(ocorrencia);
         }
 
         return true;

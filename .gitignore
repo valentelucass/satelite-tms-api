@@ -109,3 +109,5 @@ desktop.ini
 # Operational batch scripts are versioned; local helpers remain ignored.
 scripts/*
 !scripts/*.bat
+
+/docs/contexto

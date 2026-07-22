@@ -7,12 +7,14 @@ import java.util.Locale;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import com.example.satelite.models.LogIntegracaoModel;
 import com.example.satelite.repositories.LogIntegracaoRepository;
 import com.example.satelite.services.ppg.PpgIntegrationService;
+import com.example.satelite.services.selia.SeliaIntegrationService;
 import com.example.satelite.services.vedacit.VedacitIntegrationService;
 
 @Service
@@ -21,6 +23,7 @@ public class EtlRepescagemService {
     private static final Logger log = LoggerFactory.getLogger(EtlRepescagemService.class);
 
     private static final String DESTINO_PPG = "PPG";
+    private static final String DESTINO_SELIA = "SELIA";
     private static final String DESTINO_VEDACIT = "VEDACIT";
 
     private final LogIntegracaoRepository logIntegracaoRepository;
@@ -28,6 +31,7 @@ public class EtlRepescagemService {
     private final EtlEstadoIntegracaoService etlEstadoIntegracaoService;
     private final PpgIntegrationService ppgIntegrationService;
     private final VedacitIntegrationService vedacitIntegrationService;
+    private final SeliaIntegrationService seliaIntegrationService;
 
     @Value("${RODOGARCIA_TOKEN_PPG}")
     private String tokenPpgEsl;
@@ -35,8 +39,28 @@ public class EtlRepescagemService {
     @Value("${RODOGARCIA_TOKEN_VEDACIT}")
     private String tokenVedacitEsl;
 
+    @Value("${RODOGARCIA_TOKEN_SELIA:}")
+    private String tokenSeliaEsl;
+
     @Value("${ETL_REPESCAGEM_INTERVAL_MS:10000}")
     private long intervaloEntreRegistrosMs = 10000;
+
+    @Autowired
+    public EtlRepescagemService(
+            LogIntegracaoRepository logIntegracaoRepository,
+            EtlRegistroService etlRegistroService,
+            EtlEstadoIntegracaoService etlEstadoIntegracaoService,
+            PpgIntegrationService ppgIntegrationService,
+            VedacitIntegrationService vedacitIntegrationService,
+            SeliaIntegrationService seliaIntegrationService
+    ) {
+        this.logIntegracaoRepository = logIntegracaoRepository;
+        this.etlRegistroService = etlRegistroService;
+        this.etlEstadoIntegracaoService = etlEstadoIntegracaoService;
+        this.ppgIntegrationService = ppgIntegrationService;
+        this.vedacitIntegrationService = vedacitIntegrationService;
+        this.seliaIntegrationService = seliaIntegrationService;
+    }
 
     public EtlRepescagemService(
             LogIntegracaoRepository logIntegracaoRepository,
@@ -45,11 +69,14 @@ public class EtlRepescagemService {
             PpgIntegrationService ppgIntegrationService,
             VedacitIntegrationService vedacitIntegrationService
     ) {
-        this.logIntegracaoRepository = logIntegracaoRepository;
-        this.etlRegistroService = etlRegistroService;
-        this.etlEstadoIntegracaoService = etlEstadoIntegracaoService;
-        this.ppgIntegrationService = ppgIntegrationService;
-        this.vedacitIntegrationService = vedacitIntegrationService;
+        this(
+                logIntegracaoRepository,
+                etlRegistroService,
+                etlEstadoIntegracaoService,
+                ppgIntegrationService,
+                vedacitIntegrationService,
+                null
+        );
     }
 
     public void executarRepescagem(LocalDateTime inicioCiclo) {
@@ -142,6 +169,11 @@ public class EtlRepescagemService {
                     ppgIntegrationService.processarOcorrencia(ocorrencia, comprovante);
         }
 
+        if (DESTINO_SELIA.equals(destino)) {
+            return (ocorrencia, comprovante, logIntegracao) ->
+                    seliaIntegrationService.processarOcorrencia(ocorrencia, comprovante);
+        }
+
         return (ocorrencia, comprovante, logIntegracao) -> vedacitIntegrationService.processarOcorrencia(
                 ocorrencia,
                 comprovante,
@@ -151,7 +183,11 @@ public class EtlRepescagemService {
     }
 
     private String headerAuth(String destino) {
-        return "Bearer " + (DESTINO_PPG.equals(destino) ? tokenPpgEsl : tokenVedacitEsl);
+        if (DESTINO_PPG.equals(destino)) {
+            return "Bearer " + tokenPpgEsl;
+        }
+
+        return "Bearer " + (DESTINO_SELIA.equals(destino) ? tokenSeliaEsl : tokenVedacitEsl);
     }
 
     private String normalizarDestino(LogIntegracaoModel registro) {
@@ -160,7 +196,7 @@ public class EtlRepescagemService {
         }
 
         String destino = registro.getSistemaDestino().trim().toUpperCase(Locale.ROOT);
-        if (DESTINO_PPG.equals(destino) || DESTINO_VEDACIT.equals(destino)) {
+        if (DESTINO_PPG.equals(destino) || DESTINO_SELIA.equals(destino) || DESTINO_VEDACIT.equals(destino)) {
             return destino;
         }
 

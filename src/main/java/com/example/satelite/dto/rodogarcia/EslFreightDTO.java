@@ -7,7 +7,12 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 public record EslFreightDTO(
     Long id,
     @JsonProperty("cte_key") 
-    String cteKey
+    String cteKey,
+    @JsonProperty("order_number")
+    String orderNumber
 ) {
 
+    public EslFreightDTO(Long id, String cteKey) {
+        this(id, cteKey, null);
+    }
 }

@@ -5,11 +5,13 @@ import java.util.List;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import com.example.satelite.models.LogIntegracaoModel;
 import com.example.satelite.services.ppg.PpgIntegrationService;
+import com.example.satelite.services.selia.SeliaIntegrationService;
 import com.example.satelite.services.vedacit.VedacitIntegrationService;
 
 @Service
@@ -22,9 +24,11 @@ public class OrquestradorEtlService {
 
     private static final String LINHA_BANNER = "==================================================";
     private static final String DESTINO_PPG = "PPG";
+    private static final String DESTINO_SELIA = "SELIA";
     private static final String DESTINO_VEDACIT = "VEDACIT";
 
     private final PpgIntegrationService ppgIntegrationService;
+    private final SeliaIntegrationService seliaIntegrationService;
     private final VedacitIntegrationService vedacitIntegrationService;
     private final EtlEstadoIntegracaoService etlEstadoIntegracaoService;
     private final EtlFluxoDestinoService etlFluxoDestinoService;
@@ -37,17 +41,42 @@ public class OrquestradorEtlService {
     @Value("${RODOGARCIA_TOKEN_VEDACIT}")
     private String tokenVedacitEsl;
 
+    @Value("${RODOGARCIA_TOKEN_SELIA:}")
+    private String tokenSeliaEsl;
+
     @Value("${APP_PPG_ENABLED:true}")
     private boolean ppgEnabled = true;
 
     @Value("${APP_VEDACIT_ENABLED:true}")
     private boolean vedacitEnabled = true;
 
+    @Value("${APP_SELIA_ENABLED:false}")
+    private boolean seliaEnabled;
+
     @Value("${INTEGRATION_MAX_PAGES_PER_CYCLE:10}")
     private int maxPaginasPorCiclo;
 
     @Value("${APP_CICLO_UNICO:${ciclo_unico:false}}")
     private boolean cicloUnico;
+
+    @Autowired
+    public OrquestradorEtlService(
+            PpgIntegrationService ppgIntegrationService,
+            SeliaIntegrationService seliaIntegrationService,
+            VedacitIntegrationService vedacitIntegrationService,
+            EtlEstadoIntegracaoService etlEstadoIntegracaoService,
+            EtlFluxoDestinoService etlFluxoDestinoService,
+            QuarentenaService quarentenaService,
+            EtlRepescagemService etlRepescagemService
+    ) {
+        this.ppgIntegrationService = ppgIntegrationService;
+        this.seliaIntegrationService = seliaIntegrationService;
+        this.vedacitIntegrationService = vedacitIntegrationService;
+        this.etlEstadoIntegracaoService = etlEstadoIntegracaoService;
+        this.etlFluxoDestinoService = etlFluxoDestinoService;
+        this.quarentenaService = quarentenaService;
+        this.etlRepescagemService = etlRepescagemService;
+    }
 
     public OrquestradorEtlService(
             PpgIntegrationService ppgIntegrationService,
@@ -57,12 +86,15 @@ public class OrquestradorEtlService {
             QuarentenaService quarentenaService,
             EtlRepescagemService etlRepescagemService
     ) {
-        this.ppgIntegrationService = ppgIntegrationService;
-        this.vedacitIntegrationService = vedacitIntegrationService;
-        this.etlEstadoIntegracaoService = etlEstadoIntegracaoService;
-        this.etlFluxoDestinoService = etlFluxoDestinoService;
-        this.quarentenaService = quarentenaService;
-        this.etlRepescagemService = etlRepescagemService;
+        this(
+                ppgIntegrationService,
+                null,
+                vedacitIntegrationService,
+                etlEstadoIntegracaoService,
+                etlFluxoDestinoService,
+                quarentenaService,
+                etlRepescagemService
+        );
     }
 
     public void executarFluxos() {
@@ -79,6 +111,7 @@ public class OrquestradorEtlService {
                 : ExecucaoEtlRequest.incremental(maxPaginasPorCiclo);
         LocalDateTime inicioCiclo = LocalDateTime.now();
         ResultadoDestino resultadoPpg = ResultadoDestino.vazio(DESTINO_PPG);
+        ResultadoDestino resultadoSelia = ResultadoDestino.vazio(DESTINO_SELIA);
         ResultadoDestino resultadoVedacit = ResultadoDestino.vazio(DESTINO_VEDACIT);
         ResultadoCiclo resultadoCiclo;
 
@@ -120,17 +153,33 @@ public class OrquestradorEtlService {
                 log.warn("⏸️ [DESTINO: {}] Fluxo desabilitado por APP_VEDACIT_ENABLED=false.", DESTINO_VEDACIT);
                 resultadoVedacit = ResultadoDestino.desabilitado(DESTINO_VEDACIT);
             }
+
+            if (!execucao.destinoSelecionado(DESTINO_SELIA)) {
+                log.warn("⏸️ [DESTINO: {}] Fluxo não selecionado para esta execução.", DESTINO_SELIA);
+                resultadoSelia = ResultadoDestino.naoSelecionado(DESTINO_SELIA);
+            } else if (seliaEnabled && seliaIntegrationService != null) {
+                resultadoSelia = etlFluxoDestinoService.executarFluxoDestino(
+                        DESTINO_SELIA,
+                        tokenSeliaEsl,
+                        execucao,
+                        (ocorrencia, comprovante, logIntegracao) ->
+                                seliaIntegrationService.processarOcorrencia(ocorrencia, comprovante)
+                );
+            } else {
+                log.warn("⏸️ [DESTINO: {}] Fluxo desabilitado por APP_SELIA_ENABLED=false.", DESTINO_SELIA);
+                resultadoSelia = ResultadoDestino.desabilitado(DESTINO_SELIA);
+            }
         } finally {
             executarRepescagemComSeguranca(inicioCiclo);
 
             LocalDateTime fimCiclo = LocalDateTime.now();
-            int recebidasTotal = resultadoPpg.recebidos() + resultadoVedacit.recebidos();
-            int ignoradasTotal = resultadoPpg.ignorados() + resultadoVedacit.ignorados();
-            int pendentesFotoTotal = resultadoPpg.pendentesFoto() + resultadoVedacit.pendentesFoto();
-            int jaProcessadasTotal = resultadoPpg.jaProcessados() + resultadoVedacit.jaProcessados();
-            int sucessosTotal = resultadoPpg.enviados() + resultadoVedacit.enviados();
-            int errosTotal = resultadoPpg.erros() + resultadoVedacit.erros();
-            boolean erroCritico = resultadoPpg.erroCritico() || resultadoVedacit.erroCritico();
+            int recebidasTotal = resultadoPpg.recebidos() + resultadoSelia.recebidos() + resultadoVedacit.recebidos();
+            int ignoradasTotal = resultadoPpg.ignorados() + resultadoSelia.ignorados() + resultadoVedacit.ignorados();
+            int pendentesFotoTotal = resultadoPpg.pendentesFoto() + resultadoSelia.pendentesFoto() + resultadoVedacit.pendentesFoto();
+            int jaProcessadasTotal = resultadoPpg.jaProcessados() + resultadoSelia.jaProcessados() + resultadoVedacit.jaProcessados();
+            int sucessosTotal = resultadoPpg.enviados() + resultadoSelia.enviados() + resultadoVedacit.enviados();
+            int errosTotal = resultadoPpg.erros() + resultadoSelia.erros() + resultadoVedacit.erros();
+            boolean erroCritico = resultadoPpg.erroCritico() || resultadoSelia.erroCritico() || resultadoVedacit.erroCritico();
             String resultadoFinal = erroCritico || errosTotal > 0 ? "CONCLUIDO_COM_ERROS" : "CONCLUIDO_SEM_ERROS";
             int codigoSaida = erroCritico || errosTotal > 0
                     ? CODIGO_SAIDA_ERRO_CRITICO
@@ -159,6 +208,7 @@ public class OrquestradorEtlService {
                     🚦 Código de Saída Sugerido: {}
                     --------------------------------------------------
                     PPG     | páginas={} | lidas={} | ignoradas={} | pend_foto={} | já_processadas={} | sucessos={} | falhas={} | encerramento={}
+                    SELIA   | páginas={} | lidas={} | ignoradas={} | pend_foto={} | já_processadas={} | sucessos={} | falhas={} | encerramento={}
                     VEDACIT | páginas={} | lidas={} | ignoradas={} | pend_foto={} | já_processadas={} | sucessos={} | falhas={} | encerramento={}
                     {}
                     {}
@@ -184,6 +234,14 @@ public class OrquestradorEtlService {
                     resultadoPpg.enviados(),
                     resultadoPpg.erros(),
                     resultadoPpg.mensagemEncerramento(),
+                    resultadoSelia.paginasProcessadas(),
+                    resultadoSelia.recebidos(),
+                    resultadoSelia.ignorados(),
+                    resultadoSelia.pendentesFoto(),
+                    resultadoSelia.jaProcessados(),
+                    resultadoSelia.enviados(),
+                    resultadoSelia.erros(),
+                    resultadoSelia.mensagemEncerramento(),
                     resultadoVedacit.paginasProcessadas(),
                     resultadoVedacit.recebidos(),
                     resultadoVedacit.ignorados(),
@@ -200,6 +258,7 @@ public class OrquestradorEtlService {
 
             resultadoCiclo = new ResultadoCiclo(
                     resultadoPpg,
+                    resultadoSelia,
                     resultadoVedacit,
                     erroCritico,
                     codigoSaida,
@@ -223,8 +282,9 @@ public class OrquestradorEtlService {
     private void logarRelatorioQuarentena() {
         try {
             List<LogIntegracaoModel> quarentenaPpg = buscarQuarentena(DESTINO_PPG);
+            List<LogIntegracaoModel> quarentenaSelia = buscarQuarentena(DESTINO_SELIA);
             List<LogIntegracaoModel> quarentenaVedacit = buscarQuarentena(DESTINO_VEDACIT);
-            if (quarentenaPpg.isEmpty() && quarentenaVedacit.isEmpty()) {
+            if (quarentenaPpg.isEmpty() && quarentenaSelia.isEmpty() && quarentenaVedacit.isEmpty()) {
                 return;
             }
 
@@ -239,6 +299,7 @@ public class OrquestradorEtlService {
                     .append(quebraLinha);
 
             adicionarItensQuarentena(relatorio, DESTINO_PPG, quarentenaPpg);
+            adicionarItensQuarentena(relatorio, DESTINO_SELIA, quarentenaSelia);
             adicionarItensQuarentena(relatorio, DESTINO_VEDACIT, quarentenaVedacit);
             relatorio.append(LINHA_BANNER);
 
@@ -303,6 +364,7 @@ public class OrquestradorEtlService {
 
     public record ResultadoCiclo(
             ResultadoDestino resultadoPpg,
+            ResultadoDestino resultadoSelia,
             ResultadoDestino resultadoVedacit,
             boolean erroCritico,
             int codigoSaida,
@@ -310,5 +372,25 @@ public class OrquestradorEtlService {
             LocalDateTime inicio,
             LocalDateTime fim
     ) {
+        public ResultadoCiclo(
+                ResultadoDestino resultadoPpg,
+                ResultadoDestino resultadoVedacit,
+                boolean erroCritico,
+                int codigoSaida,
+                String resultadoFinal,
+                LocalDateTime inicio,
+                LocalDateTime fim
+        ) {
+            this(
+                    resultadoPpg,
+                    ResultadoDestino.vazio(DESTINO_SELIA),
+                    resultadoVedacit,
+                    erroCritico,
+                    codigoSaida,
+                    resultadoFinal,
+                    inicio,
+                    fim
+            );
+        }
     }
 }

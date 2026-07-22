@@ -93,7 +93,7 @@ public record ExecucaoEtlRequest(
         }
 
         String destinoNormalizado = destino.trim().toUpperCase(Locale.ROOT);
-        if (!Set.of("PPG", "VEDACIT", "TODOS").contains(destinoNormalizado)) {
+        if (!Set.of("PPG", "SELIA", "VEDACIT", "TODOS").contains(destinoNormalizado)) {
             throw new IllegalArgumentException("Destino retroativo invalido: " + destino);
         }
 

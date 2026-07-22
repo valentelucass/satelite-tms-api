@@ -16,7 +16,8 @@
 - Aplicação middleware/ETL headless: o fluxo principal é acionado por Spring Scheduling em `OrquestradorEtlScheduler`, não por controller web.
 - Arquitetura em camadas: `clients` concentra OpenFeign REST; `dto.rodogarcia` modela entrada ESL/Rodogarcia; `dto.ppg` modela saída PPG/OK Entrega; `services.etl`, `services.ppg`, `services.vedacit` concentram regras por domínio; `repositories` acessa auditoria SQL; `models` contém entidades JPA; `utils` guarda lógica pura de imagem/download.
 - `SateliteApplication` habilita OpenFeign; `SchedulerConfig` habilita agendamento.
-- `OrquestradorEtlService` coordena os destinos PPG e Vedacit, respeitando toggles `APP_PPG_ENABLED`, `APP_VEDACIT_ENABLED`, `APP_SCHEDULER_ENABLED`, modo ciclo único e modo retroativo, e delega a cadência contínua de paginação/backoff para os serviços de fluxo e política ESL.
+- `OrquestradorEtlService` coordena os destinos PPG, SELIA e Vedacit, respeitando toggles independentes, modo ciclo único e modo retroativo, e delega a cadência contínua de paginação/backoff para os serviços de fluxo e política ESL.
+- O destino SELIA/Intelipost REST foi implementado e está documentado em `docs/blueprint/destino_selia.md`; permanece desabilitado por `APP_SELIA_ENABLED=false` até a homologação.
 - `EtlFluxoDestinoService` encapsula paginação por destino, cursor, whitelists, filtro de ocorrência, detecção de loop de cursor, circuit breaker por falhas de infraestrutura, avanço seguro do cursor e pacing por lote de páginas.
 - `EtlRegistroService` aplica idempotência por log existente, processa pendências de canhoto, baixa comprovantes da ESL e atualiza o estado por registro.
 - `EtlRepescagemService` executa repescagem de erros definitivos do ciclo e repescagem ativa, sem janela de tempo, para falhas parciais de canhoto Vedacit com dados já integrados.
@@ -32,12 +33,15 @@
 - Logs, auditorias, cursores, quarentenas e estados técnicos de integração usam exclusão lógica obrigatória quando precisarem sair das leituras operacionais. Hard delete/`DELETE FROM`/`TRUNCATE` em rotinas comuns é proibido; use status, `ativo`, `deleted_at`, `arquivado` ou campo equivalente, com filtros explícitos nas consultas de produção.
 
 ## Fluxo de Dados e Integrações
+- O blueprint SELIA foi direcionado exclusivamente ao fluxo REST de ocorrências ESL para Intelipost AddEvents, no mesmo padrão outbound de PPG e Vedacit; EDI/SFTP, arquivos de despacho e webhooks de entrada não fazem parte deste destino.
 - Origem principal: Rodogarcia/ESL Cloud via REST OpenFeign em `RodogarciaClient`.
 - Endpoint ESL de ocorrências: `GET ${RODOGARCIA_API_BASE_URL}${RODOGARCIA_CUSTOMER_OCCURRENCES_PATH}`, padrão `/api/customer/invoice_occurrences`, com `Authorization: Bearer <token>`.
 - Parâmetros usados na origem: `start` para cursor, `invoice_key` para whitelists/repescagem, `since` para retroativo e para lookback incremental das últimas 24 horas, e `occurrence_code=1`.
 - Comprovantes ESL: `GET /api/customer/freight_delivery_receipts?cte_key=...`.
 - XML de CT-e ESL: `GET ${RODOGARCIA_CTE_XML_PATH:/api/ctes}?key=...`, usado quando `VEDACIT_SEND_CTE_XML_ENABLED=true` e com token `RODOGARCIA_MASTER_API_REST`.
 - Destinos ativos: `PPG` com token ESL próprio `RODOGARCIA_TOKEN_PPG` e `VEDACIT` com token ESL próprio `RODOGARCIA_TOKEN_VEDACIT`; cada destino mantém cursor independente.
+- SELIA é um destino REST implementado no mesmo padrão outbound de PPG e Vedacit: consulta ocorrências ESL com `RODOGARCIA_TOKEN_SELIA`, exige comprovante e envia AddEvents com ambas as chaves Intelipost. O runtime permanece desabilitado até a homologação.
+- As credenciais SFTP Intelipost da SELIA permanecem isoladas no `.env`, mas EDI/OCOREN não faz parte do escopo selecionado e não deve ser ativado ou implementado.
 - A paginação ESL continua até `data` vazio, encerramento por janela retroativa ou falha não recuperável; `INTEGRATION_MAX_PAGES_PER_CYCLE` define apenas quantas páginas compõem um lote antes da pausa `ETL_PAGINATION_PACING_PAUSE_MS`, sem encerrar o ciclo.
 - Destino PPG/OK Entrega: `PpgClient` faz login em `/assets/ws/ws.0.loginapp.php` e envia ocorrência em `/assets/ws/ws.0.ocorrenciaentregacache_api.php`; `PpgAuthService` mantém token em memória por 13 dias.
 - Destino Vedacit/MultiTMS: SOAP em `Ocorrencias.svc`, `NFe.svc` e `CTe.svc`, com token em header SOAP, timeouts configuráveis, WSDLs locais carregados do classpath e endpoints finais definidos por `VEDACIT_API_BASE_URL`.
@@ -72,6 +76,12 @@
 - A ESL deve respeitar intervalo mínimo entre requests (`ESL_MIN_INTERVAL_BETWEEN_REQUESTS_MS`, padrão 2000 ms); HTTP 429 aplica backoff bloqueante (`ESL_TOO_MANY_REQUESTS_BACKOFF_MS`, padrão 120000 ms) e repete a mesma chamada sem suspender o destino.
 - Consultas por período usam cooldown: até 30 dias sem cooldown adicional, 31 a 183 dias com 1 hora, acima disso com 12 horas.
 - Toda credencial, URL e token deve vir de `.env`, `application.properties` ou variável de ambiente; não pode haver segredo hardcoded.
+- SELIA seguirá o mesmo modelo outbound dos destinos PPG e Vedacit, pelo REST AddEvents. A Intelipost confirmou que `volume_number` deve receber o número do pedido; o DTO ESL tolera `order_number` na ocorrência ou no frete e falha de modo controlado se ele não vier, sem adicionar SFTP, NOTFIS ou Pré Lista ao fluxo.
+- O cliente REST SELIA deve enviar `api-key`, `logistic-provider-api-key`, `platform`, `platform-version`, `plugin`, `plugin-version` e `Content-Type: application/json`. O código de entrega deve vir do DePara Intelipost. O comprovante ESL é obrigatório e segue como anexo POD; HTTP `429` respeita `ratelimit-reset` quando a resposta o fornecer, sem quebrar a cronologia de eventos.
+- A chave REST de Rastreamento/AddEvents da SELIA foi recebida e está exclusivamente em `SELIA_INTELIPOST_API_KEY` no `.env`. Sua existência evidencia que o REST também é um canal disponível, mas não autoriza chamadas produtivas nem resolve os metadados obrigatórios, o de-para de eventos ou o vínculo pedido/volume.
+- A Pré Lista de Postagem Intelipost é um `POST` de entrada da Intelipost para URL pública da transportadora, autenticado por `logistic-provider-api-key`; ela e quaisquer integrações de pedido/despacho são referências documentais e não devem ser implementadas neste destino.
+- O Satélite não cria pedidos, cotações, despacho, PLP/NOTFIS, etiquetas, cancelamentos ou webhooks para SELIA. A integração atual limita-se à publicação de ocorrências AddEvents com comprovante POD obrigatório; a ausência de comprovante mantém o registro em `PENDENTE_FOTO` para retry.
+- Erros e contingência de cotação Intelipost (peso/CEP/dimensões e tabelas Fallback Tables V2) pertencem à plataforma/ERP de cotação. O Satélite não tem os dados nem endpoint para cotar e não deve calcular frete ou carregar tabelas de fallback no escopo SELIA de rastreamento.
 - DTOs REST próprios devem preferir `record`, camelCase no Java e `@JsonProperty` para nomes externos divergentes; DTO raiz deve tolerar campos desconhecidos.
 - Qualquer alteração de banco deve ser script SQL versionado e idempotente; a atualização operacional esperada é executar `database/subir_database.bat`.
 - Registros de auditoria e logs devem preservar rastreabilidade histórica; limpezas físicas só podem existir como política técnica excepcional, documentada, versionada, idempotente e restrita ao banco `SATELITE_TMS_AUDITORIA`.
@@ -87,4 +97,5 @@
 
 ## Tarefas Pendentes
 
-- Nenhuma tarefa pendente registrada.
+- [ ] Receber da Intelipost a `logistic-provider-api-key`, os metadados `platform`/`platform-version`/`plugin`/`plugin-version`, o código de entrega no DePara e uma NF-e de homologação cujo `order_number` esteja disponível na resposta ESL.
+- [ ] Executar homologação controlada do destino REST `SELIA`, já implementado no padrão de PPG e Vedacit, com whitelist de NF-e, comprovante POD obrigatório, cursor/auditoria independentes, idempotência, tratamento individual de erro e `429` por `ratelimit-reset`; somente então habilitar `APP_SELIA_ENABLED=true`.

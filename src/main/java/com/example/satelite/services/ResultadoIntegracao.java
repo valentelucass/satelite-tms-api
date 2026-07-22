@@ -25,6 +25,10 @@ public record ResultadoIntegracao(
     }
 
     public static ResultadoIntegracao pendenteFotoPpg(String mensagem) {
+        return pendenteFotoObrigatorio(mensagem);
+    }
+
+    public static ResultadoIntegracao pendenteFotoObrigatorio(String mensagem) {
         return new ResultadoIntegracao(STATUS_PENDENTE_FOTO, STATUS_PENDENTE_FOTO, STATUS_PENDENTE_FOTO, null, mensagem);
     }
 
