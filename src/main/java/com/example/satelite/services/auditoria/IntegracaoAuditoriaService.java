@@ -8,6 +8,7 @@ import java.time.format.DateTimeParseException;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -158,7 +159,7 @@ public class IntegracaoAuditoriaService {
 
         return logIntegracaoRepository.findById(id)
                 .filter(this::ehLogPpg)
-                .map(LogIntegracaoModel::getRequestPayload)
+                .map(log -> Objects.requireNonNull(log, "Log de integração ausente").getRequestPayload())
                 .flatMap(this::extrairImagemCanhoto);
     }
 

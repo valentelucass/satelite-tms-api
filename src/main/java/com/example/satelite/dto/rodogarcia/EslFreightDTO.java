@@ -9,10 +9,16 @@ public record EslFreightDTO(
     @JsonProperty("cte_key") 
     String cteKey,
     @JsonProperty("order_number")
-    String orderNumber
+    String orderNumber,
+    @JsonProperty("volume_number")
+    String volumeNumber
 ) {
 
+    public EslFreightDTO(Long id, String cteKey, String orderNumber) {
+        this(id, cteKey, orderNumber, null);
+    }
+
     public EslFreightDTO(Long id, String cteKey) {
-        this(id, cteKey, null);
+        this(id, cteKey, null, null);
     }
 }

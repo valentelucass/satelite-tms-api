@@ -6,6 +6,7 @@ import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Objects;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -552,7 +553,7 @@ public class EtlFluxoDestinoService {
 
     Long buscarUltimoCursor(String destino) {
         return controleCursorRepository.findBySistemaDestino(destino)
-                .map(ControleCursor::getCursorNextId)
+                .map(cursor -> Objects.requireNonNull(cursor, "Cursor ausente").getCursorNextId())
                 .orElse(null);
     }
 
@@ -599,7 +600,7 @@ public class EtlFluxoDestinoService {
         }
 
         return Arrays.stream(whitelist.split(","))
-                .map(String::trim)
+                .map(chave -> Objects.requireNonNull(chave, "Chave de whitelist ausente").trim())
                 .filter(chave -> !chave.isBlank())
                 .findFirst()
                 .orElse(null);
@@ -613,7 +614,10 @@ public class EtlFluxoDestinoService {
 
         return lote.data().stream()
                 .filter(ocorrencia -> ocorrencia != null && ocorrencia.id() != null)
-                .mapToLong(EslOcorrenciaDTO::id)
+                .mapToLong(ocorrencia -> Objects.requireNonNull(
+                        Objects.requireNonNull(ocorrencia, "Ocorrência ausente").id(),
+                        "Identificador da ocorrência ausente"
+                ).longValue())
                 .max()
                 .stream()
                 .boxed()

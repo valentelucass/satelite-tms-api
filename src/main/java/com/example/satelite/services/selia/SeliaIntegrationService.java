@@ -29,6 +29,7 @@ public class SeliaIntegrationService {
     private static final Logger log = LoggerFactory.getLogger(SeliaIntegrationService.class);
 
     private final SeliaClient seliaClient;
+    private final SeliaPlpCorrelationService seliaPlpCorrelationService;
 
     @Value("${SELIA_INTELIPOST_API_KEY:}")
     private String apiKey;
@@ -66,8 +67,12 @@ public class SeliaIntegrationService {
     @Value("${app.selia.nfe-whitelist-enabled:false}")
     private boolean whitelistEnabled;
 
-    public SeliaIntegrationService(SeliaClient seliaClient) {
+    public SeliaIntegrationService(
+            SeliaClient seliaClient,
+            SeliaPlpCorrelationService seliaPlpCorrelationService
+    ) {
         this.seliaClient = seliaClient;
+        this.seliaPlpCorrelationService = seliaPlpCorrelationService;
     }
 
     public ResultadoIntegracao processarOcorrencia(EslOcorrenciaDTO ocorrencia, ComprovanteEslDTO comprovante) {
@@ -77,17 +82,18 @@ public class SeliaIntegrationService {
             return ResultadoIntegracao.ignorado();
         }
 
-        SeliaAddEventsRequestDTO request = converter(ocorrencia, comprovante);
         try {
-            seliaClient.adicionarEventos(
-                    obrigatorio(apiKey, "SELIA_INTELIPOST_API_KEY"),
-                    obrigatorio(logisticProviderApiKey, "SELIA_INTELIPOST_LOGISTIC_PROVIDER_API_KEY"),
-                    obrigatorio(platform, "SELIA_INTELIPOST_PLATFORM"),
-                    obrigatorio(platformVersion, "SELIA_INTELIPOST_PLATFORM_VERSION"),
-                    obrigatorio(plugin, "SELIA_INTELIPOST_PLUGIN"),
-                    obrigatorio(pluginVersion, "SELIA_INTELIPOST_PLUGIN_VERSION"),
-                    request
-            );
+            for (SeliaAddEventsRequestDTO request : converter(ocorrencia, comprovante)) {
+                seliaClient.adicionarEventos(
+                        obrigatorio(apiKey, "SELIA_INTELIPOST_API_KEY"),
+                        obrigatorio(logisticProviderApiKey, "SELIA_INTELIPOST_LOGISTIC_PROVIDER_API_KEY"),
+                        obrigatorio(platform, "SELIA_INTELIPOST_PLATFORM"),
+                        obrigatorio(platformVersion, "SELIA_INTELIPOST_PLATFORM_VERSION"),
+                        obrigatorio(plugin, "SELIA_INTELIPOST_PLUGIN"),
+                        obrigatorio(pluginVersion, "SELIA_INTELIPOST_PLUGIN_VERSION"),
+                        request
+                );
+            }
             log.info("[SELIA] NF {}: ocorrência e comprovante enviados para AddEvents.", chaveNfe);
             return ResultadoIntegracao.enviado();
         } catch (FeignException e) {
@@ -112,13 +118,12 @@ public class SeliaIntegrationService {
         return obterWhitelistNfe().contains(obterChaveNfe(ocorrencia));
     }
 
-    private SeliaAddEventsRequestDTO converter(EslOcorrenciaDTO ocorrencia, ComprovanteEslDTO comprovante) {
+    private List<SeliaAddEventsRequestDTO> converter(EslOcorrenciaDTO ocorrencia, ComprovanteEslDTO comprovante) {
         if (ocorrencia == null || ocorrencia.invoice() == null) {
             throw new IllegalStateException("Ocorrência SELIA sem dados de nota fiscal");
         }
 
         String chaveNfe = obrigatorio(ocorrencia.invoice().key(), "invoice.key");
-        String numeroPedido = obterNumeroPedido(ocorrencia);
         OffsetDateTime dataOcorrencia = ocorrencia.occurrenceAt();
         if (dataOcorrencia == null) {
             throw new IllegalStateException("occurrence_at ausente para envio SELIA");
@@ -137,17 +142,45 @@ public class SeliaIntegrationService {
                 List.of(comprovanteDto)
         );
 
-        return new SeliaAddEventsRequestDTO(
-                chaveNfe,
-                ocorrencia.invoice().series(),
-                ocorrencia.invoice().number(),
-                numeroPedido,
-                numeroPedido,
-                List.of(evento)
+        return obterIdentificacoesEntrega(ocorrencia, chaveNfe).stream()
+                .map(identificacao -> new SeliaAddEventsRequestDTO(
+                        chaveNfe,
+                        ocorrencia.invoice().series(),
+                        ocorrencia.invoice().number(),
+                        identificacao.orderNumber(),
+                        identificacao.volumeNumber(),
+                        List.of(evento)
+                ))
+                .toList();
+    }
+
+    private List<SeliaPlpCorrelationService.IdentificacaoEntrega> obterIdentificacoesEntrega(
+            EslOcorrenciaDTO ocorrencia,
+            String chaveNfe
+    ) {
+        String numeroPedido = localizarNumeroPedido(ocorrencia);
+        String numeroVolume = localizarNumeroVolume(ocorrencia);
+        if (numeroPedido != null && numeroVolume != null) {
+            return List.of(new SeliaPlpCorrelationService.IdentificacaoEntrega(numeroPedido, numeroVolume));
+        }
+
+        List<SeliaPlpCorrelationService.IdentificacaoEntrega> correlacoes =
+                seliaPlpCorrelationService.buscarPorChaveNfe(chaveNfe);
+        if (!correlacoes.isEmpty()) {
+            return correlacoes;
+        }
+
+        if (numeroPedido == null) {
+            throw new IllegalStateException(
+                    "order_number ausente na ocorrência ESL e sem correlação PLP aceita para a NF-e"
+            );
+        }
+        throw new IllegalStateException(
+                "volume_number ausente na ocorrência ESL e sem correlação PLP aceita para a NF-e"
         );
     }
 
-    private String obterNumeroPedido(EslOcorrenciaDTO ocorrencia) {
+    private String localizarNumeroPedido(EslOcorrenciaDTO ocorrencia) {
         if (ocorrencia.orderNumber() != null && !ocorrencia.orderNumber().isBlank()) {
             return ocorrencia.orderNumber().trim();
         }
@@ -158,9 +191,21 @@ public class SeliaIntegrationService {
             return ocorrencia.freight().orderNumber().trim();
         }
 
-        throw new IllegalStateException(
-                "order_number ausente na ocorrência ESL; a Intelipost exige volume_number igual ao número do pedido"
-        );
+        return null;
+    }
+
+    private String localizarNumeroVolume(EslOcorrenciaDTO ocorrencia) {
+        if (ocorrencia.volumeNumber() != null && !ocorrencia.volumeNumber().isBlank()) {
+            return ocorrencia.volumeNumber().trim();
+        }
+
+        if (ocorrencia.freight() != null
+                && ocorrencia.freight().volumeNumber() != null
+                && !ocorrencia.freight().volumeNumber().isBlank()) {
+            return ocorrencia.freight().volumeNumber().trim();
+        }
+
+        return null;
     }
 
     private String obterUrlComprovante(ComprovanteEslDTO comprovante) {
@@ -200,7 +245,7 @@ public class SeliaIntegrationService {
         }
 
         return Arrays.stream(nfeWhitelist.split(","))
-                .map(String::trim)
+                .map(chave -> java.util.Objects.requireNonNull(chave, "Chave de whitelist ausente").trim())
                 .filter(chave -> !chave.isBlank())
                 .collect(Collectors.toUnmodifiableSet());
     }

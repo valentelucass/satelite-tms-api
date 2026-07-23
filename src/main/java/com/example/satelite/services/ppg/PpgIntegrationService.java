@@ -251,7 +251,7 @@ public class PpgIntegrationService {
         }
 
         return Arrays.stream(nfeWhitelist.split(","))
-                .map(String::trim)
+                .map(chave -> java.util.Objects.requireNonNull(chave, "Chave de whitelist ausente").trim())
                 .filter(chave -> !chave.isBlank())
                 .collect(Collectors.toUnmodifiableSet());
     }

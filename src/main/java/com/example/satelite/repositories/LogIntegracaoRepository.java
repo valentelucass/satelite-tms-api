@@ -22,6 +22,17 @@ public interface LogIntegracaoRepository extends JpaRepository<LogIntegracaoMode
             Long occurrenceId
     );
 
+    Optional<LogIntegracaoModel> findTopBySistemaDestinoAndIntelipostPreShipmentListOrderByDataProcessamentoAscIdAsc(
+            String sistemaDestino,
+            Long intelipostPreShipmentList
+    );
+
+    List<LogIntegracaoModel> findBySistemaDestinoAndChaveNfeAndStatusOrderByDataProcessamentoDescIdDesc(
+            String sistemaDestino,
+            String chaveNfe,
+            String status
+    );
+
     List<LogIntegracaoModel> findBySistemaDestinoAndStatusCanhotoOrderByDataProcessamentoAscIdAsc(
             String sistemaDestino,
             String statusCanhoto

@@ -1,9 +1,12 @@
 package com.example.satelite.services.selia;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 import java.time.OffsetDateTime;
 import java.util.List;
@@ -25,9 +28,10 @@ import com.example.satelite.services.ResultadoIntegracao;
 class SeliaIntegrationServiceTest {
 
     @Test
-    void deveEnviarEventoComPedidoComoVolumeEComprovantePod() {
+    void deveEnviarEventoComPedidoEVolumeIndependentesEComprovantePod() {
         SeliaClient client = mock(SeliaClient.class);
-        SeliaIntegrationService service = new SeliaIntegrationService(client);
+        SeliaPlpCorrelationService correlationService = mock(SeliaPlpCorrelationService.class);
+        SeliaIntegrationService service = new SeliaIntegrationService(client, correlationService);
         configurar(service);
 
         ResultadoIntegracao resultado = service.processarOcorrencia(criarOcorrencia(), criarComprovante());
@@ -46,13 +50,47 @@ class SeliaIntegrationServiceTest {
 
         SeliaAddEventsRequestDTO payload = payloadCaptor.getValue();
         assertEquals("PEDIDO-123", payload.orderNumber());
-        assertEquals("PEDIDO-123", payload.volumeNumber());
+        assertEquals("VOLUME-456", payload.volumeNumber());
         assertEquals("35260612345678000123550010000012341000012345", payload.invoiceKey());
         assertEquals("2026-06-17T10:30-03:00", payload.events().get(0).eventDate());
         assertEquals("14", payload.events().get(0).originalCode());
         assertEquals("https://assinada.exemplo/canhoto.jpg", payload.events().get(0).attachments().get(0).url());
         assertEquals("POD", payload.events().get(0).attachments().get(0).type());
         assertEquals(ResultadoIntegracao.STATUS_ENVIADO, resultado.status());
+    }
+
+    @Test
+    void deveUsarMapeamentoPlpQuandoOcorrenciaEslNaoTrouxerPedidoEVolume() {
+        SeliaClient client = mock(SeliaClient.class);
+        SeliaPlpCorrelationService correlationService = mock(SeliaPlpCorrelationService.class);
+        when(correlationService.buscarPorChaveNfe("35260612345678000123550010000012341000012345"))
+                .thenReturn(List.of(
+                        new SeliaPlpCorrelationService.IdentificacaoEntrega("PEDIDO-PLP", "VOLUME-1"),
+                        new SeliaPlpCorrelationService.IdentificacaoEntrega("PEDIDO-PLP", "VOLUME-2")
+                ));
+        SeliaIntegrationService service = new SeliaIntegrationService(client, correlationService);
+        configurar(service);
+
+        service.processarOcorrencia(criarOcorrenciaSemPedidoEVolume(), criarComprovante());
+
+        ArgumentCaptor<SeliaAddEventsRequestDTO> payloadCaptor =
+                ArgumentCaptor.forClass(SeliaAddEventsRequestDTO.class);
+        verify(client, times(2)).adicionarEventos(
+                eq("api-key-teste"),
+                eq("lp-key-teste"),
+                eq("SATELITE_TMS"),
+                eq("1.0.0"),
+                eq("RODOGARCIA_INTELIPOST"),
+                eq("1.0.0"),
+                payloadCaptor.capture()
+        );
+        List<String> volumes = payloadCaptor.getAllValues().stream()
+                .map(payload -> {
+                    assertNotNull(payload);
+                    return payload.volumeNumber();
+                })
+                .toList();
+        assertEquals(List.of("VOLUME-1", "VOLUME-2"), volumes);
     }
 
     private void configurar(SeliaIntegrationService service) {
@@ -71,6 +109,18 @@ class SeliaIntegrationServiceTest {
         return new EslOcorrenciaDTO(
                 10L,
                 "PEDIDO-123",
+                "VOLUME-456",
+                OffsetDateTime.parse("2026-06-17T10:30:00-03:00"),
+                null,
+                new EslInvoiceDTO(20L, "35260612345678000123550010000012341000012345", "1", "1234"),
+                new EslFreightDTO(30L, "35260612345678000123570010000012341000012345"),
+                new EslOccurrenceDefDTO(40L, 1, "Entrega Realizada")
+        );
+    }
+
+    private EslOcorrenciaDTO criarOcorrenciaSemPedidoEVolume() {
+        return new EslOcorrenciaDTO(
+                10L,
                 OffsetDateTime.parse("2026-06-17T10:30:00-03:00"),
                 null,
                 new EslInvoiceDTO(20L, "35260612345678000123550010000012341000012345", "1", "1234"),

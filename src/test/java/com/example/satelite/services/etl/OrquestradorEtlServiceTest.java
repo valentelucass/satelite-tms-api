@@ -24,6 +24,7 @@ import java.time.ZoneOffset;
 import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
+import java.util.Objects;
 import java.util.function.Supplier;
 import java.util.stream.LongStream;
 
@@ -400,7 +401,9 @@ class OrquestradorEtlServiceTest {
 
         ArgumentCaptor<ControleCursor> captor = ArgumentCaptor.forClass(ControleCursor.class);
         verify(dependencias.controleCursorRepository(), times(2)).save(captor.capture());
-        assertEquals(List.of(99L, 100L), captor.getAllValues().stream().map(ControleCursor::getCursorNextId).toList());
+        assertEquals(List.of(99L, 100L), captor.getAllValues().stream()
+                .map(cursor -> Objects.requireNonNull(cursor, "Cursor capturado ausente").getCursorNextId())
+                .toList());
     }
 
     @Test
@@ -460,7 +463,9 @@ class OrquestradorEtlServiceTest {
 
         assertEquals(
                 List.of(10L, 10L, 11L),
-                ocorrenciaCaptor.getAllValues().stream().map(EslOcorrenciaDTO::id).toList()
+                ocorrenciaCaptor.getAllValues().stream()
+                        .map(ocorrencia -> Objects.requireNonNull(ocorrencia, "Ocorrência capturada ausente").id())
+                        .toList()
         );
         verify(dependencias.controleCursorRepository(), times(1)).save(any());
     }

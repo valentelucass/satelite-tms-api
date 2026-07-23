@@ -29,6 +29,14 @@ public class LogIntegracaoModel {
     private String chaveNfe;
     @Column(name = "freight_id")
     private Long freightId;
+    @Column(name = "intelipost_pre_shipment_list")
+    private Long intelipostPreShipmentList;
+    @Column(name = "logistics_provider_shipment_list")
+    private Long logisticsProviderShipmentList;
+    @Column(name = "order_number", length = 100)
+    private String orderNumber;
+    @Column(name = "volume_number", length = 100)
+    private String volumeNumber;
     @Column(name = "cursor_next_id")
     private Long cursorNextId;
     @Column(length = 50, nullable = false)

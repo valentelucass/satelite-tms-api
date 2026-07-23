@@ -1,29 +1,33 @@
 # Integração SELIA — ocorrências ESL para Intelipost AddEvents
 
-Data da análise: 2026-07-22.
+Data da análise: 2026-07-23.
 
 ## Decisão de escopo
 
-O gestor confirmou que SELIA seguirá o mesmo padrão de PPG e Vedacit:
+Para a modalidade SELIA 100% API, o fluxo possui dois sentidos:
 
-1. O Satélite consulta somente as ocorrências na API ESL Cloud.
-2. O Satélite filtra entrega realizada, occurrence.code igual a 1.
-3. O Satélite envia a ocorrência para a API REST Intelipost AddEvents.
+1. A Intelipost envia a Pré Lista de Postagem (PLP) para uma URL pública do Satélite.
+2. O Satélite aceita ou rejeita integralmente a PLP e guarda somente a correlação técnica necessária.
+3. O Satélite consulta as ocorrências de entrega realizada na API ESL Cloud.
+4. O Satélite envia a ocorrência para a API REST Intelipost AddEvents.
 
-Não fazem parte desta integração: SFTP, OCOREN, NOTFIS, CONEMB, DOCCOB, Pré Lista de Postagem, criação de pedidos, cotação, despacho, PLP, etiquetas, cancelamento ou webhook de entrada.
+Não fazem parte desta integração: SFTP, OCOREN, NOTFIS, CONEMB, DOCCOB, criação de pedidos, cotação, despacho, etiquetas, cancelamento ou webhooks além do receptor obrigatório de PLP.
 
 As documentações EDI recebidas ficam fora do fluxo SELIA selecionado. As credenciais SFTP existentes permanecem protegidas no arquivo .env e não devem ser usadas por este destino.
 
 ## Fluxo operacional
 
-ESL Cloud com credencial do cliente SELIA
+Intelipost
+  -> POST Pré Lista para a URL pública do Satélite
+  -> aceite/rejeição integral e correlação técnica NF-e/pedido/volume
+  -> ESL Cloud com credencial do cliente SELIA
   -> GET de ocorrências de NF-e
   -> filtro local occurrence.code igual a 1
   -> transformação do evento
   -> POST Intelipost AddEvents
   -> auditoria, cursor e nova tentativa por registro
 
-O destino será agendado, terá cursor próprio e seguirá idempotência, tratamento individual de erro e auditoria já usados por PPG e Vedacit. Não haverá controller ou tela para executar o fluxo principal.
+O destino outbound será agendado, terá cursor próprio e seguirá idempotência, tratamento individual de erro e auditoria já usados por PPG e Vedacit. O controller de PLP não aciona o fluxo principal.
 
 ## Origem — ESL Cloud / Rodogarcia
 
@@ -53,6 +57,20 @@ Campos usados no evento:
 | invoice.series | série da NF-e |
 | invoice.number | número da NF-e |
 | freight.cte_key | rastreabilidade e eventual busca de comprovante |
+
+## Entrada — Intelipost Pré Lista de Postagem
+
+| Item | Regra |
+|---|---|
+| URL pública | `https://satelite-api.rodogarcia.com.br/api/selia/intelipost/pre-shipment-list` |
+| Método | `POST` |
+| Autenticação | header `logistic-provider-api-key` comparado sem registrar o segredo |
+| Toggle | `SELIA_INTELIPOST_PLP_ENABLED=true` habilita somente a entrada de PLP |
+| Idempotência | `intelipost_pre_shipment_list` |
+| Persistência | somente NF-e, pedido, volume e identificadores técnicos em `tb_log_integracao` |
+| Resposta | eco integral de pedidos/volumes e aceite/rejeição total do contrato Intelipost |
+
+O retorno atual usa o ID técnico de auditoria como `logistics_provider_shipment_list`. A SELIA/Intelipost deve confirmar que esse identificador é aceito; não se deve enviar PLP produtiva antes dessa confirmação.
 
 ## Destino — Intelipost AddEvents
 
@@ -90,14 +108,14 @@ O request AddEvents deve usar:
 | invoice_key | invoice.key da ESL |
 | invoice_series | invoice.series da ESL |
 | invoice_number | invoice.number da ESL |
-| order_number | campo order_number retornado pela ocorrência ESL |
-| volume_number | mesmo valor de order_number, conforme retorno da Intelipost |
+| order_number | ocorrência ESL quando disponível; caso contrário, correlação da PLP aceita mais recente da mesma NF-e |
+| volume_number | ocorrência ESL quando disponível; caso contrário, correlação da PLP aceita mais recente da mesma NF-e; deve ser distinto de order_number quando a conta Intelipost assim o cadastrar |
 | events.event_date | occurrence_at com timezone ISO-8601 |
 | events.original_code | código configurado no DePara Intelipost para entrega realizada |
 | events.original_message | occurrence.description |
 | events.attachments | comprovante de entrega obrigatório, tipo POD |
 
-O retorno técnico da Intelipost confirmou que volume_number deve ser sempre o número do pedido. O DTO ESL agora tolera order_number tanto na raiz da ocorrência quanto no frete. Se o campo não vier na resposta da ESL, o registro recebe erro controlado e não é enviado com valor inventado. A integração continua somente com a origem ESL; não será criada integração de pedido, despacho ou Pré Lista.
+A Pré Lista de Postagem exemplifica pedido e volume diferentes para o mesmo envio. Portanto, o conector trata `order_number` e `volume_number` como campos independentes, tanto na ESL quanto na correlação da PLP. Se os dois não vierem por uma dessas fontes, o registro recebe erro controlado e não é enviado com valor inventado.
 
 O comprovante de entrega é obrigatório nesta etapa. O Satélite consulta o comprovante pelo CT-e na ESL e envia sua URL como anexo POD do AddEvents. Se ele ainda não existir, o registro fica PENDENTE_FOTO e é reprocessado sem perder auditoria ou cursor.
 
@@ -111,11 +129,12 @@ O comprovante de entrega é obrigatório nesta etapa. O Satélite consulta o com
 
 ## Implementação concluída e aguardando homologação
 
-1. SeliaClient OpenFeign criado para AddEvents, com log básico para não expor headers.
-2. DTOs record criados em dto.selia, com tolerância a campos desconhecidos no DTO raiz.
-3. SeliaIntegrationService criado para montar o request, exigir ambas as chaves, usar pedido como volume, anexar POD e respeitar rate limit.
-4. Destino SELIA registrado no orquestrador, cursor, auditoria, idempotência, repescagem e whitelist próprios.
-5. APP_SELIA_ENABLED permanece false até a homologação controlada.
+1. SeliaClient OpenFeign criado para AddEvents, sem expor headers.
+2. DTOs `record` criados em `dto.selia`, com tolerância a campos desconhecidos nos contratos de entrada.
+3. `SeliaPreShipmentListController` e `SeliaPreShipmentListService` recebem a PLP pública, validam o header, respondem o contrato e preservam somente a correlação técnica.
+4. `SeliaIntegrationService` monta AddEvents, exige ambas as chaves, usa identificadores da ESL ou a correlação de PLP, anexa POD e respeita rate limit.
+5. A migration `V6__selia_plp_auditoria_correlacao.sql` foi aplicada exclusivamente em `SATELITE_TMS_AUDITORIA`.
+6. `SELIA_INTELIPOST_PLP_ENABLED=true` está disponível para a homologação de entrada; `APP_SELIA_ENABLED=false` mantém o rastreamento automático desabilitado.
 
 ## Configuração prevista
 
@@ -123,6 +142,7 @@ O comprovante de entrega é obrigatório nesta etapa. O Satélite consulta o com
 - RODOGARCIA_TOKEN_SELIA
 - SELIA_INTELIPOST_API_BASE_URL
 - SELIA_INTELIPOST_API_KEY
+- SELIA_INTELIPOST_LOGISTIC_PROVIDER_API_KEY
 - SELIA_INTELIPOST_PLATFORM
 - SELIA_INTELIPOST_PLATFORM_VERSION
 - SELIA_INTELIPOST_PLUGIN
@@ -131,10 +151,11 @@ O comprovante de entrega é obrigatório nesta etapa. O Satélite consulta o com
 - SELIA_NFE_WHITELIST
 - SELIA_INTELIPOST_CONNECT_TIMEOUT_MS
 - SELIA_INTELIPOST_READ_TIMEOUT_MS
+- SELIA_INTELIPOST_PLP_ENABLED
 
 ## Pendências externas para ativação
 
-1. Receber a logistic-provider-api-key solicitada pela Intelipost.
-2. Receber os valores de platform, platform-version, plugin e plugin-version.
+1. Enviar a URL pública à SELIA, pedir o cadastro e receber uma PLP real de homologação.
+2. Confirmar o aceite do formato de `logistics_provider_shipment_list` retornado.
 3. Receber o código de entrega configurado no DePara Intelipost.
-4. Confirmar uma NF-e de homologação cujo order_number seja retornado na ocorrência ESL; se o campo não vier, informar em qual campo da resposta ESL ele será disponibilizado.
+4. Receber uma NF-e de homologação com ocorrência ESL, CT-e e comprovante reais, habilitar a whitelist somente dessa NF-e e fazer um único AddEvents autorizado.

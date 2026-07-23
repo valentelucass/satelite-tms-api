@@ -9,6 +9,8 @@ public record EslOcorrenciaDTO(
         Long id,
         @JsonProperty("order_number")
         String orderNumber,
+        @JsonProperty("volume_number")
+        String volumeNumber,
         @JsonProperty("occurrence_at")
         OffsetDateTime occurrenceAt,
         @JsonProperty("created_at")
@@ -25,7 +27,19 @@ public record EslOcorrenciaDTO(
             EslFreightDTO freight,
             EslOccurrenceDefDTO occurrence
     ) {
-        this(id, null, occurrenceAt, createdAt, invoice, freight, occurrence);
+        this(id, null, null, occurrenceAt, createdAt, invoice, freight, occurrence);
+    }
+
+    public EslOcorrenciaDTO(
+            Long id,
+            String orderNumber,
+            OffsetDateTime occurrenceAt,
+            OffsetDateTime createdAt,
+            EslInvoiceDTO invoice,
+            EslFreightDTO freight,
+            EslOccurrenceDefDTO occurrence
+    ) {
+        this(id, orderNumber, null, occurrenceAt, createdAt, invoice, freight, occurrence);
     }
 
     public EslOcorrenciaDTO(
@@ -35,6 +49,6 @@ public record EslOcorrenciaDTO(
             EslFreightDTO freight,
             EslOccurrenceDefDTO occurrence
     ) {
-        this(id, null, occurrenceAt, null, invoice, freight, occurrence);
+        this(id, null, null, occurrenceAt, null, invoice, freight, occurrence);
     }
 }
