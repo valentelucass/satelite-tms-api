@@ -50,6 +50,9 @@ target/
 !**/src/main/**/target/
 !**/src/test/**/target/
 
+# Local development tools (for example, the portable Java 17 used for tests)
+.tools/
+
 # Local SOAP contract dumps/caches generated from remote WSDL URLs.
 src/main/resources/wsdl/
 

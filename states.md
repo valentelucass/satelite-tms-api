@@ -1,6 +1,9 @@
+ o states/md 
+
 # Estado Atual do Sistema
 
 ## Stack Tecnológica
+
 - Java 17 com Spring Boot 4.1.0 e Maven Wrapper.
 - Spring Cloud OpenFeign para integrações REST externas.
 - Spring Web MVC para endpoints auxiliares de auditoria e quarentena.
@@ -13,11 +16,12 @@
 - Operação em Windows por `satelite.bat`, `build.bat` e scripts em `scripts/`; banco provisionado por `database/subir_database.bat`.
 
 ## Arquitetura e Padrões
+
 - Aplicação middleware/ETL headless: o fluxo principal é acionado por Spring Scheduling em `OrquestradorEtlScheduler`, não por controller web.
 - Arquitetura em camadas: `clients` concentra OpenFeign REST; `dto.rodogarcia` modela entrada ESL/Rodogarcia; `dto.ppg` modela saída PPG/OK Entrega; `services.etl`, `services.ppg`, `services.vedacit` concentram regras por domínio; `repositories` acessa auditoria SQL; `models` contém entidades JPA; `utils` guarda lógica pura de imagem/download.
 - `SateliteApplication` habilita OpenFeign; `SchedulerConfig` habilita agendamento.
 - `OrquestradorEtlService` coordena os destinos PPG, SELIA e Vedacit, respeitando toggles independentes, modo ciclo único e modo retroativo, e delega a cadência contínua de paginação/backoff para os serviços de fluxo e política ESL.
-- O destino SELIA/Intelipost possui dois sentidos independentes: o receptor público de Pré Lista de Postagem (PLP) e o envio outbound AddEvents. `SELIA_INTELIPOST_PLP_ENABLED=true` habilita apenas o receptor para homologação; `APP_SELIA_ENABLED=false` mantém o envio automático de rastreamento desabilitado até a validação final.
+- O destino SELIA/Intelipost possui dois sentidos independentes: o receptor público de Pré Lista de Postagem (PLP) e o envio outbound AddEvents. `SELIA_INTELIPOST_PLP_ENABLED=true` mantém o receptor disponível; `APP_SELIA_ENABLED=true` já está preparado no `.env`, limitado pela whitelist e pendente apenas de recarga controlada do processo.
 - O guia operacional `docs/contexto/guia-postman-selia.md` documenta a PLP recebida, as consultas ESL, a validação do comprovante, o POST AddEvents controlado, as variáveis sem segredos, as dependências externas e os critérios de decisão por resposta HTTP.
 - `EtlFluxoDestinoService` encapsula paginação por destino, cursor, whitelists, filtro de ocorrência, detecção de loop de cursor, circuit breaker por falhas de infraestrutura, avanço seguro do cursor e pacing por lote de páginas.
 - `EtlRegistroService` aplica idempotência por log existente, processa pendências de canhoto, baixa comprovantes da ESL e atualiza o estado por registro.
@@ -36,7 +40,8 @@
 - Logs, auditorias, cursores, quarentenas e estados técnicos de integração usam exclusão lógica obrigatória quando precisarem sair das leituras operacionais. Hard delete/`DELETE FROM`/`TRUNCATE` em rotinas comuns é proibido; use status, `ativo`, `deleted_at`, `arquivado` ou campo equivalente, com filtros explícitos nas consultas de produção.
 
 ## Fluxo de Dados e Integrações
-- A SELIA comunicou em 23/07/2026 que a modalidade 100% API exige também a Pré Lista de Postagem: a Intelipost faz `POST` para a URL pública da transportadora e o Satélite responde o aceite/rejeição; o AddEvents continua sendo o sentido de saída. O receptor foi implementado com DTOs `record`, validação do header `logistic-provider-api-key`, idempotência por `intelipost_pre_shipment_list`, rejeição total de payload incompleto e correlação técnica mínima NF-e/pedido/volume na auditoria.
+
+- A SELIA comunicou em 23/07/2026 que a modalidade 100% API exige também a Pré Lista de Postagem: a Intelipost faz `POST` para a URL pública da transportadora e o Satélite responde o aceite/rejeição; o AddEvents continua sendo o sentido de saída. O receptor foi implementado com DTOs `record`, validação do header `logistic-provider-api-key`, idempotência por `intelipost_pre_shipment_list`, rejeição total de payload incompleto e correlação técnica mínima NF-e/pedido/volume na auditoria. Uma PLP real de homologação foi aceita, criando um cabeçalho e um mapa técnico `SELIA_PLP_MAP` na auditoria.
 - Origem principal: Rodogarcia/ESL Cloud via REST OpenFeign em `RodogarciaClient`.
 - Endpoint ESL de ocorrências: `GET ${RODOGARCIA_API_BASE_URL}${RODOGARCIA_CUSTOMER_OCCURRENCES_PATH}`, padrão `/api/customer/invoice_occurrences`, com `Authorization: Bearer <token>`.
 - Parâmetros usados na origem: `start` para cursor, `invoice_key` para whitelists/repescagem, `since` para retroativo e para lookback incremental das últimas 24 horas, e `occurrence_code=1`.
@@ -44,7 +49,10 @@
 - XML de CT-e ESL: `GET ${RODOGARCIA_CTE_XML_PATH:/api/ctes}?key=...`, usado quando `VEDACIT_SEND_CTE_XML_ENABLED=true` e com token `RODOGARCIA_MASTER_API_REST`.
 - Destinos ativos: `PPG` com token ESL próprio `RODOGARCIA_TOKEN_PPG` e `VEDACIT` com token ESL próprio `RODOGARCIA_TOKEN_VEDACIT`; cada destino mantém cursor independente.
 - SELIA é um destino REST implementado no mesmo padrão outbound de PPG e Vedacit: consulta ocorrências ESL com `RODOGARCIA_TOKEN_SELIA`, exige comprovante e envia AddEvents com ambas as chaves Intelipost. Quando a ESL não trouxer pedido/volume, o serviço usa exclusivamente a correlação da PLP aceita mais recente para a NF-e; sem essa correlação, falha de modo controlado. O runtime outbound permanece desabilitado até a homologação.
-- O processo PM2 `Satelite-API-19090` executa o JAR do Satélite na porta local `19090`. O Cloudflare Tunnel publica exclusivamente o caminho `^/api/selia/intelipost/pre-shipment-list$` do hostname `satelite-api.rodogarcia.com.br` para `http://127.0.0.1:19090`; o catch-all do Tunnel retorna HTTP 404 para os demais caminhos. Após a publicação do JAR, o HTTPS externo confirmou `405` para `GET`, `401` para `POST` com chave inválida e `400` para `POST` autorizado com payload propositalmente incompleto; nenhum dado operacional foi gravado nesses testes.
+- A ocorrência fictícia de homologação já está pronta na ESL: código `1`, chave NF-e, CT-e e comprovante acessível pela rota oficial. A whitelist SELIA está restrita exclusivamente a essa NF-e; `APP_SELIA_ENABLED=true` está aplicado no `.env` e foi carregado na recarga controlada de 28/07/2026.
+- A PLP reenviada do pedido `TESTE2407` foi aceita e criou a correlação com a mesma NF-e da ocorrência ESL. As duas entradas obrigatórias para o envio outbound — ocorrência ESL e PLP — estão vinculadas; nenhum AddEvents foi enviado ainda.
+- Duas pré-validações somente de leitura em 28/07/2026 confirmaram configuração SELIA habilitada, whitelist restrita e DEXPARA `01`, mas a ESL respondeu HTTP `500` ao `GET /api/customer/invoice_occurrences` filtrado pela NF-e de homologação em ambas as tentativas. Nenhum `POST` AddEvents foi executado; é obrigatório obter HTTP `200` da ESL e confirmar novamente a ocorrência/comprovante antes do disparo controlado.
+- O processo PM2 `Satelite-API-19090` executa o JAR do Satélite na porta local `19090`. Após encerrar uma instância Java órfã que mantinha a porta ocupada, a execução foi normalizada em 28/07/2026: há uma única Java escutando a porta, o PM2 permanece `online` sem novos reinícios e o endpoint local responde HTTP `405` ao `GET` esperado. O Cloudflare Tunnel publica exclusivamente o caminho `^/api/selia/intelipost/pre-shipment-list$` do hostname `satelite-api.rodogarcia.com.br` para `http://127.0.0.1:19090`; o catch-all do Tunnel retorna HTTP 404 para os demais caminhos. O HTTPS externo também confirmou HTTP `405` para `GET`; em testes anteriores, `401` para `POST` com chave inválida e `400` para `POST` autorizado com payload propositalmente incompleto. Nenhum dado operacional foi gravado nesses testes.
 - A Intelipost documenta consultas somente de leitura para localizar pedido por chave NF-e (`GET /shipment_order/invoice_key/{chave_nfe}`) e volumes pelo pedido (`GET /shipment_order/get_volumes/{pedido_envio}`). Elas seguem fora do runtime e são contingência opcional: ambas retornaram HTTP 401 com a credencial atualmente configurada, mas a PLP aceita passa a suprir a correlação necessária para o rastreamento.
 - As credenciais SFTP Intelipost da SELIA permanecem isoladas no `.env`, mas EDI/OCOREN não faz parte do escopo selecionado e não deve ser ativado ou implementado.
 - A paginação ESL continua até `data` vazio, encerramento por janela retroativa ou falha não recuperável; `INTEGRATION_MAX_PAGES_PER_CYCLE` define apenas quantas páginas compõem um lote antes da pausa `ETL_PAGINATION_PACING_PAUSE_MS`, sem encerrar o ciclo.
@@ -56,6 +64,7 @@
 - Endpoints auxiliares expostos: `/api/auditoria/integracoes-clientes`, `/api/auditoria/integracoes-clientes/evolucao-diaria`, `/api/auditoria/integracoes-clientes/resumo-tabelas`, `/api/auditoria/logs/{id}/imagem`, `/api/etl/quarentena/erros` e `/api/etl/quarentena/{destino}/reprocessar`.
 
 ## Regras de Negócio Consolidadas
+
 - O fluxo principal só deve processar entrega realizada: `occurrence.code == 1`. Outros códigos são ignorados e auditados.
 - Controllers não devem acionar o fluxo principal de integração; endpoints web existem apenas para auditoria, imagem de canhoto e quarentena/reprocessamento manual.
 - Ações SQL manuais ou automatizadas devem atingir exclusivamente `SATELITE_TMS_AUDITORIA`; é proibido tocar `ETL_SISTEMA`, `DASHBOARDS` ou qualquer outra database.
@@ -82,7 +91,7 @@
 - Consultas por período usam cooldown: até 30 dias sem cooldown adicional, 31 a 183 dias com 1 hora, acima disso com 12 horas.
 - Toda credencial, URL e token deve vir de `.env`, `application.properties` ou variável de ambiente; não pode haver segredo hardcoded.
 - SELIA usa AddEvents como saída e PLP como entrada obrigatória na modalidade 100% API. A documentação de PLP demonstra que `order_number` e `shipment_order_volume_number` podem ter valores diferentes; o DTO ESL tolera `order_number` e `volume_number` na ocorrência ou no frete e, quando eles não vierem, o serviço usa somente os pares correlacionados da última PLP aceita para a mesma NF-e. Sem os dois identificadores por uma dessas fontes, falha de modo controlado, sem SFTP, NOTFIS ou inferência.
-- O cliente REST SELIA deve enviar `api-key`, `logistic-provider-api-key`, `platform`, `platform-version`, `plugin`, `plugin-version` e `Content-Type: application/json`. O código de entrega deve vir do DePara Intelipost. O comprovante ESL é obrigatório e segue como anexo POD; HTTP `429` respeita `ratelimit-reset` quando a resposta o fornecer, sem quebrar a cronologia de eventos.
+- O cliente REST SELIA deve enviar `api-key`, `logistic-provider-api-key`, `platform`, `platform-version`, `plugin`, `plugin-version` e `Content-Type: application/json`. O DEXPARA SELIA/Rodogarcia associa a ocorrência ESL de entrega realizada (`occurrence.code == 1`) ao código Intelipost `01`, macrostatus `DELIVERED` e microstatus `ENTREGUE NO DESTINO`; este é o valor configurado em `SELIA_INTELIPOST_DELIVERY_EVENT_CODE`. O comprovante ESL é obrigatório e segue como anexo POD; HTTP `429` respeita `ratelimit-reset` quando a resposta o fornecer, sem quebrar a cronologia de eventos.
 - A chave REST de Rastreamento/AddEvents da SELIA foi recebida e está exclusivamente em `SELIA_INTELIPOST_API_KEY` no `.env`. Sua existência evidencia que o REST também é um canal disponível, mas não autoriza chamadas produtivas nem resolve os metadados obrigatórios, o de-para de eventos ou o vínculo pedido/volume.
 - A investigação somente de leitura da SELIA está registrada em `docs/blueprint/relatorio-descoberta-selia.md`: a ESL voltou a responder HTTP 200 ao consultar ocorrências com o token SELIA, mas retornou `data` vazia; a consulta temporal subsequente recebeu HTTP 429 sem `ratelimit-reset`. A Intelipost respondeu HTTP 401 ao `GET /info` com as chaves em conjunto ou isoladas. Esses resultados não autorizam POST de sondagem, nem permitem inferir pedido, volume ou DePara.
 - A continuação da investigação confirmou por `OPTIONS` que `/tracking/add/events` expõe `POST`, mas uma chamada `GET` nessa URL atingiu outra rota e retornou HTTP 400; isso não valida a autenticação de envio. As consultas oficiais Intelipost por NF-e e por volumes retornaram HTTP 401 com as credenciais configuradas. Nenhum POST AddEvents foi executado.
@@ -90,6 +99,7 @@
 - O Satélite não cria cotações, despacho operacional, PLP/NOTFIS, etiquetas, cancelamentos ou webhooks adicionais para SELIA. A única entrada é o receptor obrigatório de Pré Lista, limitado ao aceite/rejeição técnico da PLP; a integração de saída continua restrita à publicação de ocorrências AddEvents com comprovante POD obrigatório. A ausência de comprovante mantém o registro em `PENDENTE_FOTO` para retry.
 - A migration `database/sql/migration/V6__selia_plp_auditoria_correlacao.sql` adiciona à auditoria somente `intelipost_pre_shipment_list`, `logistics_provider_shipment_list`, `order_number` e `volume_number`, com índices de busca. Ela foi executada com sucesso exclusivamente em `SATELITE_TMS_AUDITORIA` por `database/subir_database.bat`.
 - Os testes de PLP cobrem aceite válido, lista repetida, chave inválida, payload incompleto, ausência de vazamento do segredo e controller MVC; a correlação com dois volumes também é coberta no serviço outbound, sem avisos de segurança de tipos no Java. O JAR foi recompilado e o processo PM2 foi reiniciado antes da validação HTTPS externa.
+- A suíte SELIA foi executada com Java 17 portátil usando o classpath de teste já compilado, sem acionar a geração SOAP remota: 7 testes aprovados, cobrindo autenticação do receptor, aceite e idempotência da PLP, rejeições de contrato e envio AddEvents com POD/correlação pedido-volume. O ciclo Maven completo continua dependente dos WSDLs remotos da Vedacit e não deve ser usado como único critério da homologação SELIA.
 - Erros e contingência de cotação Intelipost (peso/CEP/dimensões e tabelas Fallback Tables V2) pertencem à plataforma/ERP de cotação. O Satélite não tem os dados nem endpoint para cotar e não deve calcular frete ou carregar tabelas de fallback no escopo SELIA de rastreamento.
 - DTOs REST próprios devem preferir `record`, camelCase no Java e `@JsonProperty` para nomes externos divergentes; DTO raiz deve tolerar campos desconhecidos.
 - Fluxos que transformam coleções potencialmente anuláveis devem validar explicitamente os elementos antes de acessar métodos ou campos, mantendo a análise de nulidade da IDE ativa sem avisos mascarados.
@@ -97,6 +107,7 @@
 - Registros de auditoria e logs devem preservar rastreabilidade histórica; limpezas físicas só podem existir como política técnica excepcional, documentada, versionada, idempotente e restrita ao banco `SATELITE_TMS_AUDITORIA`.
 
 ## Protocolo de Planejamento de Requisições
+
 - Antes de iniciar qualquer planejamento ou escrita de código, a IA DEVE OBRIGATORIAMENTE ler `AGENTS.md` do projeto local e `CONTEXTO_GLOBAL.md` quando presente no workspace.
 - O `CONTEXTO_GLOBAL.md` dita as regras do ecossistema e o `AGENTS.md` dita as regras locais. Falhar em ler e aplicar essas regras resulta em quebra arquitetural.
 - Ao receber uma nova requisição para este projeto, atuar como Arquiteto de Software e usar este `states.md` como ESTADO ATUAL.
@@ -107,10 +118,8 @@
 
 ## Tarefas Pendentes
 
-- [ ] Enviar à SELIA a URL já homologada tecnicamente `https://satelite-api.rodogarcia.com.br/api/selia/intelipost/pre-shipment-list`, pedir o cadastro e aguardar uma PLP real de homologação. Manter `APP_SELIA_ENABLED=false` nesta etapa.
-- [ ] Confirmar com SELIA/Intelipost que o identificador técnico numérico retornado em `logistics_provider_shipment_list` é aceito no contrato de PLP. Caso exijam um número operacional próprio, receber a regra e alterar somente esse mapeamento antes de aceitar pedidos produtivos.
-- [ ] Receber uma PLP real, validar o aceite/eco integral de pedido e volume e conferir a correlação técnica criada na auditoria, sem expor dados do pedido ou da NF-e em documentação ou logs.
-- [ ] Obter o código DePara de entrega realizada para `SELIA_INTELIPOST_DELIVERY_EVENT_CODE` e uma NF-e de homologação com ocorrência ESL, CT-e e comprovante reais. Confirmar, sem inferência, o pedido/volume retornado pela PLP ou pela ESL.
-- [ ] Ativar temporariamente `SELIA_NFE_WHITELIST_ENABLED=true`, preencher `SELIA_NFE_WHITELIST` exclusivamente com a NF-e de homologação e executar um único POST AddEvents autorizado. Confirmar o vínculo na Intelipost, a auditoria e a idempotência.
-- [ ] Após o AddEvents aprovado, habilitar `APP_SELIA_ENABLED=true`; a ampliação ou remoção da whitelist será decisão operacional posterior.
+- [ ] Repetir uma pré-validação somente de leitura na ESL para a NF-e homologada do `TESTE2407`; avançar somente com HTTP `200`, ocorrência de entrega (`code == 1`) e comprovante acessível. O HTTP `500` observado em 28/07/2026 é um bloqueio temporário de origem e não autoriza o envio AddEvents.
+- [ ] Executar um único envio AddEvents autorizado para o pedido `TESTE2407`, usando a ocorrência ESL correlacionada pela PLP. Confirmar a resposta HTTP da Intelipost, o macrostatus `DELIVERED`, o microstatus `ENTREGUE NO DESTINO` e o vínculo pedido/volume.
+- [ ] Consultar a auditoria após o envio, confirmar o status final `ENVIADO` e repetir somente uma consulta segura para comprovar que a idempotência não reenviará o mesmo evento.
+- [ ] Após a validação da SELIA/Intelipost, decidir operacionalmente se a whitelist permanece para novos testes ou se será ampliada/removida para produção.
 - [ ] Opcionalmente, solicitar à Intelipost o escopo de leitura para `GET /shipment_order/invoice_key/{chave_nfe}` e `GET /shipment_order/get_volumes/{pedido_envio}`. Não incorporar essas consultas enquanto retornarem HTTP 401; elas não bloqueiam mais a homologação baseada na PLP.
