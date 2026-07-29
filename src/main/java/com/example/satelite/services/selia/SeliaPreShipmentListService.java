@@ -11,6 +11,7 @@ import java.util.List;
 import java.util.Set;
 
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -25,6 +26,7 @@ import com.example.satelite.dto.selia.SeliaPreShipmentResponseVolumeDTO;
 import com.example.satelite.dto.selia.SeliaPreShipmentVolumeDTO;
 import com.example.satelite.models.LogIntegracaoModel;
 import com.example.satelite.repositories.LogIntegracaoRepository;
+import com.example.satelite.services.etl.AuditoriaDataHoraService;
 
 @Service
 public class SeliaPreShipmentListService {
@@ -37,6 +39,7 @@ public class SeliaPreShipmentListService {
     private static final DateTimeFormatter DATA_RESPOSTA = DateTimeFormatter.ISO_OFFSET_DATE_TIME;
 
     private final LogIntegracaoRepository logIntegracaoRepository;
+    private final AuditoriaDataHoraService auditoriaDataHoraService;
 
     @Value("${SELIA_INTELIPOST_LOGISTIC_PROVIDER_API_KEY:}")
     private String logisticProviderApiKey;
@@ -44,8 +47,17 @@ public class SeliaPreShipmentListService {
     @Value("${SELIA_INTELIPOST_PLP_ENABLED:false}")
     private boolean plpEnabled;
 
-    public SeliaPreShipmentListService(LogIntegracaoRepository logIntegracaoRepository) {
+    @Autowired
+    public SeliaPreShipmentListService(
+            LogIntegracaoRepository logIntegracaoRepository,
+            AuditoriaDataHoraService auditoriaDataHoraService
+    ) {
         this.logIntegracaoRepository = logIntegracaoRepository;
+        this.auditoriaDataHoraService = auditoriaDataHoraService;
+    }
+
+    public SeliaPreShipmentListService(LogIntegracaoRepository logIntegracaoRepository) {
+        this(logIntegracaoRepository, new AuditoriaDataHoraService(logIntegracaoRepository));
     }
 
     @Transactional
@@ -70,7 +82,7 @@ public class SeliaPreShipmentListService {
             return respostaAceite(dados, existente);
         }
 
-        LocalDateTime agora = LocalDateTime.now();
+        LocalDateTime agora = auditoriaDataHoraService.agora();
         LogIntegracaoModel cabecalho = logIntegracaoRepository.save(LogIntegracaoModel.builder()
                 .intelipostPreShipmentList(dados.intelipostPreShipmentList())
                 .status(STATUS_ACEITO_PLP)
@@ -176,7 +188,7 @@ public class SeliaPreShipmentListService {
                     "Não foi possível gerar a lista técnica da transportadora.");
         }
         LocalDateTime dataCriacao = cabecalho.getDataProcessamento() == null
-                ? LocalDateTime.now()
+                ? auditoriaDataHoraService.agora()
                 : cabecalho.getDataProcessamento();
         List<SeliaPreShipmentResponseOrderDTO> pedidos = dados.pedidos().stream()
                 .map(pedido -> new SeliaPreShipmentResponseOrderDTO(

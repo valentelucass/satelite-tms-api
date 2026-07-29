@@ -9,6 +9,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import java.time.OffsetDateTime;
+import java.time.LocalDateTime;
 import java.util.Optional;
 
 import org.junit.jupiter.api.Test;
@@ -59,6 +60,30 @@ class EtlEstadoIntegracaoServiceTest {
         assertEquals(ResultadoIntegracao.STATUS_RECEBIDO, log.getStatusCanhoto());
         assertEquals(0, log.getTentativasDados());
         assertEquals(0, log.getTentativasCanhoto());
+    }
+
+    @Test
+    void deveUsarHoraDoSqlNaAuditoria() {
+        LogIntegracaoRepository repository = mock(LogIntegracaoRepository.class);
+        LocalDateTime horaSql = LocalDateTime.of(2026, 7, 29, 17, 4, 0);
+        when(repository.buscarDataHoraServidor()).thenReturn(horaSql);
+        EtlEstadoIntegracaoService service = new EtlEstadoIntegracaoService(
+                repository,
+                new AuditoriaDataHoraService(repository)
+        );
+
+        LogIntegracaoModel log = service.criarLogComStatus(
+                "SELIA",
+                99L,
+                criarOcorrencia(),
+                ResultadoIntegracao.STATUS_RECEBIDO
+        );
+        service.aplicarResultadoIntegracao(log, ResultadoIntegracao.enviado());
+
+        assertEquals(horaSql, log.getDataProcessamento());
+        assertEquals(horaSql, log.getDataProcessamentoDados());
+        assertEquals(horaSql, log.getDataProcessamentoCanhoto());
+        verify(repository, org.mockito.Mockito.times(2)).buscarDataHoraServidor();
     }
 
     @Test

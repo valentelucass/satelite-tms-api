@@ -1,6 +1,5 @@
 package com.example.satelite.services.etl;
 
-import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 
@@ -53,6 +52,9 @@ public class EtlRegistroService {
 
     @Value("${APP_E2E_TEST_IMAGE_URL:" + URL_IMAGEM_TESTE_PADRAO + "}")
     private String urlImagemTesteE2e;
+
+    @Value("${RODOGARCIA_TOKEN_SELIA_COMPROVANTE:}")
+    private String tokenSeliaComprovanteEsl;
 
     @Autowired
     public EtlRegistroService(
@@ -256,7 +258,7 @@ public class EtlRegistroService {
             if (logIntegracao.getStatus() == null) {
                 logIntegracao.setStatus(STATUS_RECEBIDO);
             }
-            logIntegracao.setDataProcessamento(LocalDateTime.now());
+            logIntegracao.setDataProcessamento(etlEstadoIntegracaoService.agoraAuditoria());
             etlEstadoIntegracaoService.salvar(logIntegracao);
 
             if (!modoTesteE2eImagem && !ehEntregaRealizada(ocorrencia)) {
@@ -283,7 +285,7 @@ public class EtlRegistroService {
             }
 
             log.info("📄 [{}] NF {}: Buscando comprovante de entrega na ESL...", destino, obterChaveNfe(ocorrencia));
-            ResultadoBuscaComprovante buscaComprovante = buscarComprovanteEntregaOpcional(headerAuth, ocorrencia);
+            ResultadoBuscaComprovante buscaComprovante = buscarComprovanteEntregaOpcional(destino, headerAuth, ocorrencia);
             ComprovanteEslDTO comprovante = buscaComprovante.comprovante();
 
             String chave = obterChaveNfe(ocorrencia);
@@ -454,11 +456,15 @@ public class EtlRegistroService {
         if (pendencia.getStatus() == null || STATUS_RECEBIDO.equals(pendencia.getStatus())) {
             pendencia.setStatus(STATUS_PENDENTE_FOTO);
         }
-        pendencia.setDataProcessamento(LocalDateTime.now());
+        pendencia.setDataProcessamento(etlEstadoIntegracaoService.agoraAuditoria());
         etlEstadoIntegracaoService.salvar(pendencia);
     }
 
-    private ResultadoBuscaComprovante buscarComprovanteEntregaOpcional(String headerAuth, EslOcorrenciaDTO ocorrencia) {
+    private ResultadoBuscaComprovante buscarComprovanteEntregaOpcional(
+            String destino,
+            String headerAuth,
+            EslOcorrenciaDTO ocorrencia
+    ) {
         String cteKey = obterChaveCte(ocorrencia);
 
         if (cteKey == null || cteKey.isBlank()) {
@@ -473,7 +479,7 @@ public class EtlRegistroService {
         try {
             comprovante = eslRequestPolicyService.executar(
                     "buscarComprovante cte_key=" + cteKey,
-                    () -> rodogarciaClient.buscarComprovante(headerAuth, cteKey)
+                    () -> rodogarciaClient.buscarComprovante(obterHeaderComprovante(destino, headerAuth), cteKey)
             );
         } catch (EslRequestTransientException e) {
             throw new FalhaConsultaComprovanteException(
@@ -487,6 +493,16 @@ public class EtlRegistroService {
         }
 
         return ResultadoBuscaComprovante.encontrado(comprovante);
+    }
+
+    private String obterHeaderComprovante(String destino, String headerAuth) {
+        if (!DESTINO_SELIA.equals(destino)
+                || tokenSeliaComprovanteEsl == null
+                || tokenSeliaComprovanteEsl.isBlank()) {
+            return headerAuth;
+        }
+
+        return "Bearer " + tokenSeliaComprovanteEsl.trim();
     }
 
     private ComprovanteEslDTO prepararComprovanteParaModoTeste(

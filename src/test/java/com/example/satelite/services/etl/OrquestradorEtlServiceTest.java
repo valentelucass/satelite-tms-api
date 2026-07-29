@@ -64,6 +64,52 @@ class OrquestradorEtlServiceTest {
     private static final String URL_TESTE_E2E = "https://www.w3.org/People/mimasa/test/imgformat/img/w3c_home.jpg";
 
     @Test
+    void deveUsarAWhitelistSeliaComoFiltroDaConsultaEsl() {
+        Dependencias dependencias = criarDependencias();
+        EtlFluxoDestinoService fluxo = dependencias.etlFluxoDestinoService();
+        String chaveHomologacao = "35260743351097002133550090004829911193118455";
+
+        ReflectionTestUtils.setField(fluxo, "seliaNfeWhitelistEnabled", true);
+        ReflectionTestUtils.setField(fluxo, "seliaNfeWhitelist", chaveHomologacao + ", outra-chave");
+
+        assertEquals(chaveHomologacao, fluxo.obterInvoiceKeyParam("SELIA"));
+    }
+
+    @Test
+    void deveBuscarWhitelistSeliaSemJanelaIncremental() {
+        Dependencias dependencias = criarDependencias();
+        ReflectionTestUtils.setField(dependencias.etlFluxoDestinoService(), "seliaNfeWhitelistEnabled", true);
+        ReflectionTestUtils.setField(
+                dependencias.etlFluxoDestinoService(),
+                "seliaNfeWhitelist",
+                "35260743351097002133550090004829911193118455"
+        );
+        when(dependencias.controleCursorRepository().findBySistemaDestino("SELIA")).thenReturn(Optional.empty());
+        when(dependencias.rodogarciaClient().buscarOcorrencias(
+                eq("Bearer token-selia"),
+                isNull(),
+                eq("35260743351097002133550090004829911193118455"),
+                isNull(),
+                eq(1)
+        )).thenReturn(loteVazio());
+
+        dependencias.etlFluxoDestinoService().executarFluxoDestino(
+                "SELIA",
+                "token-selia",
+                ExecucaoEtlRequest.incremental(1),
+                (ocorrencia, comprovante, logIntegracao) -> ResultadoIntegracao.enviado()
+        );
+
+        verify(dependencias.rodogarciaClient()).buscarOcorrencias(
+                "Bearer token-selia",
+                null,
+                "35260743351097002133550090004829911193118455",
+                null,
+                1
+        );
+    }
+
+    @Test
     void deveBuscarOcorrenciasComUltimoCursorPersistido() {
         Dependencias dependencias = criarDependencias();
         ControleCursor cursor = ControleCursor.builder()

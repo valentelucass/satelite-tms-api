@@ -17,6 +17,9 @@ import com.example.satelite.models.LogIntegracaoModel;
 
 public interface LogIntegracaoRepository extends JpaRepository<LogIntegracaoModel, Long> {
 
+    @Query(value = "SELECT CAST(SYSDATETIME() AS datetime2)", nativeQuery = true)
+    LocalDateTime buscarDataHoraServidor();
+
     Optional<LogIntegracaoModel> findTopBySistemaDestinoAndOccurrenceIdOrderByDataProcessamentoDescIdDesc(
             String sistemaDestino,
             Long occurrenceId

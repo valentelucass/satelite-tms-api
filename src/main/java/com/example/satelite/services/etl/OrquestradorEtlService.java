@@ -59,6 +59,9 @@ public class OrquestradorEtlService {
     @Value("${APP_CICLO_UNICO:${ciclo_unico:false}}")
     private boolean cicloUnico;
 
+    @Value("${APP_ETL_REPESCAGEM_ENABLED:true}")
+    private boolean repescagemEnabled = true;
+
     @Autowired
     public OrquestradorEtlService(
             PpgIntegrationService ppgIntegrationService,
@@ -170,7 +173,11 @@ public class OrquestradorEtlService {
                 resultadoSelia = ResultadoDestino.desabilitado(DESTINO_SELIA);
             }
         } finally {
-            executarRepescagemComSeguranca(inicioCiclo);
+            if (repescagemEnabled) {
+                executarRepescagemComSeguranca(inicioCiclo);
+            } else {
+                log.info("⏭️ Repescagem desabilitada para este ciclo por APP_ETL_REPESCAGEM_ENABLED=false.");
+            }
 
             LocalDateTime fimCiclo = LocalDateTime.now();
             int recebidasTotal = resultadoPpg.recebidos() + resultadoSelia.recebidos() + resultadoVedacit.recebidos();

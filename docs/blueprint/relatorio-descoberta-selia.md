@@ -1,5 +1,7 @@
 # Relatório de descoberta — SELIA / Intelipost
 
+> **Encerramento da descoberta (29/07/2026):** a hipótese foi confirmada em homologação real. O pedido `TESTE2907` recebeu o evento `01` e foi exibido pela Intelipost como `ENTREGUE NO DESTINO`. O documento operacional definitivo é [selia-homologacao-operacao.md](../contexto/selia-homologacao-operacao.md); este relatório permanece como histórico das descobertas e bloqueios iniciais.
+
 Data da verificação: 2026-07-23.
 
 ## Escopo confirmado

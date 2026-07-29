@@ -22,7 +22,7 @@ public interface RodogarciaClient {
         @RequestParam(value = "occurrence_code", required = false, defaultValue = "1") Integer occurrenceCode
     );
 
-    @GetMapping("/api/customer/freight_delivery_receipts")
+    @GetMapping("/api/freight_delivery_receipts")
     ComprovanteEslDTO buscarComprovante(
         @RequestHeader("Authorization") String bearerToken,
         @RequestParam("cte_key") String cteKey

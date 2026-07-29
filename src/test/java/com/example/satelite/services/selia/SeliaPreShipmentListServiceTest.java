@@ -25,6 +25,7 @@ import com.example.satelite.dto.selia.SeliaPreShipmentOrderDTO;
 import com.example.satelite.dto.selia.SeliaPreShipmentVolumeDTO;
 import com.example.satelite.models.LogIntegracaoModel;
 import com.example.satelite.repositories.LogIntegracaoRepository;
+import com.example.satelite.services.etl.AuditoriaDataHoraService;
 
 class SeliaPreShipmentListServiceTest {
 
@@ -63,6 +64,36 @@ class SeliaPreShipmentListServiceTest {
         assertEquals("ACEITO_PLP", correlacao.getStatus());
         assertEquals(null, correlacao.getRequestPayload());
         assertEquals(null, correlacao.getResponsePayload());
+    }
+
+    @Test
+    void devePersistirPlpComHoraDoSql() {
+        LogIntegracaoRepository repository = org.mockito.Mockito.mock(LogIntegracaoRepository.class);
+        LocalDateTime horaSql = LocalDateTime.of(2026, 7, 29, 17, 4);
+        when(repository.buscarDataHoraServidor()).thenReturn(horaSql);
+        when(repository.findTopBySistemaDestinoAndIntelipostPreShipmentListOrderByDataProcessamentoAscIdAsc(
+                eq("SELIA_PLP"), eq(2970L)
+        )).thenReturn(Optional.empty());
+        when(repository.save(any(LogIntegracaoModel.class))).thenAnswer(invocation -> {
+            LogIntegracaoModel log = invocation.getArgument(0);
+            if (log.getId() == null) {
+                log.setId(700L);
+            }
+            return log;
+        });
+
+        SeliaPreShipmentListService service = new SeliaPreShipmentListService(
+                repository,
+                new AuditoriaDataHoraService(repository)
+        );
+        ReflectionTestUtils.setField(service, "logisticProviderApiKey", "lp-key-teste");
+        ReflectionTestUtils.setField(service, "plpEnabled", true);
+
+        service.receber("lp-key-teste", requisicaoValida());
+
+        ArgumentCaptor<LogIntegracaoModel> captor = ArgumentCaptor.forClass(LogIntegracaoModel.class);
+        verify(repository, org.mockito.Mockito.atLeastOnce()).save(captor.capture());
+        assertEquals(horaSql, captor.getAllValues().get(0).getDataProcessamento());
     }
 
     @Test

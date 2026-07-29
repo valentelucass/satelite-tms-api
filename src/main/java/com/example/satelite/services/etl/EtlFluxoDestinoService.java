@@ -31,6 +31,7 @@ public class EtlFluxoDestinoService {
     private static final DateTimeFormatter ESL_SINCE_FORMATTER =
             DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss.SSSXXX");
     private static final String DESTINO_PPG = "PPG";
+    private static final String DESTINO_SELIA = "SELIA";
     private static final String DESTINO_VEDACIT = "VEDACIT";
     private static final int LOOKBACK_INCREMENTAL_HORAS_PADRAO = 24;
     private static final int LIMITE_PADRAO_FALHAS_INFRAESTRUTURA_CONSECUTIVAS = 10;
@@ -52,6 +53,12 @@ public class EtlFluxoDestinoService {
 
     @Value("${app.ppg.nfe-whitelist:}")
     private String ppgNfeWhitelist;
+
+    @Value("${app.selia.nfe-whitelist-enabled:false}")
+    private boolean seliaNfeWhitelistEnabled;
+
+    @Value("${app.selia.nfe-whitelist:}")
+    private String seliaNfeWhitelist;
 
     @Value("${ETL_CIRCUIT_BREAKER_TRANSIENT_FAILURE_THRESHOLD:10}")
     private int limiteFalhasInfraestruturaConsecutivasCircuitBreaker;
@@ -101,10 +108,10 @@ public class EtlFluxoDestinoService {
             int paginasDesdeUltimaPausa = 0;
             int falhasInfraestruturaConsecutivas = 0;
             AssinaturaPagina assinaturaPaginaAnterior = null;
-            String sinceParam = obterSinceParam(request);
 
             while (true) {
                 String invoiceKeyParam = request.retroativo() ? null : obterInvoiceKeyParam(destino);
+                String sinceParam = invoiceKeyParam == null ? obterSinceParam(request) : null;
                 log.info(
                         "🔎 [DESTINO: {}] Página {}: buscando ocorrências a partir do cursor {}. invoice_key={} since={} occurrence_code={}",
                         destino,
@@ -585,6 +592,10 @@ public class EtlFluxoDestinoService {
     String obterWhitelistNfePorDestino(String destino) {
         if (DESTINO_PPG.equals(destino) && ppgNfeWhitelistEnabled) {
             return ppgNfeWhitelist;
+        }
+
+        if (DESTINO_SELIA.equals(destino) && seliaNfeWhitelistEnabled) {
+            return seliaNfeWhitelist;
         }
 
         if (DESTINO_VEDACIT.equals(destino) && vedacitNfeWhitelistEnabled) {

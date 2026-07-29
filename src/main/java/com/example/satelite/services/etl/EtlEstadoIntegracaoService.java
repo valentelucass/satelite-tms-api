@@ -5,6 +5,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import com.example.satelite.dto.rodogarcia.EslOcorrenciaDTO;
@@ -23,9 +24,19 @@ public class EtlEstadoIntegracaoService {
     private static final Set<String> STATUS_FINALIZADOS_SEM_REENVIO = Set.of(STATUS_ENVIADO, STATUS_IGNORADO);
 
     private final LogIntegracaoRepository logIntegracaoRepository;
+    private final AuditoriaDataHoraService auditoriaDataHoraService;
+
+    @Autowired
+    public EtlEstadoIntegracaoService(
+            LogIntegracaoRepository logIntegracaoRepository,
+            AuditoriaDataHoraService auditoriaDataHoraService
+    ) {
+        this.logIntegracaoRepository = logIntegracaoRepository;
+        this.auditoriaDataHoraService = auditoriaDataHoraService;
+    }
 
     public EtlEstadoIntegracaoService(LogIntegracaoRepository logIntegracaoRepository) {
-        this.logIntegracaoRepository = logIntegracaoRepository;
+        this(logIntegracaoRepository, new AuditoriaDataHoraService(logIntegracaoRepository));
     }
 
     public LogIntegracaoModel salvar(LogIntegracaoModel logIntegracao) {
@@ -72,12 +83,12 @@ public class EtlEstadoIntegracaoService {
                 .tentativasDados(0)
                 .tentativasCanhoto(0)
                 .sistemaDestino(destino)
-                .dataProcessamento(LocalDateTime.now())
+                .dataProcessamento(agoraAuditoria())
                 .build();
     }
 
     public void aplicarResultadoIntegracao(LogIntegracaoModel logIntegracao, ResultadoIntegracao resultado) {
-        LocalDateTime agora = LocalDateTime.now();
+        LocalDateTime agora = agoraAuditoria();
         String statusDadosAnterior = logIntegracao.getStatusDados();
         String statusCanhotoAnterior = logIntegracao.getStatusCanhoto();
         String statusDadosNovo = resultado.statusDados() != null ? resultado.statusDados() : statusDadosAnterior;
@@ -143,6 +154,10 @@ public class EtlEstadoIntegracaoService {
 
     public boolean statusSucesso(String status) {
         return STATUS_SUCESSO.equals(status);
+    }
+
+    public LocalDateTime agoraAuditoria() {
+        return auditoriaDataHoraService.agora();
     }
 
     boolean deveAtualizarDataProcessamento(String statusAnterior, String statusNovo) {
