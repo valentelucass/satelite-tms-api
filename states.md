@@ -115,6 +115,7 @@
 - Erros e contingência de cotação Intelipost (peso/CEP/dimensões e tabelas Fallback Tables V2) pertencem à plataforma/ERP de cotação. O Satélite não tem os dados nem endpoint para cotar e não deve calcular frete ou carregar tabelas de fallback no escopo SELIA de rastreamento.
 - DTOs REST próprios devem preferir `record`, camelCase no Java e `@JsonProperty` para nomes externos divergentes; DTO raiz deve tolerar campos desconhecidos.
 - Fluxos que transformam coleções potencialmente anuláveis devem validar explicitamente os elementos antes de acessar métodos ou campos, mantendo a análise de nulidade da IDE ativa sem avisos mascarados.
+- Comparadores de caminhos de arquivo devem usar lambdas tipadas ao encadear chaves de ordenação, preservando a análise de nulidade da IDE.
 - Qualquer alteração de banco deve ser script SQL versionado e idempotente; a atualização operacional esperada é executar `database/subir_database.bat`.
 - Registros de auditoria e logs devem preservar rastreabilidade histórica; limpezas físicas só podem existir como política técnica excepcional, documentada, versionada, idempotente e restrita ao banco `SATELITE_TMS_AUDITORIA`.
 - A reciclagem de arquivos de log é independente da auditoria SQL e limitada à pasta local `logs/`: `LogFileRetentionService` executa no próprio processo online e mantém no máximo 20 arquivos, 30 dias e 500 MB, removendo primeiro os mais antigos e apagando subpastas vazias. Ela é ativada por `APP_LOG_RETENTION_ENABLED=true`, roda a cada 15 minutos por padrão e não depende do PM2.

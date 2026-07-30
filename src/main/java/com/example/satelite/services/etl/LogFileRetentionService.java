@@ -36,7 +36,7 @@ public class LogFileRetentionService {
     private static final Set<String> EXTENSOES_PERMITIDAS = Set.of(".log", ".out", ".err");
     private static final Comparator<Path> MAIS_ANTIGO_PRIMEIRO = Comparator
             .comparing(LogFileRetentionService::ultimaModificacaoSemFalhar)
-            .thenComparing(Path::toString);
+            .thenComparing(path -> path.toString());
 
     private final Path projectRoot;
     private final Path logsDirectory;
