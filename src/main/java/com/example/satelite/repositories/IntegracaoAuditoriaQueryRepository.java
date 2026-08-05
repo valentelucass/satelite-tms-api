@@ -9,21 +9,25 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.function.Consumer;
 import java.util.regex.Pattern;
 
 import org.springframework.jdbc.core.RowMapper;
+import org.springframework.jdbc.core.RowCallbackHandler;
 import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 import org.springframework.stereotype.Repository;
 
 import com.example.satelite.dto.auditoria.PendenciaDTO;
 import com.example.satelite.dto.auditoria.ResumoTabelaIntegracaoDTO;
+import com.example.satelite.dto.etl.QuarentenaErroManualExportacaoDTO;
 
 @Repository
 public class IntegracaoAuditoriaQueryRepository {
 
     private static final String NUMERO_NF_EXPR = "TRY_CAST(SUBSTRING(l.chave_nfe, 26, 9) AS BIGINT)";
     private static final String SERIE_NF_EXPR = "SUBSTRING(l.chave_nfe, 23, 3)";
+    private static final String DESTINOS_ANALITICOS_SQL = "'VEDACIT', 'PPG', 'SELIA'";
     private static final String STATUS_DADOS_EXPR =
             "COALESCE(NULLIF(TRIM(l.status_dados), ''), NULLIF(TRIM(l.status), ''))";
     private static final String FILTRO_ERRO_PARCIAL_CANHOTO_RETRY = """
@@ -120,6 +124,88 @@ public class IntegracaoAuditoriaQueryRepository {
         return new PendenciasResultado(itens, total);
     }
 
+    public void exportarPendencias(Filtros filtros, Consumer<PendenciaDTO> consumidor) {
+        QueryParts queryParts = montarFiltros(filtros);
+        String fromWhere = """
+                FROM dbo.tb_log_integracao l
+                WHERE %s
+                """.formatted(String.join("\n  AND ", queryParts.where()));
+        String sql = """
+                SELECT
+                    l.id AS id,
+                    l.sistema_destino AS sistemaDestino,
+                    l.occurrence_id AS occurrenceId,
+                    l.freight_id AS freightId,
+                    l.chave_nfe AS chaveNfe,
+                    %s AS numeroNf,
+                    %s AS serieNf,
+                    %s AS statusDados,
+                    %s AS statusCanhoto,
+                    l.mensagem_erro_dados AS mensagemErroDados,
+                    l.mensagem_erro_canhoto AS mensagemErroCanhoto,
+                    l.canhoto_referencia AS canhotoReferencia,
+                    l.canhoto_mime_type AS canhotoMimeType,
+                    l.data_processamento AS dataProcessamento,
+                    l.data_processamento_dados AS dataProcessamentoDados,
+                    l.data_processamento_canhoto AS dataProcessamentoCanhoto,
+                    CAST(CASE
+                        WHEN l.canhoto_referencia IS NOT NULL THEN 1 ELSE 0
+                    END AS BIT) AS possuiImagemPayload
+                %s
+                %s
+                """.formatted(
+                NUMERO_NF_EXPR,
+                SERIE_NF_EXPR,
+                STATUS_DADOS_EXPR,
+                STATUS_CANHOTO_EXPR,
+                fromWhere,
+                montarOrdenacao(filtros)
+        );
+
+        jdbcTemplate.query(
+                sql,
+                queryParts.params(),
+                (RowCallbackHandler) rs -> consumidor.accept(mapearPendencia(rs))
+        );
+    }
+
+    public void exportarErrosQuarentena(Consumer<QuarentenaErroManualExportacaoDTO> consumidor) {
+        String sql = """
+                SELECT
+                    l.id AS id,
+                    l.sistema_destino AS destino,
+                    l.chave_nfe AS chaveNfe,
+                    l.tentativas_dados AS tentativasDados,
+                    l.tentativas_canhoto AS tentativasCanhoto,
+                    l.mensagem_erro_dados AS mensagemErroDados,
+                    l.mensagem_erro_canhoto AS mensagemErroCanhoto,
+                    l.erro AS erro,
+                    l.data_processamento AS dataProcessamento,
+                    l.data_processamento_dados AS dataProcessamentoDados,
+                    l.data_processamento_canhoto AS dataProcessamentoCanhoto
+                FROM dbo.tb_log_integracao l
+                WHERE l.status = 'ERRO_DESTINO'
+                  AND (l.tentativas_dados >= 3 OR l.tentativas_canhoto >= 3)
+                ORDER BY l.data_processamento DESC, l.id DESC
+                """;
+
+        jdbcTemplate.query(sql, new MapSqlParameterSource(), (RowCallbackHandler) rs -> consumidor.accept(
+                new QuarentenaErroManualExportacaoDTO(
+                        getLongOuNull(rs, "id"),
+                        rs.getString("destino"),
+                        rs.getString("chaveNfe"),
+                        getIntegerOuNull(rs, "tentativasDados"),
+                        getIntegerOuNull(rs, "tentativasCanhoto"),
+                        rs.getString("mensagemErroDados"),
+                        rs.getString("mensagemErroCanhoto"),
+                        rs.getString("erro"),
+                        getLocalDateTimeOuNull(rs, "dataProcessamento"),
+                        getLocalDateTimeOuNull(rs, "dataProcessamentoDados"),
+                        getLocalDateTimeOuNull(rs, "dataProcessamentoCanhoto")
+                )
+        ));
+    }
+
     public List<ResumoTabelaIntegracaoDTO> buscarResumoTabelas(LocalDateTime dataInicial, LocalDateTime dataFinalLimit) {
         String sql = """
                 WITH base_etapas AS (
@@ -132,7 +218,7 @@ public class IntegracaoAuditoriaQueryRepository {
                         (N'XML/Dados', COALESCE(NULLIF(LTRIM(RTRIM(l.status_dados)), N''), NULLIF(LTRIM(RTRIM(l.status)), N'')), l.tentativas_dados),
                         (N'Canhoto', COALESCE(NULLIF(LTRIM(RTRIM(l.status_canhoto)), N''), NULLIF(LTRIM(RTRIM(l.status)), N'')), l.tentativas_canhoto)
                     ) etapa(entidade, status_etapa, tentativas)
-                    WHERE l.sistema_destino IN ('VEDACIT', 'PPG')
+                    WHERE l.sistema_destino IN (%s)
                       AND l.data_processamento >= :dataInicial
                       AND l.data_processamento < :dataFinalLimit
                       AND NULLIF(LTRIM(RTRIM(COALESCE(etapa.status_etapa, N''))), N'') IS NOT NULL
@@ -160,7 +246,7 @@ public class IntegracaoAuditoriaQueryRepository {
                     SUM(CASE WHEN classe_status IN (N'ERRO', N'QUARENTENA') THEN 1 ELSE 0 END) DESC,
                     COUNT_BIG(1) DESC,
                     entidade_tabela ASC
-                """;
+                """.formatted(DESTINOS_ANALITICOS_SQL);
 
         MapSqlParameterSource params = new MapSqlParameterSource()
                 .addValue("dataInicial", dataInicial)
@@ -179,7 +265,7 @@ public class IntegracaoAuditoriaQueryRepository {
         List<String> where = new ArrayList<>();
         MapSqlParameterSource params = new MapSqlParameterSource();
 
-        where.add("l.sistema_destino IN ('VEDACIT', 'PPG')");
+        where.add("l.sistema_destino IN (" + DESTINOS_ANALITICOS_SQL + ")");
         adicionarEscopo(where, filtros.escopo());
 
         adicionarBusca(where, params, filtros.tabelaBusca());
@@ -408,6 +494,11 @@ public class IntegracaoAuditoriaQueryRepository {
         return rs.wasNull() ? null : valor;
     }
 
+    private static Integer getIntegerOuNull(ResultSet rs, String coluna) throws SQLException {
+        int valor = rs.getInt(coluna);
+        return rs.wasNull() ? null : valor;
+    }
+
     private static Boolean getBooleanOuNull(ResultSet rs, String coluna) throws SQLException {
         boolean valor = rs.getBoolean(coluna);
         return rs.wasNull() ? null : valor;
@@ -416,6 +507,28 @@ public class IntegracaoAuditoriaQueryRepository {
     private static LocalDateTime getLocalDateTimeOuNull(ResultSet rs, String coluna) throws SQLException {
         Timestamp timestamp = rs.getTimestamp(coluna);
         return timestamp != null ? timestamp.toLocalDateTime() : null;
+    }
+
+    private static PendenciaDTO mapearPendencia(ResultSet rs) throws SQLException {
+        return new PendenciaDTO(
+                getLongOuNull(rs, "id"),
+                rs.getString("sistemaDestino"),
+                getLongOuNull(rs, "occurrenceId"),
+                getLongOuNull(rs, "freightId"),
+                rs.getString("chaveNfe"),
+                getLongOuNull(rs, "numeroNf"),
+                rs.getString("serieNf"),
+                rs.getString("statusDados"),
+                rs.getString("statusCanhoto"),
+                rs.getString("mensagemErroDados"),
+                rs.getString("mensagemErroCanhoto"),
+                rs.getString("canhotoReferencia"),
+                rs.getString("canhotoMimeType"),
+                getLocalDateTimeOuNull(rs, "dataProcessamento"),
+                getLocalDateTimeOuNull(rs, "dataProcessamentoDados"),
+                getLocalDateTimeOuNull(rs, "dataProcessamentoCanhoto"),
+                getBooleanOuNull(rs, "possuiImagemPayload")
+        );
     }
 
     public record Filtros(
@@ -464,25 +577,7 @@ public class IntegracaoAuditoriaQueryRepository {
     private static final class PendenciaRowMapper implements RowMapper<PendenciaDTO> {
         @Override
         public PendenciaDTO mapRow(ResultSet rs, int rowNum) throws SQLException {
-            return new PendenciaDTO(
-                    getLongOuNull(rs, "id"),
-                    rs.getString("sistemaDestino"),
-                    getLongOuNull(rs, "occurrenceId"),
-                    getLongOuNull(rs, "freightId"),
-                    rs.getString("chaveNfe"),
-                    getLongOuNull(rs, "numeroNf"),
-                    rs.getString("serieNf"),
-                    rs.getString("statusDados"),
-                    rs.getString("statusCanhoto"),
-                    rs.getString("mensagemErroDados"),
-                    rs.getString("mensagemErroCanhoto"),
-                    rs.getString("canhotoReferencia"),
-                    rs.getString("canhotoMimeType"),
-                    getLocalDateTimeOuNull(rs, "dataProcessamento"),
-                    getLocalDateTimeOuNull(rs, "dataProcessamentoDados"),
-                    getLocalDateTimeOuNull(rs, "dataProcessamentoCanhoto"),
-                    getBooleanOuNull(rs, "possuiImagemPayload")
-            );
+            return mapearPendencia(rs);
         }
     }
 }

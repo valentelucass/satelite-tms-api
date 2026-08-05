@@ -47,6 +47,7 @@ import com.example.satelite.dto.rodogarcia.EslPagingDTO;
 import com.example.satelite.models.ControleCursor;
 import com.example.satelite.models.LogIntegracaoModel;
 import com.example.satelite.repositories.ControleCursorRepository;
+import com.example.satelite.repositories.IntegracaoAuditoriaQueryRepository;
 import com.example.satelite.repositories.LogIntegracaoRepository;
 import com.example.satelite.services.ResultadoIntegracao;
 import com.example.satelite.services.ppg.PpgIntegrationService;
@@ -1107,7 +1108,10 @@ class OrquestradorEtlServiceTest {
         });
         EtlResilienciaService etlResilienciaService = new EtlResilienciaService();
         EtlEstadoIntegracaoService etlEstadoIntegracaoService = new EtlEstadoIntegracaoService(logIntegracaoRepository);
-        QuarentenaService quarentenaService = new QuarentenaService(logIntegracaoRepository);
+        QuarentenaService quarentenaService = new QuarentenaService(
+                logIntegracaoRepository,
+                mock(IntegracaoAuditoriaQueryRepository.class)
+        );
         EtlRepescagemService etlRepescagemService = mock(EtlRepescagemService.class);
         EtlRegistroService etlRegistroService = new EtlRegistroService(
                 rodogarciaClient,

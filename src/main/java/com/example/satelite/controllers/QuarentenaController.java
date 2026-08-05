@@ -1,5 +1,10 @@
 package com.example.satelite.controllers;
 
+import java.nio.charset.StandardCharsets;
+
+import org.springframework.http.ContentDisposition;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.http.ResponseEntity;
@@ -9,11 +14,13 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.servlet.mvc.method.annotation.StreamingResponseBody;
 
 import com.example.satelite.dto.etl.QuarentenaErroManualDTO;
 import com.example.satelite.dto.etl.QuarentenaReprocessamentoResponseDTO;
 import com.example.satelite.services.etl.QuarentenaService;
 import com.example.satelite.services.etl.QuarentenaService.ResultadoReprocessamento;
+import com.example.satelite.utils.CsvStreamWriter;
 
 @RestController
 @RequestMapping("/api/etl/quarentena")
@@ -33,6 +40,30 @@ public class QuarentenaController {
         int paginaNormalizada = Math.max(0, pagina);
         int tamanhoNormalizado = Math.max(1, Math.min(tamanho, 500));
         return quarentenaService.buscarErrosManuais(PageRequest.of(paginaNormalizada, tamanhoNormalizado));
+    }
+
+    @GetMapping(value = "/erros/exportacao", produces = "text/csv")
+    public ResponseEntity<StreamingResponseBody> exportarErrosManuais() {
+        StreamingResponseBody corpo = outputStream -> {
+            CsvStreamWriter csv = new CsvStreamWriter(outputStream);
+            csv.escreverCabecalho("Destino", "NF", "Acao necessaria", "Chave NF-e", "Tentativas", "Ultima tentativa");
+            quarentenaService.exportarErrosManuais(item -> csv.escreverLinha(
+                    item.destino(), item.numeroNf(), item.erroLimpo(), item.chaveNfe(),
+                    item.tentativas(), item.dataUltimaTentativa()
+            ));
+            csv.flush();
+        };
+
+        return ResponseEntity.ok()
+                .contentType(new MediaType("text", "csv", StandardCharsets.UTF_8))
+                .header(
+                        HttpHeaders.CONTENT_DISPOSITION,
+                        ContentDisposition.attachment()
+                                .filename("quarentena-integracoes.csv", StandardCharsets.UTF_8)
+                                .build()
+                                .toString()
+                )
+                .body(corpo);
     }
 
     @PostMapping("/{destino}/reprocessar")

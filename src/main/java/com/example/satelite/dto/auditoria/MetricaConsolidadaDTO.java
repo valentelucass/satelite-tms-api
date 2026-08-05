@@ -6,7 +6,9 @@ public record MetricaConsolidadaDTO(
     String sistemaDestino,
     long totalRegistros,
     BigDecimal percentualXmlSucesso,
-    BigDecimal percentualCanhotoSucesso
+    BigDecimal percentualCanhotoSucesso,
+    String rotuloDados,
+    String rotuloComprovante
 ) {
     
 }

@@ -7,9 +7,11 @@ import java.time.LocalTime;
 import java.time.format.DateTimeParseException;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.function.Consumer;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -23,6 +25,7 @@ import com.example.satelite.dto.auditoria.IntegracaoEvolucaoDiariaDTO;
 import com.example.satelite.dto.auditoria.MetricaConsolidadaDTO;
 import com.example.satelite.dto.auditoria.PaginacaoDTO;
 import com.example.satelite.dto.auditoria.PendenciasPaginadasDTO;
+import com.example.satelite.dto.auditoria.PendenciaDTO;
 import com.example.satelite.dto.auditoria.ResumoTabelaIntegracaoDTO;
 import com.example.satelite.models.LogIntegracaoModel;
 import com.example.satelite.repositories.IntegracaoAuditoriaQueryRepository;
@@ -38,6 +41,7 @@ public class IntegracaoAuditoriaService {
     private static final int TAMANHO_PADRAO = 100;
     private static final int TAMANHO_MAXIMO = 500;
     private static final String DESTINO_PPG = "PPG";
+    private static final String DESTINO_SELIA = "SELIA";
     private static final String PARAM_TABELA_BUSCA = "f.tabelaBusca";
     private static final String PARAM_TABELA_CODIGO = "f.tabelaCodigo";
     private static final String PARAM_TABELA_STATUS = "f.tabelaStatus";
@@ -134,13 +138,40 @@ public class IntegracaoAuditoriaService {
         );
     }
 
+    public void exportarIntegracoesClientes(
+            String dataInicial,
+            String dataFinal,
+            MultiValueMap<String, String> params,
+            Consumer<PendenciaDTO> consumidor
+    ) {
+        PeriodoFiltro periodo = lerPeriodoOpcional(
+                primeiroTexto(dataInicial, primeiroValor(params, PARAM_DATA_INICIAL)),
+                primeiroTexto(dataFinal, primeiroValor(params, PARAM_DATA_FINAL))
+        );
+        integracaoAuditoriaQueryRepository.exportarPendencias(lerFiltros(params, periodo), consumidor);
+    }
+
     private MetricaConsolidadaDTO mapearMetrica(MetricaIntegracaoClienteProjection metrica) {
         return new MetricaConsolidadaDTO(
                 metrica.getSistemaDestino(),
                 valorOuZero(metrica.getTotalRegistros()),
                 percentualOuZero(metrica.getPercentualXmlSucesso()),
-                percentualOuZero(metrica.getPercentualCanhotoSucesso())
+                percentualOuZero(metrica.getPercentualCanhotoSucesso()),
+                rotuloDados(metrica.getSistemaDestino()),
+                rotuloComprovante(metrica.getSistemaDestino())
         );
+    }
+
+    private String rotuloDados(String sistemaDestino) {
+        return DESTINO_SELIA.equals(normalizarDestino(sistemaDestino)) ? "AddEvents" : "XML/Dados";
+    }
+
+    private String rotuloComprovante(String sistemaDestino) {
+        return DESTINO_SELIA.equals(normalizarDestino(sistemaDestino)) ? "POD/Comprovante" : "Canhoto";
+    }
+
+    private String normalizarDestino(String sistemaDestino) {
+        return sistemaDestino == null ? "" : sistemaDestino.trim().toUpperCase(Locale.ROOT);
     }
 
     private IntegracaoEvolucaoDiariaDTO mapearEvolucaoDiaria(IntegracaoEvolucaoDiariaProjection item) {

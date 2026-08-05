@@ -10,6 +10,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import java.lang.reflect.Method;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
@@ -18,6 +19,8 @@ import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.mockito.ArgumentMatchers;
 import org.springframework.jdbc.core.RowMapper;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.jdbc.core.RowCallbackHandler;
 import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 
@@ -102,10 +105,36 @@ class IntegracaoAuditoriaQueryRepositoryTest {
         repository.buscarPendencias(filtros(null, null, "TODOS"), 0, 20);
 
         String sql = capturarSqlTabela(jdbcTemplate);
-        assertTrue(sql.contains("l.sistema_destino IN ('VEDACIT', 'PPG')"));
+        assertTrue(sql.contains("l.sistema_destino IN ('VEDACIT', 'PPG', 'SELIA')"));
         assertFalse(sql.contains("l.status_canhoto = 'PENDENTE_FOTO'"));
         assertFalse(sql.contains("l.status IN ('ENVIADO', 'PROCESSADO')"));
         assertFalse(sql.contains("request_payload"));
+    }
+
+    @Test
+    void deveIncluirSeliaNasConsultasAnaliticasESemRegistrosTecnicosPlp() throws NoSuchMethodException {
+        NamedParameterJdbcTemplate jdbcTemplate = criarJdbcTemplate();
+        IntegracaoAuditoriaQueryRepository repository = new IntegracaoAuditoriaQueryRepository(jdbcTemplate);
+
+        repository.buscarPendencias(filtros(null, null, "TODOS"), 0, 20);
+        String sqlPendencias = capturarSqlTabela(jdbcTemplate);
+        repository.buscarResumoTabelas(
+                LocalDateTime.of(2026, 6, 1, 0, 0),
+                LocalDateTime.of(2026, 7, 1, 0, 0)
+        );
+
+        assertTrue(sqlPendencias.contains("'SELIA'"));
+
+        Method metricas = LogIntegracaoRepository.class.getMethod(
+                "buscarMetricasIntegracoesClientes", LocalDateTime.class, LocalDateTime.class
+        );
+        Method evolucao = LogIntegracaoRepository.class.getMethod(
+                "buscarEvolucaoDiariaIntegracoes", LocalDateTime.class, LocalDateTime.class
+        );
+        assertTrue(metricas.getAnnotation(Query.class).value().contains("'SELIA'"));
+        assertTrue(evolucao.getAnnotation(Query.class).value().contains("'SELIA'"));
+        assertFalse(metricas.getAnnotation(Query.class).value().contains("SELIA_PLP"));
+        assertFalse(evolucao.getAnnotation(Query.class).value().contains("SELIA_PLP"));
     }
 
     @Test
@@ -121,6 +150,28 @@ class IntegracaoAuditoriaQueryRepositoryTest {
         assertFalse(consulta.sql().contains("CAST(l.data_processamento AS DATE)"));
         assertEquals(LocalDateTime.of(2026, 6, 1, 0, 0), consulta.params().getValue("dataInicial"));
         assertEquals(LocalDateTime.of(2026, 7, 1, 0, 0), consulta.params().getValue("dataFinalLimit"));
+    }
+
+    @Test
+    void deveExportarPendenciasComFiltrosESemPaginacaoNoSqlServer() {
+        NamedParameterJdbcTemplate jdbcTemplate = criarJdbcTemplate();
+        IntegracaoAuditoriaQueryRepository repository = new IntegracaoAuditoriaQueryRepository(jdbcTemplate);
+
+        repository.exportarPendencias(filtrosComPeriodo("2026-06-01", "2026-06-30"), ignored -> { });
+
+        ArgumentCaptor<String> sqlCaptor = ArgumentCaptor.forClass(String.class);
+        ArgumentCaptor<MapSqlParameterSource> paramsCaptor = ArgumentCaptor.forClass(MapSqlParameterSource.class);
+        verify(jdbcTemplate).query(
+                sqlCaptor.capture(),
+                paramsCaptor.capture(),
+                ArgumentMatchers.<RowCallbackHandler>any()
+        );
+
+        assertTrue(sqlCaptor.getValue().contains("l.data_processamento >= :dataInicial"));
+        assertTrue(sqlCaptor.getValue().contains("l.data_processamento < :dataFinalLimit"));
+        assertFalse(sqlCaptor.getValue().contains("OFFSET"));
+        assertEquals(LocalDateTime.of(2026, 6, 1, 0, 0), paramsCaptor.getValue().getValue("dataInicial"));
+        assertEquals(LocalDateTime.of(2026, 7, 1, 0, 0), paramsCaptor.getValue().getValue("dataFinalLimit"));
     }
 
     @Test

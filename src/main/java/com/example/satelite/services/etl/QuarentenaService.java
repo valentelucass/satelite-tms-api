@@ -5,6 +5,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Set;
 import java.util.regex.Pattern;
+import java.util.function.Consumer;
 
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -12,7 +13,9 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.example.satelite.dto.etl.QuarentenaErroManualDTO;
+import com.example.satelite.dto.etl.QuarentenaErroManualExportacaoDTO;
 import com.example.satelite.models.LogIntegracaoModel;
+import com.example.satelite.repositories.IntegracaoAuditoriaQueryRepository;
 import com.example.satelite.repositories.LogIntegracaoRepository;
 
 @Service
@@ -23,9 +26,14 @@ public class QuarentenaService {
     private static final Pattern ESPACOS = Pattern.compile("\\s+");
 
     private final LogIntegracaoRepository logIntegracaoRepository;
+    private final IntegracaoAuditoriaQueryRepository integracaoAuditoriaQueryRepository;
 
-    public QuarentenaService(LogIntegracaoRepository logIntegracaoRepository) {
+    public QuarentenaService(
+            LogIntegracaoRepository logIntegracaoRepository,
+            IntegracaoAuditoriaQueryRepository integracaoAuditoriaQueryRepository
+    ) {
         this.logIntegracaoRepository = logIntegracaoRepository;
+        this.integracaoAuditoriaQueryRepository = integracaoAuditoriaQueryRepository;
     }
 
     public List<LogIntegracaoModel> findQuarentenaByDestino(String destino) {
@@ -35,6 +43,10 @@ public class QuarentenaService {
     public Page<QuarentenaErroManualDTO> buscarErrosManuais(Pageable pageable) {
         return logIntegracaoRepository.findErrosManuais(pageable)
                 .map(this::mapearErroManual);
+    }
+
+    public void exportarErrosManuais(Consumer<QuarentenaErroManualDTO> consumidor) {
+        integracaoAuditoriaQueryRepository.exportarErrosQuarentena(item -> consumidor.accept(mapearErroManual(item)));
     }
 
     @Transactional
@@ -56,8 +68,32 @@ public class QuarentenaService {
         );
     }
 
+    private QuarentenaErroManualDTO mapearErroManual(QuarentenaErroManualExportacaoDTO registro) {
+        return new QuarentenaErroManualDTO(
+                registro.id(),
+                registro.destino(),
+                registro.chaveNfe(),
+                extrairNumeroNf(registro.chaveNfe()),
+                maiorTentativas(registro.tentativasDados(), registro.tentativasCanhoto()),
+                erroLimpo(registro.mensagemErroDados(), registro.mensagemErroCanhoto(), registro.erro()),
+                dataUltimaTentativa(
+                        registro.dataProcessamento(),
+                        registro.dataProcessamentoDados(),
+                        registro.dataProcessamentoCanhoto()
+                )
+        );
+    }
+
     public String erroLimpo(LogIntegracaoModel registro) {
-        String mensagem = primeiraMensagemErro(registro);
+        return erroLimpo(
+                registro != null ? registro.getMensagemErroDados() : null,
+                registro != null ? registro.getMensagemErroCanhoto() : null,
+                registro != null ? registro.getErro() : null
+        );
+    }
+
+    private String erroLimpo(String mensagemErroDados, String mensagemErroCanhoto, String erro) {
+        String mensagem = primeiraMensagemErro(mensagemErroDados, mensagemErroCanhoto, erro);
         if (mensagem == null || mensagem.isBlank()) {
             return "Motivo indisponivel";
         }
@@ -80,20 +116,16 @@ public class QuarentenaService {
         return normalizado.isBlank() ? "Motivo indisponivel" : normalizado;
     }
 
-    private String primeiraMensagemErro(LogIntegracaoModel registro) {
-        if (registro == null) {
-            return null;
+    private String primeiraMensagemErro(String mensagemErroDados, String mensagemErroCanhoto, String erro) {
+        if (mensagemErroDados != null && !mensagemErroDados.isBlank()) {
+            return mensagemErroDados;
         }
 
-        if (registro.getMensagemErroDados() != null && !registro.getMensagemErroDados().isBlank()) {
-            return registro.getMensagemErroDados();
+        if (mensagemErroCanhoto != null && !mensagemErroCanhoto.isBlank()) {
+            return mensagemErroCanhoto;
         }
 
-        if (registro.getMensagemErroCanhoto() != null && !registro.getMensagemErroCanhoto().isBlank()) {
-            return registro.getMensagemErroCanhoto();
-        }
-
-        return registro.getErro();
+        return erro;
     }
 
     private String limparLinhaErro(String linha) {
@@ -117,10 +149,11 @@ public class QuarentenaService {
     }
 
     private int maiorTentativas(LogIntegracaoModel registro) {
-        return Math.max(
-                valorTentativas(registro.getTentativasDados()),
-                valorTentativas(registro.getTentativasCanhoto())
-        );
+        return maiorTentativas(registro.getTentativasDados(), registro.getTentativasCanhoto());
+    }
+
+    private int maiorTentativas(Integer tentativasDados, Integer tentativasCanhoto) {
+        return Math.max(valorTentativas(tentativasDados), valorTentativas(tentativasCanhoto));
     }
 
     private int valorTentativas(Integer tentativas) {
@@ -128,9 +161,20 @@ public class QuarentenaService {
     }
 
     private LocalDateTime dataUltimaTentativa(LogIntegracaoModel registro) {
-        LocalDateTime data = registro.getDataProcessamento();
-        data = maiorData(data, registro.getDataProcessamentoDados());
-        return maiorData(data, registro.getDataProcessamentoCanhoto());
+        return dataUltimaTentativa(
+                registro.getDataProcessamento(),
+                registro.getDataProcessamentoDados(),
+                registro.getDataProcessamentoCanhoto()
+        );
+    }
+
+    private LocalDateTime dataUltimaTentativa(
+            LocalDateTime dataProcessamento,
+            LocalDateTime dataProcessamentoDados,
+            LocalDateTime dataProcessamentoCanhoto
+    ) {
+        LocalDateTime data = maiorData(dataProcessamento, dataProcessamentoDados);
+        return maiorData(data, dataProcessamentoCanhoto);
     }
 
     private LocalDateTime maiorData(LocalDateTime atual, LocalDateTime candidata) {

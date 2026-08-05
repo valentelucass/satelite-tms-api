@@ -134,7 +134,7 @@ public interface LogIntegracaoRepository extends JpaRepository<LogIntegracaoMode
                         )
                     END AS DECIMAL(5, 2)
                 ) AS percentualCanhotoSucesso
-            FROM (VALUES ('VEDACIT'), ('PPG')) AS d(sistema_destino)
+            FROM (VALUES ('VEDACIT'), ('PPG'), ('SELIA')) AS d(sistema_destino)
             LEFT JOIN dbo.tb_log_integracao l
                 ON l.sistema_destino = d.sistema_destino
                AND l.data_processamento >= :dataInicial
@@ -166,7 +166,7 @@ public interface LogIntegracaoRepository extends JpaRepository<LogIntegracaoMode
                     )
                     THEN 0 ELSE 1 END) AS erros
             FROM dbo.tb_log_integracao l
-            WHERE l.sistema_destino IN ('VEDACIT', 'PPG')
+            WHERE l.sistema_destino IN ('VEDACIT', 'PPG', 'SELIA')
               AND l.data_processamento >= :dataInicial
               AND l.data_processamento < :dataFinalLimit
             GROUP BY CAST(l.data_processamento AS DATE)
@@ -207,7 +207,7 @@ public interface LogIntegracaoRepository extends JpaRepository<LogIntegracaoMode
                             WHEN l.canhoto_referencia IS NOT NULL THEN 1 ELSE 0
                         END AS BIT) AS possuiImagemPayload
                     FROM dbo.tb_log_integracao l
-                    WHERE l.sistema_destino IN ('VEDACIT', 'PPG')
+                    WHERE l.sistema_destino IN ('VEDACIT', 'PPG', 'SELIA')
                       AND (
                           l.status_canhoto = 'PENDENTE_FOTO'
                           OR l.status_dados = 'ERRO_DESTINO'
@@ -225,7 +225,7 @@ public interface LogIntegracaoRepository extends JpaRepository<LogIntegracaoMode
             countQuery = """
                     SELECT COUNT(1)
                     FROM dbo.tb_log_integracao l
-                    WHERE l.sistema_destino IN ('VEDACIT', 'PPG')
+                    WHERE l.sistema_destino IN ('VEDACIT', 'PPG', 'SELIA')
                       AND (
                           l.status_canhoto = 'PENDENTE_FOTO'
                           OR l.status_dados = 'ERRO_DESTINO'

@@ -1,7 +1,10 @@
 package com.example.satelite.controllers;
 
 import java.util.List;
+import java.nio.charset.StandardCharsets;
 
+import org.springframework.http.ContentDisposition;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.util.MultiValueMap;
@@ -10,10 +13,12 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.servlet.mvc.method.annotation.StreamingResponseBody;
 
 import com.example.satelite.dto.auditoria.AuditoriaIntegracoesClientesResponseDTO;
 import com.example.satelite.dto.auditoria.IntegracaoEvolucaoDiariaDTO;
 import com.example.satelite.dto.auditoria.ResumoTabelaIntegracaoDTO;
+import com.example.satelite.utils.CsvStreamWriter;
 import com.example.satelite.services.auditoria.IntegracaoAuditoriaService;
 
 @RestController
@@ -35,6 +40,42 @@ public class IntegracaoAuditoriaController {
             @RequestParam MultiValueMap<String, String> params
     ) {
         return integracaoAuditoriaService.consultarIntegracoesClientes(pagina, tamanho, dataInicial, dataFinal, params);
+    }
+
+    @GetMapping(value = "/integracoes-clientes/exportacao", produces = "text/csv")
+    public ResponseEntity<StreamingResponseBody> exportarIntegracoesClientes(
+            @RequestParam(required = false) String dataInicial,
+            @RequestParam(required = false) String dataFinal,
+            @RequestParam MultiValueMap<String, String> params
+    ) {
+        StreamingResponseBody corpo = outputStream -> {
+            CsvStreamWriter csv = new CsvStreamWriter(outputStream);
+            csv.escreverCabecalho(
+                    "ID", "Sistema destino", "Ocorrencia", "Frete", "Chave NF-e", "NF", "Serie",
+                    "Status XML", "Status comprovante", "Mensagem XML", "Mensagem comprovante",
+                    "Data processamento", "Data XML", "Data comprovante", "Canhoto disponivel"
+            );
+            integracaoAuditoriaService.exportarIntegracoesClientes(dataInicial, dataFinal, params, item ->
+                    csv.escreverLinha(
+                            item.id(), item.sistemaDestino(), item.occurrenceId(), item.freightId(), item.chaveNfe(),
+                            item.numeroNf(), item.serieNf(), item.statusDados(), item.statusCanhoto(),
+                            item.mensagemErroDados(), item.mensagemErroCanhoto(), item.dataProcessamento(),
+                            item.dataProcessamentoDados(), item.dataProcessamentoCanhoto(), item.possuiImagemPayload()
+                    )
+            );
+            csv.flush();
+        };
+
+        return ResponseEntity.ok()
+                .contentType(new MediaType("text", "csv", StandardCharsets.UTF_8))
+                .header(
+                        HttpHeaders.CONTENT_DISPOSITION,
+                        ContentDisposition.attachment()
+                                .filename("integracoes.csv", StandardCharsets.UTF_8)
+                                .build()
+                                .toString()
+                )
+                .body(corpo);
     }
 
     @GetMapping("/integracoes-clientes/evolucao-diaria")
