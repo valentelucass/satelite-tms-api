@@ -11,6 +11,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
 import java.util.function.Consumer;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -42,6 +43,9 @@ public class IntegracaoAuditoriaService {
     private static final int TAMANHO_MAXIMO = 500;
     private static final String DESTINO_PPG = "PPG";
     private static final String DESTINO_SELIA = "SELIA";
+    private static final List<String> DESTINOS_ANALITICOS = List.of("PPG", "VEDACIT", "SELIA");
+    private static final Set<String> DESTINOS_ANALITICOS_VALIDOS = Set.copyOf(DESTINOS_ANALITICOS);
+    private static final String PARAM_DESTINO = "destino";
     private static final String PARAM_TABELA_BUSCA = "f.tabelaBusca";
     private static final String PARAM_TABELA_CODIGO = "f.tabelaCodigo";
     private static final String PARAM_TABELA_STATUS = "f.tabelaStatus";
@@ -87,17 +91,19 @@ public class IntegracaoAuditoriaService {
                 primeiroTexto(dataInicial, primeiroValor(params, PARAM_DATA_INICIAL)),
                 primeiroTexto(dataFinal, primeiroValor(params, PARAM_DATA_FINAL))
         );
+        List<String> destinos = lerDestinos(params);
 
         List<MetricaConsolidadaDTO> metricas = logIntegracaoRepository.buscarMetricasIntegracoesClientes(
                         periodo.dataInicialSql(),
-                        periodo.dataFinalLimitSql()
+                        periodo.dataFinalLimitSql(),
+                        destinos
                 )
                 .stream()
                 .map(this::mapearMetrica)
                 .toList();
 
         PendenciasResultado pendencias = integracaoAuditoriaQueryRepository.buscarPendencias(
-                lerFiltros(params, periodo),
+                lerFiltros(params, periodo, destinos),
                 paginaNormalizada,
                 tamanhoNormalizado
         );
@@ -119,22 +125,34 @@ public class IntegracaoAuditoriaService {
         );
     }
 
-    public List<IntegracaoEvolucaoDiariaDTO> consultarEvolucaoDiaria(String dataInicial, String dataFinal) {
+    public List<IntegracaoEvolucaoDiariaDTO> consultarEvolucaoDiaria(
+            String dataInicial,
+            String dataFinal,
+            List<String> destinosRecebidos
+    ) {
         PeriodoFiltro periodo = lerPeriodoObrigatorio(dataInicial, dataFinal);
+        List<String> destinos = normalizarDestinos(destinosRecebidos);
         return logIntegracaoRepository.buscarEvolucaoDiariaIntegracoes(
                         periodo.dataInicialSql(),
-                        periodo.dataFinalLimitSql()
+                        periodo.dataFinalLimitSql(),
+                        destinos
                 )
                 .stream()
                 .map(this::mapearEvolucaoDiaria)
                 .toList();
     }
 
-    public List<ResumoTabelaIntegracaoDTO> consultarResumoTabelas(String dataInicial, String dataFinal) {
+    public List<ResumoTabelaIntegracaoDTO> consultarResumoTabelas(
+            String dataInicial,
+            String dataFinal,
+            List<String> destinosRecebidos
+    ) {
         PeriodoFiltro periodo = lerPeriodoObrigatorio(dataInicial, dataFinal);
+        List<String> destinos = normalizarDestinos(destinosRecebidos);
         return integracaoAuditoriaQueryRepository.buscarResumoTabelas(
                 periodo.dataInicialSql(),
-                periodo.dataFinalLimitSql()
+                periodo.dataFinalLimitSql(),
+                destinos
         );
     }
 
@@ -148,7 +166,10 @@ public class IntegracaoAuditoriaService {
                 primeiroTexto(dataInicial, primeiroValor(params, PARAM_DATA_INICIAL)),
                 primeiroTexto(dataFinal, primeiroValor(params, PARAM_DATA_FINAL))
         );
-        integracaoAuditoriaQueryRepository.exportarPendencias(lerFiltros(params, periodo), consumidor);
+        integracaoAuditoriaQueryRepository.exportarPendencias(
+                lerFiltros(params, periodo, lerDestinos(params)),
+                consumidor
+        );
     }
 
     private MetricaConsolidadaDTO mapearMetrica(MetricaIntegracaoClienteProjection metrica) {
@@ -260,18 +281,38 @@ public class IntegracaoAuditoriaService {
         return Math.min(tamanho, TAMANHO_MAXIMO);
     }
 
-    private Filtros lerFiltros(MultiValueMap<String, String> params, PeriodoFiltro periodo) {
+    private Filtros lerFiltros(MultiValueMap<String, String> params, PeriodoFiltro periodo, List<String> destinos) {
         return new Filtros(
                 primeiroValor(params, PARAM_TABELA_BUSCA),
                 primeiroValor(params, PARAM_TABELA_CODIGO),
                 valores(params, PARAM_TABELA_STATUS),
                 filtrosColuna(params),
+                destinos,
                 primeiroValor(params, PARAM_ESCOPO),
                 primeiroValor(params, PARAM_SORT_FIELD),
                 primeiroValor(params, PARAM_SORT_DIRECTION),
                 periodo.dataInicial(),
                 periodo.dataFinal()
         );
+    }
+
+    private List<String> lerDestinos(MultiValueMap<String, String> params) {
+        return normalizarDestinos(valores(params, PARAM_DESTINO));
+    }
+
+    private List<String> normalizarDestinos(List<String> destinosRecebidos) {
+        List<String> destinos = destinosRecebidos == null ? List.of() : destinosRecebidos.stream()
+                .map(this::normalizarDestino)
+                .filter(destino -> !destino.isEmpty())
+                .distinct()
+                .toList();
+        if (destinos.isEmpty()) {
+            return DESTINOS_ANALITICOS;
+        }
+        if (destinos.stream().anyMatch(destino -> !DESTINOS_ANALITICOS_VALIDOS.contains(destino))) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Destino de integração inválido.");
+        }
+        return destinos;
     }
 
     private Map<String, List<String>> filtrosColuna(MultiValueMap<String, String> params) {

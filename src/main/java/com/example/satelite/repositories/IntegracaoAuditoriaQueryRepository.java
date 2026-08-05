@@ -169,7 +169,10 @@ public class IntegracaoAuditoriaQueryRepository {
         );
     }
 
-    public void exportarErrosQuarentena(Consumer<QuarentenaErroManualExportacaoDTO> consumidor) {
+    public void exportarErrosQuarentena(
+            List<String> destinos,
+            Consumer<QuarentenaErroManualExportacaoDTO> consumidor
+    ) {
         String sql = """
                 SELECT
                     l.id AS id,
@@ -186,10 +189,12 @@ public class IntegracaoAuditoriaQueryRepository {
                 FROM dbo.tb_log_integracao l
                 WHERE l.status = 'ERRO_DESTINO'
                   AND (l.tentativas_dados >= 3 OR l.tentativas_canhoto >= 3)
+                  AND l.sistema_destino IN (:destinos)
                 ORDER BY l.data_processamento DESC, l.id DESC
                 """;
 
-        jdbcTemplate.query(sql, new MapSqlParameterSource(), (RowCallbackHandler) rs -> consumidor.accept(
+        MapSqlParameterSource params = new MapSqlParameterSource().addValue("destinos", destinos);
+        jdbcTemplate.query(sql, params, (RowCallbackHandler) rs -> consumidor.accept(
                 new QuarentenaErroManualExportacaoDTO(
                         getLongOuNull(rs, "id"),
                         rs.getString("destino"),
@@ -206,7 +211,11 @@ public class IntegracaoAuditoriaQueryRepository {
         ));
     }
 
-    public List<ResumoTabelaIntegracaoDTO> buscarResumoTabelas(LocalDateTime dataInicial, LocalDateTime dataFinalLimit) {
+    public List<ResumoTabelaIntegracaoDTO> buscarResumoTabelas(
+            LocalDateTime dataInicial,
+            LocalDateTime dataFinalLimit,
+            List<String> destinos
+    ) {
         String sql = """
                 WITH base_etapas AS (
                     SELECT
@@ -218,7 +227,7 @@ public class IntegracaoAuditoriaQueryRepository {
                         (N'XML/Dados', COALESCE(NULLIF(LTRIM(RTRIM(l.status_dados)), N''), NULLIF(LTRIM(RTRIM(l.status)), N'')), l.tentativas_dados),
                         (N'Canhoto', COALESCE(NULLIF(LTRIM(RTRIM(l.status_canhoto)), N''), NULLIF(LTRIM(RTRIM(l.status)), N'')), l.tentativas_canhoto)
                     ) etapa(entidade, status_etapa, tentativas)
-                    WHERE l.sistema_destino IN (%s)
+                    WHERE l.sistema_destino IN (:destinos)
                       AND l.data_processamento >= :dataInicial
                       AND l.data_processamento < :dataFinalLimit
                       AND NULLIF(LTRIM(RTRIM(COALESCE(etapa.status_etapa, N''))), N'') IS NOT NULL
@@ -246,11 +255,12 @@ public class IntegracaoAuditoriaQueryRepository {
                     SUM(CASE WHEN classe_status IN (N'ERRO', N'QUARENTENA') THEN 1 ELSE 0 END) DESC,
                     COUNT_BIG(1) DESC,
                     entidade_tabela ASC
-                """.formatted(DESTINOS_ANALITICOS_SQL);
+                """;
 
         MapSqlParameterSource params = new MapSqlParameterSource()
                 .addValue("dataInicial", dataInicial)
-                .addValue("dataFinalLimit", dataFinalLimit);
+                .addValue("dataFinalLimit", dataFinalLimit)
+                .addValue("destinos", destinos);
 
         return jdbcTemplate.query(sql, params, (rs, rowNum) -> new ResumoTabelaIntegracaoDTO(
                 rs.getString("entidade_tabela"),
@@ -266,6 +276,8 @@ public class IntegracaoAuditoriaQueryRepository {
         MapSqlParameterSource params = new MapSqlParameterSource();
 
         where.add("l.sistema_destino IN (" + DESTINOS_ANALITICOS_SQL + ")");
+        where.add("l.sistema_destino IN (:destinos)");
+        params.addValue("destinos", filtros.destinos());
         adicionarEscopo(where, filtros.escopo());
 
         adicionarBusca(where, params, filtros.tabelaBusca());
@@ -536,6 +548,7 @@ public class IntegracaoAuditoriaQueryRepository {
             String tabelaCodigo,
             List<String> tabelaStatus,
             Map<String, List<String>> filtrosColuna,
+            List<String> destinos,
             String escopo,
             String sortField,
             String sortDirection,

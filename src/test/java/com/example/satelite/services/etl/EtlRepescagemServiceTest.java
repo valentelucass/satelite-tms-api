@@ -3,6 +3,7 @@ package com.example.satelite.services.etl;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -75,5 +76,39 @@ class EtlRepescagemServiceTest {
         processadorCaptor.getValue().processar(null, null, erroParcial);
 
         verify(vedacitIntegrationService).processarOcorrencia(null, null, true, false);
+    }
+
+    @Test
+    void deveManterSeliaEmQuarentenaSemRepescagemGenerica() {
+        LogIntegracaoRepository repository = mock(LogIntegracaoRepository.class);
+        EtlRegistroService etlRegistroService = mock(EtlRegistroService.class);
+        EtlEstadoIntegracaoService etlEstadoIntegracaoService = mock(EtlEstadoIntegracaoService.class);
+        PpgIntegrationService ppgIntegrationService = mock(PpgIntegrationService.class);
+        VedacitIntegrationService vedacitIntegrationService = mock(VedacitIntegrationService.class);
+        EtlRepescagemService service = new EtlRepescagemService(
+                repository,
+                etlRegistroService,
+                etlEstadoIntegracaoService,
+                ppgIntegrationService,
+                vedacitIntegrationService
+        );
+        ReflectionTestUtils.setField(service, "intervaloEntreRegistrosMs", 0L);
+
+        LocalDateTime inicioCiclo = LocalDateTime.of(2026, 8, 5, 12, 0);
+        LogIntegracaoModel erroSelia = LogIntegracaoModel.builder()
+                .id(11L)
+                .sistemaDestino("SELIA")
+                .chaveNfe("35260560642774001209550010002155001385723840")
+                .status(ResultadoIntegracao.STATUS_ERRO_DESTINO)
+                .tentativasDados(3)
+                .tentativasCanhoto(3)
+                .build();
+
+        when(repository.findErrosManuaisDesde(inicioCiclo)).thenReturn(List.of(erroSelia));
+        when(repository.findErrosParciaisCanhotoPendentesRetry()).thenReturn(List.of());
+
+        service.executarRepescagem(inicioCiclo);
+
+        verify(etlRegistroService, never()).reprocessarLogExistente(any(), any(), any(), any());
     }
 }

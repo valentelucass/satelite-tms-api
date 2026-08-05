@@ -135,6 +135,13 @@ public class EtlRepescagemService {
             );
             return;
         }
+        if (DESTINO_SELIA.equals(destino)) {
+            log.warn(
+                    "⏭️ [SELIA] NF {}: repescagem genérica bloqueada; o reprocessamento exige fluxo SELIA específico.",
+                    registro.getChaveNfe()
+            );
+            return;
+        }
 
         log.warn(
                 "🎣 [{}] NF {}: iniciando repescagem. tentativas_dados={} tentativas_canhoto={}",

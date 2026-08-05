@@ -19,6 +19,7 @@ import java.util.stream.Stream;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnExpression;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -45,6 +46,7 @@ public class LogFileRetentionService {
     private final long maxTotalBytes;
     private final Clock clock;
 
+    @Autowired
     public LogFileRetentionService(
             @Value("${APP_LOG_RETENTION_DIRECTORY:logs}") String logsDirectory,
             @Value("${LOG_RETENTION_MAX_FILES:20}") int maxFiles,

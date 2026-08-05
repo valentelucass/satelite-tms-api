@@ -120,19 +120,20 @@ class IntegracaoAuditoriaQueryRepositoryTest {
         String sqlPendencias = capturarSqlTabela(jdbcTemplate);
         repository.buscarResumoTabelas(
                 LocalDateTime.of(2026, 6, 1, 0, 0),
-                LocalDateTime.of(2026, 7, 1, 0, 0)
+                LocalDateTime.of(2026, 7, 1, 0, 0),
+                List.of("PPG", "VEDACIT", "SELIA")
         );
 
         assertTrue(sqlPendencias.contains("'SELIA'"));
 
         Method metricas = LogIntegracaoRepository.class.getMethod(
-                "buscarMetricasIntegracoesClientes", LocalDateTime.class, LocalDateTime.class
+                "buscarMetricasIntegracoesClientes", LocalDateTime.class, LocalDateTime.class, List.class
         );
         Method evolucao = LogIntegracaoRepository.class.getMethod(
-                "buscarEvolucaoDiariaIntegracoes", LocalDateTime.class, LocalDateTime.class
+                "buscarEvolucaoDiariaIntegracoes", LocalDateTime.class, LocalDateTime.class, List.class
         );
-        assertTrue(metricas.getAnnotation(Query.class).value().contains("'SELIA'"));
-        assertTrue(evolucao.getAnnotation(Query.class).value().contains("'SELIA'"));
+        assertTrue(metricas.getAnnotation(Query.class).value().contains("IN (:destinos)"));
+        assertTrue(evolucao.getAnnotation(Query.class).value().contains("IN (:destinos)"));
         assertFalse(metricas.getAnnotation(Query.class).value().contains("SELIA_PLP"));
         assertFalse(evolucao.getAnnotation(Query.class).value().contains("SELIA_PLP"));
     }
@@ -175,13 +176,34 @@ class IntegracaoAuditoriaQueryRepositoryTest {
     }
 
     @Test
+    void deveExportarQuarentenaSomenteParaOsDestinosSelecionados() {
+        NamedParameterJdbcTemplate jdbcTemplate = criarJdbcTemplate();
+        IntegracaoAuditoriaQueryRepository repository = new IntegracaoAuditoriaQueryRepository(jdbcTemplate);
+
+        repository.exportarErrosQuarentena(List.of("PPG", "SELIA"), ignored -> { });
+
+        ArgumentCaptor<String> sqlCaptor = ArgumentCaptor.forClass(String.class);
+        ArgumentCaptor<MapSqlParameterSource> paramsCaptor = ArgumentCaptor.forClass(MapSqlParameterSource.class);
+        verify(jdbcTemplate).query(
+                sqlCaptor.capture(),
+                paramsCaptor.capture(),
+                ArgumentMatchers.<RowCallbackHandler>any()
+        );
+
+        assertTrue(sqlCaptor.getValue().contains("l.sistema_destino IN (:destinos)"));
+        assertFalse(sqlCaptor.getValue().contains("SELIA_PLP"));
+        assertEquals(List.of("PPG", "SELIA"), paramsCaptor.getValue().getValue("destinos"));
+    }
+
+    @Test
     void buscarResumoTabelasDeveAgruparEntidadesOperacionaisNoSqlServer() {
         NamedParameterJdbcTemplate jdbcTemplate = criarJdbcTemplate();
         IntegracaoAuditoriaQueryRepository repository = new IntegracaoAuditoriaQueryRepository(jdbcTemplate);
 
         repository.buscarResumoTabelas(
                 LocalDateTime.of(2026, 6, 1, 0, 0),
-                LocalDateTime.of(2026, 7, 1, 0, 0)
+                LocalDateTime.of(2026, 7, 1, 0, 0),
+                List.of("PPG", "VEDACIT", "SELIA")
         );
 
         ArgumentCaptor<String> sqlCaptor = ArgumentCaptor.forClass(String.class);
@@ -207,6 +229,16 @@ class IntegracaoAuditoriaQueryRepositoryTest {
         assertFalse(sql.contains("CAST(l.data_processamento AS DATE)"));
         assertEquals(LocalDateTime.of(2026, 6, 1, 0, 0), paramsCaptor.getValue().getValue("dataInicial"));
         assertEquals(LocalDateTime.of(2026, 7, 1, 0, 0), paramsCaptor.getValue().getValue("dataFinalLimit"));
+    }
+
+    @Test
+    void repositorioDeQuarentenaDeveRestringirConsultaAosDestinosAnaliticos() throws NoSuchMethodException {
+        Method errosManuais = LogIntegracaoRepository.class.getMethod("findErrosManuais", List.class, org.springframework.data.domain.Pageable.class);
+        Query query = errosManuais.getAnnotation(Query.class);
+
+        assertTrue(query.value().contains("l.sistemaDestino IN :destinos"));
+        assertTrue(query.countQuery().contains("l.sistemaDestino IN :destinos"));
+        assertFalse(query.value().contains("SELIA_PLP"));
     }
 
     private NamedParameterJdbcTemplate criarJdbcTemplate() {
@@ -238,11 +270,11 @@ class IntegracaoAuditoriaQueryRepositoryTest {
     }
 
     private Filtros filtros(String busca, String codigo, String escopo) {
-        return new Filtros(busca, codigo, List.of(), Map.of(), escopo, null, null, null, null);
+        return new Filtros(busca, codigo, List.of(), Map.of(), List.of("PPG", "VEDACIT", "SELIA"), escopo, null, null, null, null);
     }
 
     private Filtros filtrosComPeriodo(String dataInicial, String dataFinal) {
-        return new Filtros(null, null, List.of(), Map.of(), null, null, null, dataInicial, dataFinal);
+        return new Filtros(null, null, List.of(), Map.of(), List.of("PPG", "VEDACIT", "SELIA"), null, null, null, dataInicial, dataFinal);
     }
 
     private record ConsultaTabela(String sql, MapSqlParameterSource params) {

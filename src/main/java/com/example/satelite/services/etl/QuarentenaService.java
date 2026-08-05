@@ -9,8 +9,10 @@ import java.util.function.Consumer;
 
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.server.ResponseStatusException;
 
 import com.example.satelite.dto.etl.QuarentenaErroManualDTO;
 import com.example.satelite.dto.etl.QuarentenaErroManualExportacaoDTO;
@@ -21,7 +23,9 @@ import com.example.satelite.repositories.LogIntegracaoRepository;
 @Service
 public class QuarentenaService {
 
-    private static final Set<String> DESTINOS_VALIDOS = Set.of("PPG", "VEDACIT");
+    private static final List<String> DESTINOS_CONSULTA = List.of("PPG", "VEDACIT", "SELIA");
+    private static final Set<String> DESTINOS_CONSULTA_VALIDOS = Set.copyOf(DESTINOS_CONSULTA);
+    private static final Set<String> DESTINOS_REPROCESSAVEIS = Set.of("PPG", "VEDACIT");
     private static final Pattern TAGS_HTML = Pattern.compile("<[^>]+>");
     private static final Pattern ESPACOS = Pattern.compile("\\s+");
 
@@ -37,21 +41,27 @@ public class QuarentenaService {
     }
 
     public List<LogIntegracaoModel> findQuarentenaByDestino(String destino) {
-        return logIntegracaoRepository.findQuarentenaByDestino(normalizarDestino(destino));
+        return logIntegracaoRepository.findQuarentenaByDestino(normalizarDestinoConsulta(destino));
     }
 
-    public Page<QuarentenaErroManualDTO> buscarErrosManuais(Pageable pageable) {
-        return logIntegracaoRepository.findErrosManuais(pageable)
+    public Page<QuarentenaErroManualDTO> buscarErrosManuais(Pageable pageable, List<String> destinosRecebidos) {
+        return logIntegracaoRepository.findErrosManuais(normalizarDestinosConsulta(destinosRecebidos), pageable)
                 .map(this::mapearErroManual);
     }
 
-    public void exportarErrosManuais(Consumer<QuarentenaErroManualDTO> consumidor) {
-        integracaoAuditoriaQueryRepository.exportarErrosQuarentena(item -> consumidor.accept(mapearErroManual(item)));
+    public void exportarErrosManuais(
+            List<String> destinosRecebidos,
+            Consumer<QuarentenaErroManualDTO> consumidor
+    ) {
+        integracaoAuditoriaQueryRepository.exportarErrosQuarentena(
+                normalizarDestinosConsulta(destinosRecebidos),
+                item -> consumidor.accept(mapearErroManual(item))
+        );
     }
 
     @Transactional
     public ResultadoReprocessamento reprocessar(String destino) {
-        String destinoNormalizado = normalizarDestino(destino);
+        String destinoNormalizado = normalizarDestinoReprocessamento(destino);
         int quantidade = logIntegracaoRepository.resetarQuarentenaByDestino(destinoNormalizado);
         return new ResultadoReprocessamento(destinoNormalizado, quantidade);
     }
@@ -201,17 +211,44 @@ public class QuarentenaService {
         }
     }
 
-    private String normalizarDestino(String destino) {
+    private List<String> normalizarDestinosConsulta(List<String> destinosRecebidos) {
+        List<String> destinos = destinosRecebidos == null ? List.of() : destinosRecebidos.stream()
+                .map(this::normalizarTexto)
+                .filter(destino -> !destino.isEmpty())
+                .distinct()
+                .toList();
+        if (destinos.isEmpty()) {
+            return DESTINOS_CONSULTA;
+        }
+        if (destinos.stream().anyMatch(destino -> !DESTINOS_CONSULTA_VALIDOS.contains(destino))) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Destino de integração inválido.");
+        }
+        return destinos;
+    }
+
+    private String normalizarDestinoConsulta(String destino) {
+        List<String> destinos = normalizarDestinosConsulta(destino == null ? List.of() : List.of(destino));
+        if (destinos.size() != 1) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Destino de integração inválido.");
+        }
+        return destinos.get(0);
+    }
+
+    private String normalizarDestinoReprocessamento(String destino) {
         if (destino == null || destino.isBlank()) {
             throw new IllegalArgumentException("Destino invalido. Use PPG ou VEDACIT.");
         }
 
-        String destinoNormalizado = destino.trim().toUpperCase(Locale.ROOT);
-        if (!DESTINOS_VALIDOS.contains(destinoNormalizado)) {
+        String destinoNormalizado = normalizarTexto(destino);
+        if (!DESTINOS_REPROCESSAVEIS.contains(destinoNormalizado)) {
             throw new IllegalArgumentException("Destino invalido. Use PPG ou VEDACIT.");
         }
 
         return destinoNormalizado;
+    }
+
+    private String normalizarTexto(String destino) {
+        return destino == null ? "" : destino.trim().toUpperCase(Locale.ROOT);
     }
 
     public record ResultadoReprocessamento(String destino, int quantidadeNotas) {

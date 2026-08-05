@@ -81,17 +81,19 @@ public class IntegracaoAuditoriaController {
     @GetMapping("/integracoes-clientes/evolucao-diaria")
     public List<IntegracaoEvolucaoDiariaDTO> consultarEvolucaoDiaria(
             @RequestParam String dataInicial,
-            @RequestParam String dataFinal
+            @RequestParam String dataFinal,
+            @RequestParam(required = false) List<String> destino
     ) {
-        return integracaoAuditoriaService.consultarEvolucaoDiaria(dataInicial, dataFinal);
+        return integracaoAuditoriaService.consultarEvolucaoDiaria(dataInicial, dataFinal, destino);
     }
 
     @GetMapping("/integracoes-clientes/resumo-tabelas")
     public List<ResumoTabelaIntegracaoDTO> consultarResumoTabelas(
             @RequestParam String dataInicial,
-            @RequestParam String dataFinal
+            @RequestParam String dataFinal,
+            @RequestParam(required = false) List<String> destino
     ) {
-        return integracaoAuditoriaService.consultarResumoTabelas(dataInicial, dataFinal);
+        return integracaoAuditoriaService.consultarResumoTabelas(dataInicial, dataFinal, destino);
     }
 
     @GetMapping(value = "/logs/{id}/imagem", produces = MediaType.TEXT_PLAIN_VALUE)

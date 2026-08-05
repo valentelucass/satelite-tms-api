@@ -78,6 +78,7 @@ public interface LogIntegracaoRepository extends JpaRepository<LogIntegracaoMode
                     FROM LogIntegracaoModel l
                     WHERE l.status = 'ERRO_DESTINO'
                       AND (l.tentativasDados >= 3 OR l.tentativasCanhoto >= 3)
+                      AND l.sistemaDestino IN :destinos
                     ORDER BY l.dataProcessamento DESC, l.id DESC
                     """,
             countQuery = """
@@ -85,9 +86,10 @@ public interface LogIntegracaoRepository extends JpaRepository<LogIntegracaoMode
                     FROM LogIntegracaoModel l
                     WHERE l.status = 'ERRO_DESTINO'
                       AND (l.tentativasDados >= 3 OR l.tentativasCanhoto >= 3)
+                      AND l.sistemaDestino IN :destinos
                     """
     )
-    Page<LogIntegracaoModel> findErrosManuais(Pageable pageable);
+    Page<LogIntegracaoModel> findErrosManuais(@Param("destinos") List<String> destinos, Pageable pageable);
 
     @Modifying(clearAutomatically = true, flushAutomatically = true)
     @Query("""
@@ -139,12 +141,14 @@ public interface LogIntegracaoRepository extends JpaRepository<LogIntegracaoMode
                 ON l.sistema_destino = d.sistema_destino
                AND l.data_processamento >= :dataInicial
                AND l.data_processamento < :dataFinalLimit
+            WHERE d.sistema_destino IN (:destinos)
             GROUP BY d.sistema_destino
             ORDER BY d.sistema_destino
             """, nativeQuery = true)
     List<MetricaIntegracaoClienteProjection> buscarMetricasIntegracoesClientes(
             @Param("dataInicial") LocalDateTime dataInicial,
-            @Param("dataFinalLimit") LocalDateTime dataFinalLimit
+            @Param("dataFinalLimit") LocalDateTime dataFinalLimit,
+            @Param("destinos") List<String> destinos
     );
 
     @Query(value = """
@@ -166,7 +170,7 @@ public interface LogIntegracaoRepository extends JpaRepository<LogIntegracaoMode
                     )
                     THEN 0 ELSE 1 END) AS erros
             FROM dbo.tb_log_integracao l
-            WHERE l.sistema_destino IN ('VEDACIT', 'PPG', 'SELIA')
+            WHERE l.sistema_destino IN (:destinos)
               AND l.data_processamento >= :dataInicial
               AND l.data_processamento < :dataFinalLimit
             GROUP BY CAST(l.data_processamento AS DATE)
@@ -174,7 +178,8 @@ public interface LogIntegracaoRepository extends JpaRepository<LogIntegracaoMode
             """, nativeQuery = true)
     List<IntegracaoEvolucaoDiariaProjection> buscarEvolucaoDiariaIntegracoes(
             @Param("dataInicial") LocalDateTime dataInicial,
-            @Param("dataFinalLimit") LocalDateTime dataFinalLimit
+            @Param("dataFinalLimit") LocalDateTime dataFinalLimit,
+            @Param("destinos") List<String> destinos
     );
 
     @Query(

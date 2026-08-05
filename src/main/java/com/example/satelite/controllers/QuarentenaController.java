@@ -1,6 +1,7 @@
 package com.example.satelite.controllers;
 
 import java.nio.charset.StandardCharsets;
+import java.util.List;
 
 import org.springframework.http.ContentDisposition;
 import org.springframework.http.HttpHeaders;
@@ -35,19 +36,22 @@ public class QuarentenaController {
     @GetMapping("/erros")
     public Page<QuarentenaErroManualDTO> listarErrosManuais(
             @RequestParam(defaultValue = "0") int pagina,
-            @RequestParam(defaultValue = "100") int tamanho
+            @RequestParam(defaultValue = "100") int tamanho,
+            @RequestParam(required = false) List<String> destino
     ) {
         int paginaNormalizada = Math.max(0, pagina);
         int tamanhoNormalizado = Math.max(1, Math.min(tamanho, 500));
-        return quarentenaService.buscarErrosManuais(PageRequest.of(paginaNormalizada, tamanhoNormalizado));
+        return quarentenaService.buscarErrosManuais(PageRequest.of(paginaNormalizada, tamanhoNormalizado), destino);
     }
 
     @GetMapping(value = "/erros/exportacao", produces = "text/csv")
-    public ResponseEntity<StreamingResponseBody> exportarErrosManuais() {
+    public ResponseEntity<StreamingResponseBody> exportarErrosManuais(
+            @RequestParam(required = false) List<String> destino
+    ) {
         StreamingResponseBody corpo = outputStream -> {
             CsvStreamWriter csv = new CsvStreamWriter(outputStream);
             csv.escreverCabecalho("Destino", "NF", "Acao necessaria", "Chave NF-e", "Tentativas", "Ultima tentativa");
-            quarentenaService.exportarErrosManuais(item -> csv.escreverLinha(
+            quarentenaService.exportarErrosManuais(destino, item -> csv.escreverLinha(
                     item.destino(), item.numeroNf(), item.erroLimpo(), item.chaveNfe(),
                     item.tentativas(), item.dataUltimaTentativa()
             ));
