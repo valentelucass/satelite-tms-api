@@ -32,6 +32,7 @@ public class EtlFluxoDestinoService {
             DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss.SSSXXX");
     private static final String DESTINO_PPG = "PPG";
     private static final String DESTINO_SELIA = "SELIA";
+    private static final String DESTINO_SUPPORTE = "SUPPORTE";
     private static final String DESTINO_VEDACIT = "VEDACIT";
     private static final int LOOKBACK_INCREMENTAL_HORAS_PADRAO = 24;
     private static final int LIMITE_PADRAO_FALHAS_INFRAESTRUTURA_CONSECUTIVAS = 10;
@@ -59,6 +60,12 @@ public class EtlFluxoDestinoService {
 
     @Value("${app.selia.nfe-whitelist:}")
     private String seliaNfeWhitelist;
+
+    @Value("${app.supporte.nfe-whitelist-enabled:false}")
+    private boolean supporteNfeWhitelistEnabled;
+
+    @Value("${app.supporte.nfe-whitelist:}")
+    private String supporteNfeWhitelist;
 
     @Value("${ETL_CIRCUIT_BREAKER_TRANSIENT_FAILURE_THRESHOLD:10}")
     private int limiteFalhasInfraestruturaConsecutivasCircuitBreaker;
@@ -596,6 +603,10 @@ public class EtlFluxoDestinoService {
 
         if (DESTINO_SELIA.equals(destino) && seliaNfeWhitelistEnabled) {
             return seliaNfeWhitelist;
+        }
+
+        if (DESTINO_SUPPORTE.equals(destino) && supporteNfeWhitelistEnabled) {
+            return supporteNfeWhitelist;
         }
 
         if (DESTINO_VEDACIT.equals(destino) && vedacitNfeWhitelistEnabled) {

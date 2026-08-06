@@ -27,7 +27,7 @@ public class IntegracaoAuditoriaQueryRepository {
 
     private static final String NUMERO_NF_EXPR = "TRY_CAST(SUBSTRING(l.chave_nfe, 26, 9) AS BIGINT)";
     private static final String SERIE_NF_EXPR = "SUBSTRING(l.chave_nfe, 23, 3)";
-    private static final String DESTINOS_ANALITICOS_SQL = "'VEDACIT', 'PPG', 'SELIA'";
+    private static final String DESTINOS_ANALITICOS_SQL = "'VEDACIT', 'PPG', 'SELIA', 'SUPPORTE'";
     private static final String STATUS_DADOS_EXPR =
             "COALESCE(NULLIF(TRIM(l.status_dados), ''), NULLIF(TRIM(l.status), ''))";
     private static final String FILTRO_ERRO_PARCIAL_CANHOTO_RETRY = """

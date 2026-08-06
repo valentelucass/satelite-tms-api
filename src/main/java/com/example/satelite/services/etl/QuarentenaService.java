@@ -23,7 +23,7 @@ import com.example.satelite.repositories.LogIntegracaoRepository;
 @Service
 public class QuarentenaService {
 
-    private static final List<String> DESTINOS_CONSULTA = List.of("PPG", "VEDACIT", "SELIA");
+    private static final List<String> DESTINOS_CONSULTA = List.of("PPG", "VEDACIT", "SELIA", "SUPPORTE");
     private static final Set<String> DESTINOS_CONSULTA_VALIDOS = Set.copyOf(DESTINOS_CONSULTA);
     private static final Set<String> DESTINOS_REPROCESSAVEIS = Set.of("PPG", "VEDACIT");
     private static final Pattern TAGS_HTML = Pattern.compile("<[^>]+>");

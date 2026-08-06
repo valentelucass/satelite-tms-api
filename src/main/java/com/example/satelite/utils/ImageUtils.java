@@ -100,6 +100,25 @@ public class ImageUtils {
         return imagemComprimida;
     }
 
+    /**
+     * Normaliza uma imagem ou a primeira página de um PDF para JPEG, preservando o conteúdo
+     * para destinos REST que exigem Base64 com MIME image/jpeg sem o limite específico Vedacit.
+     */
+    public static byte[] converterParaJpeg(byte[] imagemOriginal) throws IOException {
+        if (imagemOriginal == null || imagemOriginal.length == 0) {
+            throw new IllegalArgumentException("Imagem original ausente para conversao JPEG");
+        }
+
+        BufferedImage imagemLida = ehPdf(imagemOriginal)
+                ? renderizarPrimeiraPaginaPdf(imagemOriginal)
+                : ImageIO.read(new ByteArrayInputStream(imagemOriginal));
+        if (imagemLida == null) {
+            throw new IOException("Formato de imagem nao suportado para conversao JPEG");
+        }
+
+        return escreverJpegComQualidade(converterParaRgbComFundoBranco(imagemLida), 0.85f);
+    }
+
     private static BufferedImage renderizarPrimeiraPaginaPdf(byte[] arquivoPdf) throws IOException {
         log.info(
                 "Compressao Vedacit: PDF detectado por magic bytes. Renderizando primeira pagina para JPEG. tamanhoBytes={}",

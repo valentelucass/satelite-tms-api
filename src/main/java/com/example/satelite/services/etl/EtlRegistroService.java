@@ -19,6 +19,7 @@ import com.example.satelite.services.ResultadoIntegracao;
 import com.example.satelite.services.etl.EslRequestPolicyService.EslRequestTransientException;
 import com.example.satelite.services.ppg.PpgIntegrationService;
 import com.example.satelite.services.selia.SeliaIntegrationService;
+import com.example.satelite.services.supporte.SupporteIntegrationService;
 import com.example.satelite.services.vedacit.VedacitIntegrationService;
 
 @Service
@@ -29,6 +30,7 @@ public class EtlRegistroService {
     private static final int CODIGO_ENTREGA_REALIZADA = 1;
     private static final String DESTINO_PPG = "PPG";
     private static final String DESTINO_SELIA = "SELIA";
+    private static final String DESTINO_SUPPORTE = "SUPPORTE";
     private static final String DESTINO_VEDACIT = "VEDACIT";
     private static final String STATUS_RECEBIDO = ResultadoIntegracao.STATUS_RECEBIDO;
     private static final String STATUS_PENDENTE_FOTO = ResultadoIntegracao.STATUS_PENDENTE_FOTO;
@@ -46,6 +48,7 @@ public class EtlRegistroService {
     private final PpgIntegrationService ppgIntegrationService;
     private final VedacitIntegrationService vedacitIntegrationService;
     private final SeliaIntegrationService seliaIntegrationService;
+    private final SupporteIntegrationService supporteIntegrationService;
 
     @Value("${APP_E2E_IMAGE_TEST_MODE:false}")
     private boolean modoTesteE2eImagem;
@@ -56,6 +59,9 @@ public class EtlRegistroService {
     @Value("${RODOGARCIA_TOKEN_SELIA_COMPROVANTE:}")
     private String tokenSeliaComprovanteEsl;
 
+    @Value("${RODOGARCIA_TOKEN_SUPPORTE_COMPROVANTE:}")
+    private String tokenSupporteComprovanteEsl;
+
     @Autowired
     public EtlRegistroService(
             RodogarciaClient rodogarciaClient,
@@ -64,7 +70,8 @@ public class EtlRegistroService {
             EtlEstadoIntegracaoService etlEstadoIntegracaoService,
             PpgIntegrationService ppgIntegrationService,
             VedacitIntegrationService vedacitIntegrationService,
-            SeliaIntegrationService seliaIntegrationService
+            SeliaIntegrationService seliaIntegrationService,
+            SupporteIntegrationService supporteIntegrationService
     ) {
         this.rodogarciaClient = rodogarciaClient;
         this.eslRequestPolicyService = eslRequestPolicyService;
@@ -73,6 +80,7 @@ public class EtlRegistroService {
         this.ppgIntegrationService = ppgIntegrationService;
         this.vedacitIntegrationService = vedacitIntegrationService;
         this.seliaIntegrationService = seliaIntegrationService;
+        this.supporteIntegrationService = supporteIntegrationService;
     }
 
     public EtlRegistroService(
@@ -90,6 +98,28 @@ public class EtlRegistroService {
                 etlEstadoIntegracaoService,
                 ppgIntegrationService,
                 vedacitIntegrationService,
+                null,
+                null
+        );
+    }
+
+    public EtlRegistroService(
+            RodogarciaClient rodogarciaClient,
+            EslRequestPolicyService eslRequestPolicyService,
+            EtlResilienciaService etlResilienciaService,
+            EtlEstadoIntegracaoService etlEstadoIntegracaoService,
+            PpgIntegrationService ppgIntegrationService,
+            VedacitIntegrationService vedacitIntegrationService,
+            SeliaIntegrationService seliaIntegrationService
+    ) {
+        this(
+                rodogarciaClient,
+                eslRequestPolicyService,
+                etlResilienciaService,
+                etlEstadoIntegracaoService,
+                ppgIntegrationService,
+                vedacitIntegrationService,
+                seliaIntegrationService,
                 null
         );
     }
@@ -495,14 +525,20 @@ public class EtlRegistroService {
         return ResultadoBuscaComprovante.encontrado(comprovante);
     }
 
-    private String obterHeaderComprovante(String destino, String headerAuth) {
-        if (!DESTINO_SELIA.equals(destino)
-                || tokenSeliaComprovanteEsl == null
-                || tokenSeliaComprovanteEsl.isBlank()) {
-            return headerAuth;
+    String obterHeaderComprovante(String destino, String headerAuth) {
+        if (DESTINO_SELIA.equals(destino)
+                && tokenSeliaComprovanteEsl != null
+                && !tokenSeliaComprovanteEsl.isBlank()) {
+            return "Bearer " + tokenSeliaComprovanteEsl.trim();
         }
 
-        return "Bearer " + tokenSeliaComprovanteEsl.trim();
+        if (DESTINO_SUPPORTE.equals(destino)
+                && tokenSupporteComprovanteEsl != null
+                && !tokenSupporteComprovanteEsl.isBlank()) {
+            return "Bearer " + tokenSupporteComprovanteEsl.trim();
+        }
+
+        return headerAuth;
     }
 
     private ComprovanteEslDTO prepararComprovanteParaModoTeste(
@@ -610,6 +646,10 @@ public class EtlRegistroService {
 
         if (DESTINO_SELIA.equals(destino)) {
             return seliaIntegrationService != null && seliaIntegrationService.notaFiscalPermitida(ocorrencia);
+        }
+
+        if (DESTINO_SUPPORTE.equals(destino)) {
+            return supporteIntegrationService != null && supporteIntegrationService.notaFiscalPermitida(ocorrencia);
         }
 
         return true;

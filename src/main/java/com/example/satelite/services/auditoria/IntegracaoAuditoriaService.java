@@ -43,7 +43,7 @@ public class IntegracaoAuditoriaService {
     private static final int TAMANHO_MAXIMO = 500;
     private static final String DESTINO_PPG = "PPG";
     private static final String DESTINO_SELIA = "SELIA";
-    private static final List<String> DESTINOS_ANALITICOS = List.of("PPG", "VEDACIT", "SELIA");
+    private static final List<String> DESTINOS_ANALITICOS = List.of("PPG", "VEDACIT", "SELIA", "SUPPORTE");
     private static final Set<String> DESTINOS_ANALITICOS_VALIDOS = Set.copyOf(DESTINOS_ANALITICOS);
     private static final String PARAM_DESTINO = "destino";
     private static final String PARAM_TABELA_BUSCA = "f.tabelaBusca";
@@ -184,11 +184,19 @@ public class IntegracaoAuditoriaService {
     }
 
     private String rotuloDados(String sistemaDestino) {
-        return DESTINO_SELIA.equals(normalizarDestino(sistemaDestino)) ? "AddEvents" : "XML/Dados";
+        String destino = normalizarDestino(sistemaDestino);
+        if (DESTINO_SELIA.equals(destino)) {
+            return "AddEvents";
+        }
+        return "SUPPORTE".equals(destino) ? "Ocorrência" : "XML/Dados";
     }
 
     private String rotuloComprovante(String sistemaDestino) {
-        return DESTINO_SELIA.equals(normalizarDestino(sistemaDestino)) ? "POD/Comprovante" : "Canhoto";
+        String destino = normalizarDestino(sistemaDestino);
+        if (DESTINO_SELIA.equals(destino)) {
+            return "POD/Comprovante";
+        }
+        return "SUPPORTE".equals(destino) ? "Comprovante" : "Canhoto";
     }
 
     private String normalizarDestino(String sistemaDestino) {
