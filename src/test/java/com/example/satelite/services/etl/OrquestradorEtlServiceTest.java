@@ -25,6 +25,7 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
 import java.util.Objects;
+import java.util.Set;
 import java.util.function.Supplier;
 import java.util.stream.LongStream;
 
@@ -51,6 +52,7 @@ import com.example.satelite.repositories.IntegracaoAuditoriaQueryRepository;
 import com.example.satelite.repositories.LogIntegracaoRepository;
 import com.example.satelite.services.ResultadoIntegracao;
 import com.example.satelite.services.ppg.PpgIntegrationService;
+import com.example.satelite.services.selia.SeliaIntegrationService;
 import com.example.satelite.services.vedacit.VedacitIntegrationService;
 
 import feign.FeignException;
@@ -111,8 +113,9 @@ class OrquestradorEtlServiceTest {
     }
 
     @Test
-    void deveBuscarOcorrenciasComUltimoCursorPersistido() {
+    void devePriorizarCursorPersistidoSemCombinarComLookbackTemporal() {
         Dependencias dependencias = criarDependencias();
+        ReflectionTestUtils.setField(dependencias.etlFluxoDestinoService(), "lookbackIncrementalHoras", 24);
         ControleCursor cursor = ControleCursor.builder()
                 .cursorNextId(123L)
                 .sistemaDestino("PPG")
@@ -131,6 +134,72 @@ class OrquestradorEtlServiceTest {
         verify(dependencias.rodogarciaClient()).buscarOcorrencias("Bearer token-ppg", 123L, null, null, 1);
         verify(dependencias.rodogarciaClient()).buscarOcorrencias("Bearer token-vedacit", 123L, null, null, 1);
         verify(dependencias.eslRequestPolicyService(), times(2)).executar(anyString(), any());
+    }
+
+    @Test
+    void deveConsultarQuarentenaSomenteDoDestinoExecutado() {
+        Dependencias dependencias = criarDependencias();
+        when(dependencias.controleCursorRepository().findBySistemaDestino("PPG")).thenReturn(Optional.empty());
+        when(dependencias.rodogarciaClient().buscarOcorrencias(
+                eq("Bearer token-ppg"), isNull(), isNull(), isNull(), eq(1)
+        )).thenReturn(loteVazio());
+
+        dependencias.service().executarFluxosComResultado(new ExecucaoEtlRequest(
+                ExecucaoEtlRequest.ModoExecucao.INCREMENTAL,
+                null,
+                null,
+                Set.of("PPG"),
+                true,
+                true,
+                true,
+                1
+        ));
+
+        verify(dependencias.logIntegracaoRepository()).findQuarentenaByDestino("PPG");
+        verify(dependencias.logIntegracaoRepository(), times(0)).findQuarentenaByDestino("SELIA");
+        verify(dependencias.logIntegracaoRepository(), times(0)).findQuarentenaByDestino("SUPPORTE");
+        verify(dependencias.logIntegracaoRepository(), times(0)).findQuarentenaByDestino("VEDACIT");
+    }
+
+    @Test
+    void deveConsultarQuarentenaSomenteDaSeliaNoDisparoIsolado() {
+        Dependencias dependencias = criarDependencias();
+        SeliaIntegrationService seliaIntegrationService = mock(SeliaIntegrationService.class);
+        OrquestradorEtlService service = new OrquestradorEtlService(
+                dependencias.ppgIntegrationService(),
+                seliaIntegrationService,
+                null,
+                dependencias.vedacitIntegrationService(),
+                dependencias.etlEstadoIntegracaoService(),
+                dependencias.etlFluxoDestinoService(),
+                new QuarentenaService(dependencias.logIntegracaoRepository(), mock(IntegracaoAuditoriaQueryRepository.class)),
+                dependencias.etlRepescagemService()
+        );
+        ReflectionTestUtils.setField(service, "tokenSeliaEsl", "token-selia");
+        ReflectionTestUtils.setField(service, "ppgEnabled", false);
+        ReflectionTestUtils.setField(service, "vedacitEnabled", false);
+        ReflectionTestUtils.setField(service, "seliaEnabled", true);
+        ReflectionTestUtils.setField(service, "repescagemEnabled", false);
+        when(dependencias.controleCursorRepository().findBySistemaDestino("SELIA")).thenReturn(Optional.empty());
+        when(dependencias.rodogarciaClient().buscarOcorrencias(
+                eq("Bearer token-selia"), isNull(), isNull(), isNull(), eq(1)
+        )).thenReturn(loteVazio());
+
+        service.executarFluxosComResultado(new ExecucaoEtlRequest(
+                ExecucaoEtlRequest.ModoExecucao.INCREMENTAL,
+                null,
+                null,
+                Set.of("SELIA"),
+                true,
+                true,
+                true,
+                1
+        ));
+
+        verify(dependencias.logIntegracaoRepository()).findQuarentenaByDestino("SELIA");
+        verify(dependencias.logIntegracaoRepository(), times(0)).findQuarentenaByDestino("PPG");
+        verify(dependencias.logIntegracaoRepository(), times(0)).findQuarentenaByDestino("SUPPORTE");
+        verify(dependencias.logIntegracaoRepository(), times(0)).findQuarentenaByDestino("VEDACIT");
     }
 
     @Test
@@ -615,7 +684,7 @@ class OrquestradorEtlServiceTest {
                 eq("Bearer token-ppg"),
                 eq(99L),
                 isNull(),
-                eq("2026-06-01T00:00:00.000-03:00"),
+                isNull(),
                 eq(1)
         ))
                 .thenReturn(loteVazio());
@@ -642,7 +711,7 @@ class OrquestradorEtlServiceTest {
                 "Bearer token-ppg",
                 99L,
                 null,
-                "2026-06-01T00:00:00.000-03:00",
+                null,
                 1
         );
         verify(dependencias.controleCursorRepository(), times(0)).save(any());

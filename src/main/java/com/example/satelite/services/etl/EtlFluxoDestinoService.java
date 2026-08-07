@@ -118,7 +118,9 @@ public class EtlFluxoDestinoService {
 
             while (true) {
                 String invoiceKeyParam = request.retroativo() ? null : obterInvoiceKeyParam(destino);
-                String sinceParam = invoiceKeyParam == null ? obterSinceParam(request) : null;
+                String sinceParam = invoiceKeyParam == null && cursorAtual == null
+                        ? obterSinceParam(request)
+                        : null;
                 log.info(
                         "🔎 [DESTINO: {}] Página {}: buscando ocorrências a partir do cursor {}. invoice_key={} since={} occurrence_code={}",
                         destino,

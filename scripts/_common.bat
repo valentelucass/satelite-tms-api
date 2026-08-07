@@ -6,6 +6,11 @@ for %%I in ("%SCRIPT_DIR%..") do set "PROJECT_ROOT=%%~fI"
 set "ALLOWED_DB_NAME=SATELITE_TMS_AUDITORIA"
 set "DEFAULT_DB_URL=jdbc:sqlserver://localhost:1433;databaseName=SATELITE_TMS_AUDITORIA;encrypt=true;trustServerCertificate=true"
 set "JAR_PATH=%PROJECT_ROOT%\target\satelite-0.0.1-SNAPSHOT.jar"
+set "JAVA_17_EXECUTABLE=%PROJECT_ROOT%\.tools\temurin17\jdk-17.0.19+10\bin\java.exe"
+set "SATELITE_RUNTIME_CLASSES=%PROJECT_ROOT%\target\classes"
+set "SATELITE_RUNTIME_LIBS=%PROJECT_ROOT%\target\selia-worker-inspect\BOOT-INF\lib\*"
+set "SATELITE_CLASS_PATH=%SATELITE_RUNTIME_CLASSES%;%SATELITE_RUNTIME_LIBS%"
+set "SATELITE_RUNTIME_CLASSPATH_AVAILABLE=false"
 set "PORTA_API=9090"
 set "LOGS_DIR=%PROJECT_ROOT%\logs"
 set "BACKGROUND_INTERVAL_MS=900000"
@@ -47,6 +52,10 @@ if /I "%COMMON_REQUIRE_JAR%"=="true" (
         exit /b 1
     )
 )
+
+if exist "%JAVA_17_EXECUTABLE%" set "JAVA_EXECUTABLE=%JAVA_17_EXECUTABLE%"
+if not defined JAVA_EXECUTABLE set "JAVA_EXECUTABLE=java"
+if exist "%SATELITE_RUNTIME_CLASSES%\com\example\satelite\SateliteApplication.class" if exist "%PROJECT_ROOT%\target\selia-worker-inspect\BOOT-INF\lib" set "SATELITE_RUNTIME_CLASSPATH_AVAILABLE=true"
 
 if not exist "%LOGS_DIR%" mkdir "%LOGS_DIR%" >nul 2>&1
 

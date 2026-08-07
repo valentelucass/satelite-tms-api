@@ -10,12 +10,16 @@ if errorlevel 1 exit /b 1
 set "SATELITE_MODO=%~1"
 set "APP_VEDACIT_ENABLED=%~2"
 set "APP_PPG_ENABLED=%~3"
-set "LOG_FILE=%~4"
-set "APP_SCHEDULER_ENABLED=%~5"
+set "APP_SELIA_ENABLED=%~4"
+set "APP_SUPPORTE_ENABLED=%~5"
+set "LOG_FILE=%~6"
+set "APP_SCHEDULER_ENABLED=%~7"
 
 if "%SATELITE_MODO%"=="" set "SATELITE_MODO=Loop 15 min Vedacit + PPG"
 if "%APP_VEDACIT_ENABLED%"=="" set "APP_VEDACIT_ENABLED=true"
 if "%APP_PPG_ENABLED%"=="" set "APP_PPG_ENABLED=true"
+if "%APP_SELIA_ENABLED%"=="" set "APP_SELIA_ENABLED=false"
+if "%APP_SUPPORTE_ENABLED%"=="" set "APP_SUPPORTE_ENABLED=false"
 if "%LOG_FILE%"=="" set "LOG_FILE=logs\satelite_background.log"
 if "%APP_SCHEDULER_ENABLED%"=="" set "APP_SCHEDULER_ENABLED=true"
 
@@ -41,9 +45,7 @@ if not "%PORT_TO_TEST%"=="%PORTA_API_ORIGINAL%" (
 )
 set "PORTA_API=%PORT_TO_TEST%"
 
-set "JAVA_LAUNCHER=javaw"
-where javaw.exe >nul 2>&1
-if errorlevel 1 set "JAVA_LAUNCHER=java"
+set "JAVA_LAUNCHER=%JAVA_EXECUTABLE%"
 
 echo Iniciando modo [%SATELITE_MODO%] em background...
 echo Porta: %PORTA_API%
@@ -51,7 +53,11 @@ echo Scheduler habilitado: %APP_SCHEDULER_ENABLED%
 if /I "%APP_SCHEDULER_ENABLED%"=="true" echo Intervalo do loop: 15 min
 echo Log: %LOG_FILE_ABS%
 
-START "Satelite %SATELITE_MODO%" /MIN "%JAVA_LAUNCHER%" -jar "%JAR_PATH%" "--debug=false" "--APP_SCHEDULER_ENABLED=%APP_SCHEDULER_ENABLED%" "--APP_CICLO_UNICO=false" "--APP_PPG_ENABLED=%APP_PPG_ENABLED%" "--APP_VEDACIT_ENABLED=%APP_VEDACIT_ENABLED%" "--server.port=%PORT_TO_TEST%" "--spring.main.web-application-type=servlet" "--INTEGRATION_SCHEDULER_INTERVAL_MS=%BACKGROUND_INTERVAL_MS%" 1^> "%LOG_FILE_ABS%" 2^>^&1
+if /I "%SATELITE_RUNTIME_CLASSPATH_AVAILABLE%"=="true" (
+    START "Satelite %SATELITE_MODO%" /MIN "%JAVA_LAUNCHER%" -cp "%SATELITE_CLASS_PATH%" com.example.satelite.SateliteApplication "--debug=false" "--APP_SCHEDULER_ENABLED=%APP_SCHEDULER_ENABLED%" "--APP_CICLO_UNICO=false" "--APP_PPG_ENABLED=%APP_PPG_ENABLED%" "--APP_VEDACIT_ENABLED=%APP_VEDACIT_ENABLED%" "--APP_SELIA_ENABLED=%APP_SELIA_ENABLED%" "--APP_SUPPORTE_ENABLED=%APP_SUPPORTE_ENABLED%" "--SELIA_NFE_WHITELIST_ENABLED=false" "--server.port=%PORT_TO_TEST%" "--spring.main.web-application-type=servlet" "--INTEGRATION_SCHEDULER_INTERVAL_MS=%BACKGROUND_INTERVAL_MS%" 1^> "%LOG_FILE_ABS%" 2^>^&1
+) else (
+    START "Satelite %SATELITE_MODO%" /MIN "%JAVA_LAUNCHER%" -jar "%JAR_PATH%" "--debug=false" "--APP_SCHEDULER_ENABLED=%APP_SCHEDULER_ENABLED%" "--APP_CICLO_UNICO=false" "--APP_PPG_ENABLED=%APP_PPG_ENABLED%" "--APP_VEDACIT_ENABLED=%APP_VEDACIT_ENABLED%" "--APP_SELIA_ENABLED=%APP_SELIA_ENABLED%" "--APP_SUPPORTE_ENABLED=%APP_SUPPORTE_ENABLED%" "--SELIA_NFE_WHITELIST_ENABLED=false" "--ETL_INCREMENTAL_LOOKBACK_HOURS=0" "--server.port=%PORT_TO_TEST%" "--spring.main.web-application-type=servlet" "--INTEGRATION_SCHEDULER_INTERVAL_MS=%BACKGROUND_INTERVAL_MS%" 1^> "%LOG_FILE_ABS%" 2^>^&1
+)
 if errorlevel 1 (
     echo [ERRO] Falha ao iniciar em background.
     exit /b 1

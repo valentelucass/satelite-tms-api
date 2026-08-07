@@ -1,6 +1,7 @@
 package com.example.satelite.services.etl;
 
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.List;
 
 import org.slf4j.Logger;
@@ -300,7 +301,7 @@ public class OrquestradorEtlService {
                     proximoPasso
             );
 
-            logarRelatorioQuarentena();
+            logarRelatorioQuarentena(destinosAtivosNoCiclo(execucao));
 
             resultadoCiclo = new ResultadoCiclo(
                     resultadoPpg,
@@ -326,12 +327,38 @@ public class OrquestradorEtlService {
         }
     }
 
-    private void logarRelatorioQuarentena() {
+    private List<String> destinosAtivosNoCiclo(ExecucaoEtlRequest execucao) {
+        List<String> destinos = new ArrayList<>();
+        if (execucao.destinoSelecionado(DESTINO_PPG) && ppgEnabled) {
+            destinos.add(DESTINO_PPG);
+        }
+        if (execucao.destinoSelecionado(DESTINO_SELIA) && seliaEnabled && seliaIntegrationService != null) {
+            destinos.add(DESTINO_SELIA);
+        }
+        if (execucao.destinoSelecionado(DESTINO_SUPPORTE) && supporteEnabled
+                && supporteIntegrationService != null && tokenSupporteEsl != null && !tokenSupporteEsl.isBlank()) {
+            destinos.add(DESTINO_SUPPORTE);
+        }
+        if (execucao.destinoSelecionado(DESTINO_VEDACIT) && vedacitEnabled) {
+            destinos.add(DESTINO_VEDACIT);
+        }
+        return destinos;
+    }
+
+    private void logarRelatorioQuarentena(List<String> destinosAtivos) {
+        if (destinosAtivos.isEmpty()) {
+            return;
+        }
+
         try {
-            List<LogIntegracaoModel> quarentenaPpg = buscarQuarentena(DESTINO_PPG);
-            List<LogIntegracaoModel> quarentenaSelia = buscarQuarentena(DESTINO_SELIA);
-            List<LogIntegracaoModel> quarentenaSupporte = buscarQuarentena(DESTINO_SUPPORTE);
-            List<LogIntegracaoModel> quarentenaVedacit = buscarQuarentena(DESTINO_VEDACIT);
+            List<LogIntegracaoModel> quarentenaPpg = destinosAtivos.contains(DESTINO_PPG)
+                    ? buscarQuarentena(DESTINO_PPG) : List.of();
+            List<LogIntegracaoModel> quarentenaSelia = destinosAtivos.contains(DESTINO_SELIA)
+                    ? buscarQuarentena(DESTINO_SELIA) : List.of();
+            List<LogIntegracaoModel> quarentenaSupporte = destinosAtivos.contains(DESTINO_SUPPORTE)
+                    ? buscarQuarentena(DESTINO_SUPPORTE) : List.of();
+            List<LogIntegracaoModel> quarentenaVedacit = destinosAtivos.contains(DESTINO_VEDACIT)
+                    ? buscarQuarentena(DESTINO_VEDACIT) : List.of();
             if (quarentenaPpg.isEmpty() && quarentenaSelia.isEmpty() && quarentenaSupporte.isEmpty() && quarentenaVedacit.isEmpty()) {
                 return;
             }
