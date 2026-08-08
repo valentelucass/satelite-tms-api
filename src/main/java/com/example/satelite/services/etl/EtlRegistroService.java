@@ -65,6 +65,9 @@ public class EtlRegistroService {
     @Value("${RODOGARCIA_TOKEN_VEDACIT_COMPROVANTE:}")
     private String tokenVedacitComprovanteEsl;
 
+    @Value("${RODOGARCIA_MASTER_API_REST:}")
+    private String tokenMasterEsl;
+
     @Autowired
     public EtlRegistroService(
             RodogarciaClient rodogarciaClient,
@@ -644,6 +647,12 @@ public class EtlRegistroService {
                 && tokenVedacitComprovanteEsl != null
                 && !tokenVedacitComprovanteEsl.isBlank()) {
             return "Bearer " + tokenVedacitComprovanteEsl.trim();
+        }
+
+        if (DESTINO_VEDACIT.equals(destino)
+                && tokenMasterEsl != null
+                && !tokenMasterEsl.isBlank()) {
+            return "Bearer " + tokenMasterEsl.trim();
         }
 
         return headerAuth;
