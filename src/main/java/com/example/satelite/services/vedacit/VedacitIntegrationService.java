@@ -89,7 +89,7 @@ public class VedacitIntegrationService {
     @Value("${VEDACIT_SOAP_CONNECT_TIMEOUT_MS:30000}")
     private int soapConnectTimeoutMs;
 
-    @Value("${VEDACIT_SOAP_READ_TIMEOUT_MS:60000}")
+    @Value("${VEDACIT_SOAP_READ_TIMEOUT_MS:180000}")
     private int soapReadTimeoutMs;
 
     private final ImageDownloader imageDownloader;

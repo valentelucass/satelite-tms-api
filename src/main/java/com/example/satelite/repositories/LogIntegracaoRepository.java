@@ -60,6 +60,19 @@ public interface LogIntegracaoRepository extends JpaRepository<LogIntegracaoMode
     @Query("""
             SELECT l
             FROM LogIntegracaoModel l
+            WHERE l.sistemaDestino = 'VEDACIT'
+              AND l.status = 'ERRO_DESTINO'
+              AND l.statusDados = 'SUCESSO'
+              AND l.statusCanhoto = 'ERRO_DESTINO'
+              AND l.chaveCte IS NOT NULL
+              AND TRIM(l.chaveCte) <> ''
+            ORDER BY l.dataProcessamento ASC, l.id ASC
+            """)
+    List<LogIntegracaoModel> findErrosParciaisCanhotoVedacit(Pageable pageable);
+
+    @Query("""
+            SELECT l
+            FROM LogIntegracaoModel l
             WHERE l.sistemaDestino = :destino
               AND l.status = 'ERRO_DESTINO'
               AND (l.tentativasDados >= 3 OR l.tentativasCanhoto >= 3)

@@ -1,5 +1,8 @@
 package com.example.satelite.services.etl;
 
+import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
+import java.time.ZoneId;
 import java.util.List;
 import java.util.Optional;
 
@@ -12,7 +15,10 @@ import org.springframework.stereotype.Service;
 import com.example.satelite.clients.RodogarciaClient;
 import com.example.satelite.dto.rodogarcia.ComprovanteEslDTO;
 import com.example.satelite.dto.rodogarcia.ComprovanteEslItemDTO;
+import com.example.satelite.dto.rodogarcia.EslFreightDTO;
+import com.example.satelite.dto.rodogarcia.EslInvoiceDTO;
 import com.example.satelite.dto.rodogarcia.EslLoteResponseDTO;
+import com.example.satelite.dto.rodogarcia.EslOccurrenceDefDTO;
 import com.example.satelite.dto.rodogarcia.EslOcorrenciaDTO;
 import com.example.satelite.models.LogIntegracaoModel;
 import com.example.satelite.services.ResultadoIntegracao;
@@ -229,6 +235,65 @@ public class EtlRegistroService {
             }
 
             return registrarErroRepescagem(destino, logIntegracao, e);
+        }
+    }
+
+    /**
+     * Reenvia exclusivamente o canhoto Vedacit de um log que já possui o XML do
+     * CT-e integrado. Não consulta ocorrência por NF-e e não reenvia XML.
+     */
+    public ResultadoRegistro reprocessarCanhotoVedacitPorCte(LogIntegracaoModel logIntegracao) {
+        if (!ehCandidatoCanhotoVedacit(logIntegracao)) {
+            return ResultadoRegistro.IGNORADO;
+        }
+
+        EslOcorrenciaDTO ocorrencia = reconstruirOcorrenciaVedacit(logIntegracao);
+        String chaveNfe = obterChaveNfe(ocorrencia);
+        try {
+            log.info(
+                    "🎯 [VEDACIT] NF {}: reprocessamento cirúrgico do canhoto. CTe={}",
+                    chaveNfe,
+                    logIntegracao.getChaveCte()
+            );
+            ResultadoBuscaComprovante buscaComprovante = buscarComprovanteEntregaOpcional(
+                    DESTINO_VEDACIT,
+                    "",
+                    ocorrencia
+            );
+            ComprovanteEslDTO comprovante = buscaComprovante.comprovante();
+            if (!comprovanteTemUrlImagem(comprovante)) {
+                ResultadoIntegracao pendencia = ResultadoIntegracao.parcialCanhotoPendente(
+                        STATUS_SUCESSO,
+                        normalizarMotivoCanhotoIndisponivel(buscaComprovante.motivoIndisponivel())
+                );
+                etlEstadoIntegracaoService.aplicarResultadoIntegracao(logIntegracao, pendencia);
+                etlEstadoIntegracaoService.salvar(logIntegracao);
+                return ResultadoRegistro.PENDENTE_FOTO;
+            }
+
+            ResultadoIntegracao resultado = vedacitIntegrationService.processarOcorrencia(
+                    ocorrencia,
+                    comprovante,
+                    true,
+                    false
+            );
+            etlEstadoIntegracaoService.aplicarResultadoIntegracao(logIntegracao, resultado);
+            etlEstadoIntegracaoService.salvar(logIntegracao);
+            return etlEstadoIntegracaoService.converterResultadoRegistro(resultado);
+        } catch (Exception e) {
+            if (e instanceof InterruptedException) {
+                Thread.currentThread().interrupt();
+            }
+
+            ResultadoIntegracao erro = ResultadoIntegracao.erroCanhoto(STATUS_SUCESSO, e.getMessage());
+            etlEstadoIntegracaoService.aplicarResultadoIntegracao(logIntegracao, erro);
+            etlEstadoIntegracaoService.salvar(logIntegracao);
+            log.error(
+                    "❌ [VEDACIT] NF {}: erro no reprocessamento cirúrgico do canhoto - {}",
+                    chaveNfe,
+                    e.getMessage()
+            );
+            return ResultadoRegistro.ERRO;
         }
     }
 
@@ -583,6 +648,46 @@ public class EtlRegistroService {
                 && STATUS_ERRO_DESTINO.equals(logIntegracao.getStatus())
                 && STATUS_SUCESSO.equals(logIntegracao.getStatusDados())
                 && STATUS_ERRO_DESTINO.equals(logIntegracao.getStatusCanhoto());
+    }
+
+    private boolean ehCandidatoCanhotoVedacit(LogIntegracaoModel logIntegracao) {
+        return logIntegracao != null
+                && DESTINO_VEDACIT.equals(logIntegracao.getSistemaDestino())
+                && STATUS_ERRO_DESTINO.equals(logIntegracao.getStatus())
+                && STATUS_SUCESSO.equals(logIntegracao.getStatusDados())
+                && STATUS_ERRO_DESTINO.equals(logIntegracao.getStatusCanhoto())
+                && logIntegracao.getChaveNfe() != null
+                && logIntegracao.getChaveNfe().length() == 44
+                && logIntegracao.getChaveCte() != null
+                && !logIntegracao.getChaveCte().isBlank();
+    }
+
+    private EslOcorrenciaDTO reconstruirOcorrenciaVedacit(LogIntegracaoModel logIntegracao) {
+        String chaveNfe = logIntegracao.getChaveNfe();
+        LocalDateTime dataAuditoria = logIntegracao.getDataProcessamentoDados();
+        if (dataAuditoria == null) {
+            dataAuditoria = logIntegracao.getDataProcessamento();
+        }
+        if (dataAuditoria == null) {
+            dataAuditoria = etlEstadoIntegracaoService.agoraAuditoria();
+        }
+        OffsetDateTime dataEntrega = dataAuditoria.atZone(ZoneId.of("America/Sao_Paulo")).toOffsetDateTime();
+
+        return new EslOcorrenciaDTO(
+                logIntegracao.getOccurrenceId(),
+                logIntegracao.getOrderNumber(),
+                logIntegracao.getVolumeNumber(),
+                dataEntrega,
+                dataEntrega,
+                new EslInvoiceDTO(null, chaveNfe, chaveNfe.substring(22, 25), chaveNfe.substring(25, 34)),
+                new EslFreightDTO(
+                        logIntegracao.getFreightId(),
+                        logIntegracao.getChaveCte(),
+                        logIntegracao.getOrderNumber(),
+                        logIntegracao.getVolumeNumber()
+                ),
+                new EslOccurrenceDefDTO(null, CODIGO_ENTREGA_REALIZADA, "Entrega Realizada")
+        );
     }
 
     private void manterPendenteSemOcorrencia(LogIntegracaoModel pendencia) {

@@ -9,6 +9,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 
 import com.example.satelite.models.LogIntegracaoModel;
@@ -108,6 +109,50 @@ public class EtlRepescagemService {
         }
 
         log.warn("🎣 Repescagem ativa finalizada.");
+    }
+
+    public ResultadoReprocessamentoCanhotoVedacit reprocessarCanhotosVedacit(int limite) {
+        int limiteSeguro = Math.max(1, limite);
+        List<LogIntegracaoModel> registros = logIntegracaoRepository.findErrosParciaisCanhotoVedacit(
+                PageRequest.of(0, limiteSeguro)
+        );
+        if (registros == null || registros.isEmpty()) {
+            log.info("🎯 [VEDACIT] Nenhum canhoto com erro pendente para reprocessamento cirúrgico.");
+            return new ResultadoReprocessamentoCanhotoVedacit(0, 0, 0, 0);
+        }
+
+        int enviados = 0;
+        int pendentes = 0;
+        int erros = 0;
+        log.warn("🎯 [VEDACIT] Iniciando reprocessamento cirúrgico de {} canhoto(s).", registros.size());
+        for (LogIntegracaoModel registro : registros) {
+            ResultadoRegistro resultado = etlRegistroService.reprocessarCanhotoVedacitPorCte(registro);
+            if (resultado == ResultadoRegistro.ENVIADO) {
+                enviados++;
+            } else if (resultado == ResultadoRegistro.PENDENTE_FOTO) {
+                pendentes++;
+            } else if (resultado.erro()) {
+                erros++;
+            }
+            log.info(
+                    "🎯 [VEDACIT] NF {}: resultado do canhoto isolado={}",
+                    registro.getChaveNfe(),
+                    resultado
+            );
+        }
+
+        return new ResultadoReprocessamentoCanhotoVedacit(registros.size(), enviados, pendentes, erros);
+    }
+
+    public record ResultadoReprocessamentoCanhotoVedacit(
+            int selecionados,
+            int enviados,
+            int pendentes,
+            int erros
+    ) {
+        public boolean concluidoSemErro() {
+            return erros == 0;
+        }
     }
 
     private List<LogIntegracaoModel> buscarErrosDefinitivosDoCiclo(LocalDateTime inicioCiclo) {
