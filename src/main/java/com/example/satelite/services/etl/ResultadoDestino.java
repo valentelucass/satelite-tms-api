@@ -99,4 +99,23 @@ record ResultadoDestino(
                 mensagemErro
         );
     }
+
+    ResultadoDestino combinar(ResultadoDestino outro, String mensagem) {
+        if (outro == null) {
+            return this;
+        }
+
+        return new ResultadoDestino(
+                destino,
+                paginasProcessadas + outro.paginasProcessadas,
+                recebidos + outro.recebidos,
+                enviados + outro.enviados,
+                ignorados + outro.ignorados,
+                pendentesFoto + outro.pendentesFoto,
+                jaProcessados + outro.jaProcessados,
+                erros + outro.erros,
+                erroCritico || outro.erroCritico,
+                mensagem
+        );
+    }
 }

@@ -13,6 +13,7 @@ BEGIN
         id BIGINT IDENTITY(1,1) NOT NULL,
         occurrence_id BIGINT NULL,
         chave_nfe VARCHAR(44) NULL,
+        chave_cte VARCHAR(44) NULL,
         freight_id BIGINT NULL,
         cursor_next_id BIGINT NULL,
         status VARCHAR(50) NOT NULL,
@@ -46,6 +47,10 @@ GO
 
 IF COL_LENGTH('dbo.tb_log_integracao', 'chave_nfe') IS NULL
     ALTER TABLE dbo.tb_log_integracao ADD chave_nfe VARCHAR(44) NULL;
+GO
+
+IF COL_LENGTH('dbo.tb_log_integracao', 'chave_cte') IS NULL
+    ALTER TABLE dbo.tb_log_integracao ADD chave_cte VARCHAR(44) NULL;
 GO
 
 IF COL_LENGTH('dbo.tb_log_integracao', 'freight_id') IS NULL

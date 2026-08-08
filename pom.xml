@@ -342,4 +342,26 @@
 		</plugins>
 	</build>
 
+	<profiles>
+		<profile>
+			<id>fat-jar-alternativo</id>
+			<build>
+				<plugins>
+					<plugin>
+						<groupId>org.springframework.boot</groupId>
+						<artifactId>spring-boot-maven-plugin</artifactId>
+						<executions>
+							<execution>
+								<id>repackage</id>
+								<configuration>
+									<classifier>vedacit</classifier>
+								</configuration>
+							</execution>
+						</executions>
+					</plugin>
+				</plugins>
+			</build>
+		</profile>
+	</profiles>
+
 </project>

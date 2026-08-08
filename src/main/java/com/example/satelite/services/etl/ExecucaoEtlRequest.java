@@ -65,6 +65,23 @@ public record ExecucaoEtlRequest(
         );
     }
 
+    public static ExecucaoEtlRequest incrementalDesde(
+            LocalDate dataInicial,
+            String destino,
+            int maxPaginas
+    ) {
+        return new ExecucaoEtlRequest(
+                ModoExecucao.INCREMENTAL,
+                Objects.requireNonNull(dataInicial, "Data inicial da recuperacao deve ser informada"),
+                null,
+                Set.of(normalizarDestino(destino)),
+                true,
+                true,
+                false,
+                maxPaginas
+        );
+    }
+
     public boolean retroativo() {
         return modo == ModoExecucao.RETROATIVO;
     }

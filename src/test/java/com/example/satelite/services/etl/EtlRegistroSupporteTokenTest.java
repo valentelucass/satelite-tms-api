@@ -28,6 +28,17 @@ class EtlRegistroSupporteTokenTest {
         );
     }
 
+    @Test
+    void deveUsarTokenExclusivoDeComprovanteParaVedacit() {
+        EtlRegistroService service = criarService();
+        ReflectionTestUtils.setField(service, "tokenVedacitComprovanteEsl", "token-comprovante-vedacit");
+
+        assertEquals(
+                "Bearer token-comprovante-vedacit",
+                service.obterHeaderComprovante("VEDACIT", "Bearer token-ocorrencia-vedacit")
+        );
+    }
+
     private EtlRegistroService criarService() {
         return new EtlRegistroService(null, null, null, null, null, null, null, null);
     }

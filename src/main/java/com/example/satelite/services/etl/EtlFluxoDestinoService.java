@@ -94,20 +94,40 @@ public class EtlFluxoDestinoService {
             ExecucaoEtlRequest request,
             ProcessadorDestino processadorDestino
     ) {
+        return executarFluxoDestino(
+                destino,
+                destino,
+                tokenEsl,
+                request,
+                CODIGO_ENTREGA_REALIZADA,
+                true,
+                processadorDestino
+        );
+    }
+
+    public ResultadoDestino executarFluxoDestino(
+            String destino,
+            String identificadorCursor,
+            String tokenEsl,
+            ExecucaoEtlRequest request,
+            int codigoOcorrencia,
+            boolean processarPendencias,
+            ProcessadorDestino processadorDestino
+    ) {
         ResultadoDestino resultadoDestino = ResultadoDestino.vazio(destino);
-        log.info("🚀 [DESTINO: {}] Iniciando varredura de ocorrências...", destino);
+        log.info("🚀 [DESTINO: {}] Iniciando varredura de ocorrências. cursor={} codigo_ocorrencia={}", destino, identificadorCursor, codigoOcorrencia);
 
         try {
             String headerAuth = "Bearer " + tokenEsl;
-            Long cursorAtual = request.buscarCursorInicial() ? buscarUltimoCursor(destino) : null;
-            if (request.processarPendencias()) {
+            Long cursorAtual = request.buscarCursorInicial() ? buscarUltimoCursor(identificadorCursor) : null;
+            if (processarPendencias && request.processarPendencias()) {
                 ResultadoPagina resultadoPendencias = etlRegistroService.processarPendenciasDestino(
                         destino,
                         headerAuth,
                         processadorDestino
                 );
                 resultadoDestino = resultadoDestino.comRegistros(resultadoPendencias);
-            } else {
+            } else if (processarPendencias) {
                 log.info("⏭️ [DESTINO: {}] Reprocessamento de pendências desabilitado para {}.", destino, request.modo());
             }
 
@@ -128,7 +148,7 @@ public class EtlFluxoDestinoService {
                         cursorAtual,
                         invoiceKeyParam,
                         sinceParam,
-                        CODIGO_ENTREGA_REALIZADA
+                        codigoOcorrencia
                 );
 
                 EslLoteResponseDTO lote;
@@ -139,7 +159,8 @@ public class EtlFluxoDestinoService {
                             headerAuth,
                             cursorAtual,
                             invoiceKeyParam,
-                            sinceParam
+                            sinceParam,
+                            codigoOcorrencia
                     );
                 } catch (EslRequestTransientException e) {
                     if (!falhaPaginaNaoCritica(e)) {
@@ -179,7 +200,8 @@ public class EtlFluxoDestinoService {
                         lote,
                         request,
                         falhasInfraestruturaConsecutivas,
-                        processadorDestino
+                        processadorDestino,
+                        codigoOcorrencia
                 );
                 resultadoDestino = resultadoDestino.comPagina(resultado);
                 falhasInfraestruturaConsecutivas = resultado.falhasInfraestruturaConsecutivas();
@@ -292,7 +314,7 @@ public class EtlFluxoDestinoService {
                 }
 
                 if (request.persistirCursor()) {
-                    salvarControleCursor(destino, cursorParaPersistir);
+                    salvarControleCursor(identificadorCursor, cursorParaPersistir);
                 } else {
                     log.info("📍 [DESTINO: {}] Cursor retroativo avançado em memória para {}.", destino, cursorParaPersistir);
                 }
@@ -375,7 +397,8 @@ public class EtlFluxoDestinoService {
             String headerAuth,
             Long cursorAtual,
             String invoiceKeyParam,
-            String sinceParam
+            String sinceParam,
+            int codigoOcorrencia
     ) {
         String operacao = "buscarOcorrencias destino=" + destino
                 + " pagina=" + pagina
@@ -390,7 +413,7 @@ public class EtlFluxoDestinoService {
                         cursorAtual,
                         invoiceKeyParam,
                         sinceParam,
-                        CODIGO_ENTREGA_REALIZADA
+                        codigoOcorrencia
                 )
         );
     }
@@ -403,6 +426,28 @@ public class EtlFluxoDestinoService {
             ExecucaoEtlRequest request,
             int falhasInfraestruturaConsecutivasInicial,
             ProcessadorDestino processadorDestino
+    ) {
+        return processarPagina(
+                destino,
+                headerAuth,
+                cursorNextId,
+                lote,
+                request,
+                falhasInfraestruturaConsecutivasInicial,
+                processadorDestino,
+                CODIGO_ENTREGA_REALIZADA
+        );
+    }
+
+    ResultadoPagina processarPagina(
+            String destino,
+            String headerAuth,
+            Long cursorNextId,
+            EslLoteResponseDTO lote,
+            ExecucaoEtlRequest request,
+            int falhasInfraestruturaConsecutivasInicial,
+            ProcessadorDestino processadorDestino,
+            int codigoOcorrencia
     ) {
         ResultadoPagina resultado = ResultadoPagina.vazio(falhasInfraestruturaConsecutivasInicial);
         int indice = 0;
@@ -419,13 +464,16 @@ public class EtlFluxoDestinoService {
                 return resultado.comFimJanelaRetroativa();
             }
 
-            ResultadoRegistro registro = etlRegistroService.processarOcorrencia(
-                    destino,
-                    headerAuth,
-                    cursorNextId,
-                    ocorrencia,
-                    processadorDestino
-            );
+            ResultadoRegistro registro = DESTINO_VEDACIT.equals(destino)
+                    && codigoOcorrencia == EtapaVedacit.EMISSAO_XML.codigoOcorrencia()
+                    ? etlRegistroService.processarEmissaoXmlVedacit(headerAuth, cursorNextId, ocorrencia)
+                    : etlRegistroService.processarOcorrencia(
+                            destino,
+                            headerAuth,
+                            cursorNextId,
+                            ocorrencia,
+                            processadorDestino
+                    );
             resultado = resultado.com(registro);
 
             if (resultado.falhasInfraestruturaConsecutivas() >= limiteCircuitBreaker()) {
@@ -505,7 +553,7 @@ public class EtlFluxoDestinoService {
     }
 
     String obterSinceParam(ExecucaoEtlRequest request) {
-        if (request.retroativo()) {
+        if (request.retroativo() || request.dataInicial() != null) {
             return request.dataInicial()
                     .atStartOfDay()
                     .atOffset(OFFSET_SINCE_ESL)

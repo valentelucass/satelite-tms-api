@@ -42,6 +42,22 @@ class EtlEstadoIntegracaoServiceTest {
     }
 
     @Test
+    void devePriorizarChaveCteNaIdempotenciaDaVedacit() {
+        LogIntegracaoRepository repository = mock(LogIntegracaoRepository.class);
+        EtlEstadoIntegracaoService service = new EtlEstadoIntegracaoService(repository);
+        LogIntegracaoModel log = LogIntegracaoModel.builder().id(1L).chaveCte("cte-10").build();
+
+        when(repository.findTopBySistemaDestinoAndChaveCteOrderByDataProcessamentoDescIdDesc("VEDACIT", "cte-10"))
+                .thenReturn(Optional.of(log));
+
+        Optional<LogIntegracaoModel> resultado = service.buscarLogIntegracaoExistente("VEDACIT", criarOcorrencia());
+
+        assertTrue(resultado.isPresent());
+        assertSame(log, resultado.get());
+        verify(repository).findTopBySistemaDestinoAndChaveCteOrderByDataProcessamentoDescIdDesc("VEDACIT", "cte-10");
+    }
+
+    @Test
     void deveCriarLogComStatusInicial() {
         EtlEstadoIntegracaoService service = new EtlEstadoIntegracaoService(mock(LogIntegracaoRepository.class));
 
@@ -54,6 +70,7 @@ class EtlEstadoIntegracaoServiceTest {
 
         assertEquals(10L, log.getOccurrenceId());
         assertEquals("35260612345678000123550010000012341000012345", log.getChaveNfe());
+        assertEquals("cte-10", log.getChaveCte());
         assertEquals(30L, log.getFreightId());
         assertEquals(99L, log.getCursorNextId());
         assertEquals(ResultadoIntegracao.STATUS_RECEBIDO, log.getStatusDados());

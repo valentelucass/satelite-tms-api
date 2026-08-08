@@ -1,5 +1,6 @@
 package com.example.satelite.services.etl;
 
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
@@ -11,6 +12,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import com.example.satelite.models.LogIntegracaoModel;
+import com.example.satelite.services.ResultadoIntegracao;
 import com.example.satelite.services.ppg.PpgIntegrationService;
 import com.example.satelite.services.selia.SeliaIntegrationService;
 import com.example.satelite.services.supporte.SupporteIntegrationService;
@@ -71,6 +73,12 @@ public class OrquestradorEtlService {
 
     @Value("${APP_ETL_REPESCAGEM_ENABLED:true}")
     private boolean repescagemEnabled = true;
+
+    @Value("${VEDACIT_XML_BACKFILL_ENABLED:false}")
+    private boolean vedacitXmlBackfillEnabled;
+
+    @Value("${VEDACIT_XML_BACKFILL_START_DATE:2026-05-01}")
+    private String vedacitXmlBackfillStartDate;
 
     @Autowired
     public OrquestradorEtlService(
@@ -155,7 +163,17 @@ public class OrquestradorEtlService {
                 log.warn("⏸️ [DESTINO: {}] Fluxo não selecionado para esta execução.", DESTINO_VEDACIT);
                 resultadoVedacit = ResultadoDestino.naoSelecionado(DESTINO_VEDACIT);
             } else if (vedacitEnabled) {
-                resultadoVedacit = etlFluxoDestinoService.executarFluxoDestino(
+                ExecucaoEtlRequest execucaoXmlVedacit = obterExecucaoXmlVedacit(execucao);
+                ResultadoDestino resultadoVedacitXml = etlFluxoDestinoService.executarFluxoDestino(
+                        DESTINO_VEDACIT,
+                        "VEDACIT_XML",
+                        tokenVedacitEsl,
+                        execucaoXmlVedacit,
+                        EtapaVedacit.EMISSAO_XML.codigoOcorrencia(),
+                        false,
+                        (ocorrencia, comprovante, logIntegracao) -> ResultadoIntegracao.ignorado()
+                );
+                ResultadoDestino resultadoVedacitCanhoto = etlFluxoDestinoService.executarFluxoDestino(
                         DESTINO_VEDACIT,
                         tokenVedacitEsl,
                         execucao,
@@ -165,6 +183,10 @@ public class OrquestradorEtlService {
                                 etlEstadoIntegracaoService.statusSucesso(logIntegracao.getStatusDados()),
                                 etlEstadoIntegracaoService.statusSucesso(logIntegracao.getStatusCanhoto())
                         )
+                );
+                resultadoVedacit = resultadoVedacitXml.combinar(
+                        resultadoVedacitCanhoto,
+                        "XML por emissao e canhoto por entrega concluídos"
                 );
             } else {
                 log.warn("⏸️ [DESTINO: {}] Fluxo desabilitado por APP_VEDACIT_ENABLED=false.", DESTINO_VEDACIT);
@@ -325,6 +347,17 @@ public class OrquestradorEtlService {
         } catch (Exception e) {
             log.warn("⚠️ Repescagem final do ciclo falhou antes do relatório: {}", e.getMessage(), e);
         }
+    }
+
+    private ExecucaoEtlRequest obterExecucaoXmlVedacit(ExecucaoEtlRequest execucaoPadrao) {
+        if (!vedacitXmlBackfillEnabled || execucaoPadrao.retroativo()) {
+            return execucaoPadrao;
+        }
+
+        LocalDate inicio = LocalDate.parse(vedacitXmlBackfillStartDate);
+        LocalDate fim = LocalDate.now();
+        log.info("📚 [VEDACIT] Recuperação de XML habilitada: {} até {}.", inicio, fim);
+        return ExecucaoEtlRequest.incrementalDesde(inicio, DESTINO_VEDACIT, maxPaginasPorCiclo);
     }
 
     private List<String> destinosAtivosNoCiclo(ExecucaoEtlRequest execucao) {

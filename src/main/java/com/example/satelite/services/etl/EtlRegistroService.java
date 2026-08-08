@@ -62,6 +62,9 @@ public class EtlRegistroService {
     @Value("${RODOGARCIA_TOKEN_SUPPORTE_COMPROVANTE:}")
     private String tokenSupporteComprovanteEsl;
 
+    @Value("${RODOGARCIA_TOKEN_VEDACIT_COMPROVANTE:}")
+    private String tokenVedacitComprovanteEsl;
+
     @Autowired
     public EtlRegistroService(
             RodogarciaClient rodogarciaClient,
@@ -235,7 +238,10 @@ public class EtlRegistroService {
     ) {
         Optional<LogIntegracaoModel> logExistente =
                 etlEstadoIntegracaoService.buscarLogIntegracaoExistente(destino, ocorrencia);
-        if (logExistente.isPresent() && etlEstadoIntegracaoService.finalizadoSemReenvio(logExistente.get())) {
+        if (logExistente.isPresent()
+                && etlEstadoIntegracaoService.finalizadoSemReenvio(logExistente.get())
+                && (!DESTINO_VEDACIT.equals(destino)
+                || etlEstadoIntegracaoService.statusSucesso(logExistente.get().getStatusCanhoto()))) {
             log.info(
                     "♻️ [{}] NF {}: Pulando (Já processada anteriormente). occurrence_id={}",
                     destino,
@@ -273,6 +279,102 @@ public class EtlRegistroService {
                         logIntegracao
                 )
         );
+    }
+
+    public ResultadoRegistro processarEmissaoXmlVedacit(
+            String headerAuth,
+            Long cursorNextId,
+            EslOcorrenciaDTO ocorrencia
+    ) {
+        Optional<LogIntegracaoModel> logExistente =
+                etlEstadoIntegracaoService.buscarLogIntegracaoExistente(DESTINO_VEDACIT, ocorrencia);
+        if (logExistente.isPresent() && etlEstadoIntegracaoService.statusSucesso(logExistente.get().getStatusDados())) {
+            log.info(
+                    "♻️ [VEDACIT] NF {}: XML do CT-e já integrado anteriormente. CTe={}",
+                    obterChaveNfe(ocorrencia),
+                    obterChaveCte(ocorrencia)
+            );
+            return ResultadoRegistro.JA_PROCESSADO;
+        }
+
+        if (logExistente.isPresent() && etlResilienciaService.limiteTentativasAtingido(logExistente.get())) {
+            return etlResilienciaService.resultadoErroRespeitandoLimiteTentativas(
+                    DESTINO_VEDACIT,
+                    obterChaveNfe(ocorrencia),
+                    logExistente.get()
+            );
+        }
+
+        LogIntegracaoModel logIntegracao = logExistente
+                .orElseGet(() -> etlEstadoIntegracaoService.criarLogComStatus(
+                        DESTINO_VEDACIT,
+                        cursorNextId,
+                        ocorrencia,
+                        STATUS_RECEBIDO
+                ));
+        return etlResilienciaService.processarOcorrenciaComRetentativas(
+                DESTINO_VEDACIT,
+                obterChaveNfe(ocorrencia),
+                logIntegracao,
+                () -> processarEmissaoXmlVedacitComLog(cursorNextId, ocorrencia, logIntegracao)
+        );
+    }
+
+    private ResultadoRegistro processarEmissaoXmlVedacitComLog(
+            Long cursorNextId,
+            EslOcorrenciaDTO ocorrencia,
+            LogIntegracaoModel logIntegracao
+    ) {
+        try {
+            logIntegracao.setCursorNextId(cursorNextId);
+            if (logIntegracao.getStatus() == null) {
+                logIntegracao.setStatus(STATUS_RECEBIDO);
+            }
+            logIntegracao.setDataProcessamento(etlEstadoIntegracaoService.agoraAuditoria());
+            etlEstadoIntegracaoService.salvar(logIntegracao);
+
+            if (!ehCteEmitido(ocorrencia)) {
+                etlEstadoIntegracaoService.aplicarResultadoIntegracao(logIntegracao, ResultadoIntegracao.ignorado());
+                etlEstadoIntegracaoService.salvar(logIntegracao);
+                log.info("⏭️ [VEDACIT] NF {}: XML ignorado (Código diferente de 110).", obterChaveNfe(ocorrencia));
+                return ResultadoRegistro.IGNORADO;
+            }
+
+            if (vedacitIntegrationService == null) {
+                throw new IllegalStateException("Servico Vedacit indisponivel para processamento do XML emitido");
+            }
+
+            ResultadoIntegracao resultado = vedacitIntegrationService.processarXmlCteEmitido(
+                    ocorrencia,
+                    logIntegracao.getStatusCanhoto()
+            );
+            etlEstadoIntegracaoService.aplicarResultadoIntegracao(logIntegracao, resultado);
+            etlEstadoIntegracaoService.salvar(logIntegracao);
+
+            ResultadoRegistro resultadoRegistro = etlEstadoIntegracaoService.converterResultadoRegistro(resultado);
+            if (resultadoRegistro.erro()) {
+                return etlResilienciaService.resultadoErroAposTentativa(
+                        DESTINO_VEDACIT,
+                        obterChaveNfe(ocorrencia),
+                        logIntegracao
+                );
+            }
+            return resultadoRegistro;
+        } catch (EslRequestTransientException e) {
+            throw e;
+        } catch (Exception e) {
+            etlEstadoIntegracaoService.aplicarResultadoIntegracao(
+                    logIntegracao,
+                    etlEstadoIntegracaoService.criarResultadoErroGenerico(DESTINO_VEDACIT, e)
+            );
+            etlEstadoIntegracaoService.salvar(logIntegracao);
+            log.error("❌ [VEDACIT] NF {}: Erro ao processar XML emitido - {}", obterChaveNfe(ocorrencia), e.getMessage());
+            return etlResilienciaService.resultadoErroAposTentativa(
+                    DESTINO_VEDACIT,
+                    obterChaveNfe(ocorrencia),
+                    logIntegracao
+            );
+        }
     }
 
     private ResultadoRegistro processarOcorrenciaComLog(
@@ -538,6 +640,12 @@ public class EtlRegistroService {
             return "Bearer " + tokenSupporteComprovanteEsl.trim();
         }
 
+        if (DESTINO_VEDACIT.equals(destino)
+                && tokenVedacitComprovanteEsl != null
+                && !tokenVedacitComprovanteEsl.isBlank()) {
+            return "Bearer " + tokenVedacitComprovanteEsl.trim();
+        }
+
         return headerAuth;
     }
 
@@ -609,6 +717,13 @@ public class EtlRegistroService {
                 && ocorrencia.occurrence() != null
                 && ocorrencia.occurrence().code() != null
                 && ocorrencia.occurrence().code() == CODIGO_ENTREGA_REALIZADA;
+    }
+
+    boolean ehCteEmitido(EslOcorrenciaDTO ocorrencia) {
+        return ocorrencia != null
+                && ocorrencia.occurrence() != null
+                && ocorrencia.occurrence().code() != null
+                && ocorrencia.occurrence().code() == EtapaVedacit.EMISSAO_XML.codigoOcorrencia();
     }
 
     public Long obterOccurrenceId(EslOcorrenciaDTO ocorrencia) {

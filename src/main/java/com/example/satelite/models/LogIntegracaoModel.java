@@ -27,6 +27,8 @@ public class LogIntegracaoModel {
     private Long occurrenceId;
     @Column(name = "chave_nfe", length = 44)
     private String chaveNfe;
+    @Column(name = "chave_cte", length = 44)
+    private String chaveCte;
     @Column(name = "freight_id")
     private Long freightId;
     @Column(name = "intelipost_pre_shipment_list")

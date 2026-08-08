@@ -51,6 +51,17 @@ public class EtlEstadoIntegracaoService {
     }
 
     public Optional<LogIntegracaoModel> buscarLogIntegracaoExistente(String destino, EslOcorrenciaDTO ocorrencia) {
+        if ("VEDACIT".equals(destino)) {
+            String chaveCte = obterChaveCte(ocorrencia);
+            if (chaveCte != null) {
+                Optional<LogIntegracaoModel> porCte = logIntegracaoRepository
+                        .findTopBySistemaDestinoAndChaveCteOrderByDataProcessamentoDescIdDesc(destino, chaveCte);
+                if (porCte.isPresent()) {
+                    return porCte;
+                }
+            }
+        }
+
         Long occurrenceId = obterOccurrenceId(ocorrencia);
         if (occurrenceId == null) {
             return Optional.empty();
@@ -75,6 +86,7 @@ public class EtlEstadoIntegracaoService {
         return LogIntegracaoModel.builder()
                 .occurrenceId(obterOccurrenceId(ocorrencia))
                 .chaveNfe(obterChaveNfe(ocorrencia))
+                .chaveCte(obterChaveCte(ocorrencia))
                 .freightId(ocorrencia != null && ocorrencia.freight() != null ? ocorrencia.freight().id() : null)
                 .cursorNextId(cursorNextId)
                 .status(status)
@@ -197,5 +209,14 @@ public class EtlEstadoIntegracaoService {
         }
 
         return ocorrencia.invoice().key();
+    }
+
+    private String obterChaveCte(EslOcorrenciaDTO ocorrencia) {
+        if (ocorrencia == null || ocorrencia.freight() == null || ocorrencia.freight().cteKey() == null) {
+            return null;
+        }
+
+        String chaveCte = ocorrencia.freight().cteKey().trim();
+        return chaveCte.isEmpty() ? null : chaveCte;
     }
 }

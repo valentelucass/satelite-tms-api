@@ -150,6 +150,39 @@ class VedacitIntegrationServiceTest {
     }
 
     @Test
+    void deveEnviarSomenteXmlQuandoCteForEmitidoSemComprovante() throws Exception {
+        RodogarciaClient rodogarciaClient = mock(RodogarciaClient.class);
+        EslRequestPolicyService politicaEsl = criarPoliticaEslExecutora();
+        ICTe portaCte = mock(ICTe.class);
+
+        when(rodogarciaClient.buscarXmlCte(
+                "Bearer token-cte",
+                "35260612345678000123570010000012341000012345"
+        )).thenReturn(new CteResponseDTO(List.of(new CteDataDTO(new CteItemDTO(1L, "autorizado", "<cte/>")))));
+
+        VedacitIntegrationService service = new VedacitIntegrationService(
+                mock(ImageDownloader.class),
+                rodogarciaClient,
+                politicaEsl
+        ) {
+            @Override
+            protected ICTe criarPortaCte() {
+                return portaCte;
+            }
+        };
+        ReflectionTestUtils.setField(service, "tokenCteXmlEsl", "token-cte");
+        ReflectionTestUtils.setField(service, "envioXmlCteHabilitado", true);
+
+        ResultadoIntegracao resultado = service.processarXmlCteEmitido(criarOcorrencia(), null);
+
+        assertEquals(ResultadoIntegracao.STATUS_ENVIADO, resultado.status());
+        assertEquals(ResultadoIntegracao.STATUS_SUCESSO, resultado.statusDados());
+        assertEquals(ResultadoIntegracao.STATUS_NAO_APLICAVEL, resultado.statusCanhoto());
+        verify(portaCte).enviarArquivoXMLCTe(any(byte[].class));
+        verify(politicaEsl).executar(contains("buscarXmlCte"), any());
+    }
+
+    @Test
     void deveRetornarErroDadosLimpoQuandoXmlCteHabilitadoSemChaveCte() {
         RodogarciaClient rodogarciaClient = mock(RodogarciaClient.class);
         EslRequestPolicyService politicaEsl = criarPoliticaEslExecutora();

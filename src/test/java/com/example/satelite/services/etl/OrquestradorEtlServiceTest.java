@@ -128,12 +128,15 @@ class OrquestradorEtlServiceTest {
                 .thenReturn(loteVazio());
         when(dependencias.rodogarciaClient().buscarOcorrencias(eq("Bearer token-vedacit"), eq(123L), isNull(), isNull(), eq(1)))
                 .thenReturn(loteVazio());
+        when(dependencias.rodogarciaClient().buscarOcorrencias(eq("Bearer token-vedacit"), eq(123L), isNull(), isNull(), eq(110)))
+                .thenReturn(loteVazio());
 
         dependencias.service().executarFluxos();
 
         verify(dependencias.rodogarciaClient()).buscarOcorrencias("Bearer token-ppg", 123L, null, null, 1);
+        verify(dependencias.rodogarciaClient()).buscarOcorrencias("Bearer token-vedacit", 123L, null, null, 110);
         verify(dependencias.rodogarciaClient()).buscarOcorrencias("Bearer token-vedacit", 123L, null, null, 1);
-        verify(dependencias.eslRequestPolicyService(), times(2)).executar(anyString(), any());
+        verify(dependencias.eslRequestPolicyService(), times(3)).executar(anyString(), any());
     }
 
     @Test
@@ -1328,6 +1331,7 @@ class OrquestradorEtlServiceTest {
         copia.setId(log.getId());
         copia.setOccurrenceId(log.getOccurrenceId());
         copia.setChaveNfe(log.getChaveNfe());
+        copia.setChaveCte(log.getChaveCte());
         copia.setFreightId(log.getFreightId());
         copia.setCursorNextId(log.getCursorNextId());
         copia.setStatus(log.getStatus());

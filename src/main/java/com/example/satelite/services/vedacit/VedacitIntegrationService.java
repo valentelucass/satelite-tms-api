@@ -110,6 +110,54 @@ public class VedacitIntegrationService {
         return processarOcorrencia(ocorrencia, comprovante, false, false);
     }
 
+    /**
+     * Integra somente o XML no momento em que a ESL registra a emissao do CT-e.
+     * O comprovante de entrega pertence a outro fluxo e nao pode bloquear esta etapa.
+     */
+    public ResultadoIntegracao processarXmlCteEmitido(
+            EslOcorrenciaDTO ocorrencia,
+            String statusCanhotoAtual
+    ) {
+        String chaveNfe = obterChaveNfeLog(ocorrencia);
+        String cteKey = obterChaveCteLog(ocorrencia);
+        String statusCanhoto = statusCanhotoAtual == null
+                || statusCanhotoAtual.isBlank()
+                || ResultadoIntegracao.STATUS_RECEBIDO.equals(statusCanhotoAtual)
+                ? ResultadoIntegracao.STATUS_NAO_APLICAVEL
+                : statusCanhotoAtual;
+
+        if (!notaFiscalPermitida(ocorrencia)) {
+            log.warn("⚠️ [VEDACIT] NF {} ignorada por não estar na Whitelist de Produção", chaveNfe);
+            return ResultadoIntegracao.ignorado();
+        }
+
+        if (!envioXmlCteHabilitado) {
+            log.info("⏭️ [VEDACIT] NF {}: Envio de XML do CT-e desabilitado por feature toggle.", chaveNfe);
+            return ResultadoIntegracao.vedacitConcluido(ResultadoIntegracao.STATUS_NAO_APLICAVEL, statusCanhoto);
+        }
+
+        if (chaveCteAusente(ocorrencia)) {
+            String mensagem = "Chave CTe ausente para envio do XML CT-e";
+            log.warn("⏭️ [VEDACIT] NF {}: {}. Requisição do XML não executada.", chaveNfe, mensagem);
+            return ResultadoIntegracao.erroDados(mensagem);
+        }
+
+        try {
+            byte[] xmlCte = baixarXmlCte(ocorrencia, chaveNfe);
+            enviarXmlCte(xmlCte, chaveNfe, cteKey);
+            return ResultadoIntegracao.vedacitConcluido(ResultadoIntegracao.STATUS_SUCESSO, statusCanhoto);
+        } catch (EslRequestTransientException e) {
+            throw e;
+        } catch (Exception e) {
+            if (e instanceof InterruptedException) {
+                Thread.currentThread().interrupt();
+            }
+
+            log.error("❌ [VEDACIT] NF {}: Erro ao processar XML emitido - {}. CTe={}", chaveNfe, e.getMessage(), cteKey);
+            return ResultadoIntegracao.erroDados(e.getMessage());
+        }
+    }
+
     public ResultadoIntegracao processarOcorrencia(
             EslOcorrenciaDTO ocorrencia,
             ComprovanteEslDTO comprovante,
@@ -433,7 +481,6 @@ public class VedacitIntegrationService {
         ICTe porta = criarPortaCte();
 
         log.info("📤 [VEDACIT] NF {}: Enviando XML do CT-e para MultiTMS... CTe={}", chaveNfe, cteKey);
-        logarTokenAutenticacaoVedacit();
         RetornoOfstring retorno;
         try {
             retorno = porta.enviarArquivoXMLCTe(xmlCte);
@@ -559,25 +606,6 @@ public class VedacitIntegrationService {
         bindingProvider.getRequestContext().put("javax.xml.ws.client.receiveTimeout", String.valueOf(soapReadTimeoutMs));
         bindingProvider.getRequestContext().put("jakarta.xml.ws.client.connectionTimeout", String.valueOf(soapConnectTimeoutMs));
         bindingProvider.getRequestContext().put("jakarta.xml.ws.client.receiveTimeout", String.valueOf(soapReadTimeoutMs));
-    }
-
-    private void logarTokenAutenticacaoVedacit() {
-        int tamanhoToken = vedacitToken == null ? 0 : vedacitToken.length();
-        String prefixoToken = obterPrefixoTokenMascarado(tamanhoToken);
-
-        log.info("Token de autenticação utilizado: {}... | Length: {}", prefixoToken, tamanhoToken);
-    }
-
-    private String obterPrefixoTokenMascarado(int tamanhoToken) {
-        if (vedacitToken == null) {
-            return "null";
-        }
-
-        if (tamanhoToken < 4) {
-            return "<menor-que-4>";
-        }
-
-        return vedacitToken.substring(0, 4);
     }
 
     private String obterUrlImagem(ComprovanteEslDTO comprovante) {
