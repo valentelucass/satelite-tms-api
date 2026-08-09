@@ -1,5 +1,6 @@
 package com.example.satelite.services.etl;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
@@ -110,5 +111,46 @@ class EtlRepescagemServiceTest {
         service.executarRepescagem(inicioCiclo);
 
         verify(etlRegistroService, never()).reprocessarLogExistente(any(), any(), any(), any());
+    }
+
+    @Test
+    void deveReprocessarSomenteCandidatoTecnicoVedacitNaRotinaNoturna() {
+        LogIntegracaoRepository repository = mock(LogIntegracaoRepository.class);
+        EtlRegistroService etlRegistroService = mock(EtlRegistroService.class);
+        EtlEstadoIntegracaoService etlEstadoIntegracaoService = mock(EtlEstadoIntegracaoService.class);
+        EtlRepescagemService service = new EtlRepescagemService(
+                repository,
+                etlRegistroService,
+                etlEstadoIntegracaoService,
+                mock(PpgIntegrationService.class),
+                mock(VedacitIntegrationService.class)
+        );
+        ReflectionTestUtils.setField(service, "intervaloEntreRegistrosMs", 0L);
+
+        LogIntegracaoModel erroXml = LogIntegracaoModel.builder()
+                .id(20L)
+                .sistemaDestino("VEDACIT")
+                .chaveNfe("35260760642774001209550010002329831546555019")
+                .chaveCte("35260760960473000758570030000521491971250456")
+                .status(ResultadoIntegracao.STATUS_ERRO_DESTINO)
+                .statusDados(ResultadoIntegracao.STATUS_ERRO_DESTINO)
+                .tentativasDados(3)
+                .build();
+
+        when(repository.findCandidatosRepescagemNoturnaVedacitDados(eq(5), any()))
+                .thenReturn(List.of(erroXml));
+        when(repository.findCandidatosRepescagemNoturnaVedacitCanhoto(eq(5), any()))
+                .thenReturn(List.of());
+        when(etlRegistroService.reprocessarXmlCteVedacitPorChave(erroXml)).thenReturn(ResultadoRegistro.ENVIADO);
+
+        EtlRepescagemService.ResultadoRepescagemNoturnaVedacit resultado =
+                service.reprocessarPendenciasTecnicasVedacit(10, 5);
+
+        assertEquals(1, resultado.selecionadosXml());
+        assertEquals(0, resultado.selecionadosCanhoto());
+        assertEquals(1, resultado.enviados());
+        assertEquals(0, resultado.erros());
+        verify(etlRegistroService).reprocessarXmlCteVedacitPorChave(erroXml);
+        verify(etlRegistroService, never()).reprocessarCanhotoVedacitPorCte(any());
     }
 }

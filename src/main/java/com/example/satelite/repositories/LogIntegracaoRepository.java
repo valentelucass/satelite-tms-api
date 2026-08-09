@@ -73,9 +73,80 @@ public interface LogIntegracaoRepository extends JpaRepository<LogIntegracaoMode
     @Query("""
             SELECT l
             FROM LogIntegracaoModel l
+            WHERE l.sistemaDestino = 'VEDACIT'
+              AND l.status = 'ERRO_DESTINO'
+              AND l.statusDados = 'ERRO_DESTINO'
+              AND l.chaveCte IS NOT NULL
+              AND TRIM(l.chaveCte) <> ''
+              AND COALESCE(l.tentativasDados, 0) < :limiteTentativas
+              AND (
+                    LOWER(COALESCE(l.mensagemErroDados, l.erro, '')) LIKE '%401 unauthorized%'
+                    OR LOWER(COALESCE(l.mensagemErroDados, l.erro, '')) LIKE '%read timed out%'
+                    OR LOWER(COALESCE(l.mensagemErroDados, l.erro, '')) LIKE '%timeout%'
+                    OR LOWER(COALESCE(l.mensagemErroDados, l.erro, '')) LIKE '%connection%'
+                    OR LOWER(COALESCE(l.mensagemErroDados, l.erro, '')) LIKE '% 429 %'
+                    OR LOWER(COALESCE(l.mensagemErroDados, l.erro, '')) LIKE '% 500 %'
+                    OR LOWER(COALESCE(l.mensagemErroDados, l.erro, '')) LIKE '% 502 %'
+                    OR LOWER(COALESCE(l.mensagemErroDados, l.erro, '')) LIKE '% 503 %'
+                    OR LOWER(COALESCE(l.mensagemErroDados, l.erro, '')) LIKE '% 504 %'
+                  )
+            ORDER BY l.dataProcessamento ASC, l.id ASC
+            """)
+    List<LogIntegracaoModel> findCandidatosRepescagemNoturnaVedacitDados(
+            @Param("limiteTentativas") int limiteTentativas,
+            Pageable pageable
+    );
+
+    @Query("""
+            SELECT l
+            FROM LogIntegracaoModel l
+            WHERE l.sistemaDestino = 'VEDACIT'
+              AND l.status = 'ERRO_DESTINO'
+              AND l.statusDados = 'SUCESSO'
+              AND l.statusCanhoto = 'ERRO_DESTINO'
+              AND l.chaveCte IS NOT NULL
+              AND TRIM(l.chaveCte) <> ''
+              AND COALESCE(l.tentativasCanhoto, 0) < :limiteTentativas
+              AND (
+                    LOWER(COALESCE(l.mensagemErroCanhoto, l.erro, '')) LIKE '%read timed out%'
+                    OR LOWER(COALESCE(l.mensagemErroCanhoto, l.erro, '')) LIKE '%timeout%'
+                    OR LOWER(COALESCE(l.mensagemErroCanhoto, l.erro, '')) LIKE '%connection%'
+                    OR LOWER(COALESCE(l.mensagemErroCanhoto, l.erro, '')) LIKE '% 429 %'
+                    OR LOWER(COALESCE(l.mensagemErroCanhoto, l.erro, '')) LIKE '% 500 %'
+                    OR LOWER(COALESCE(l.mensagemErroCanhoto, l.erro, '')) LIKE '% 502 %'
+                    OR LOWER(COALESCE(l.mensagemErroCanhoto, l.erro, '')) LIKE '% 503 %'
+                    OR LOWER(COALESCE(l.mensagemErroCanhoto, l.erro, '')) LIKE '% 504 %'
+                  )
+            ORDER BY l.dataProcessamento ASC, l.id ASC
+            """)
+    List<LogIntegracaoModel> findCandidatosRepescagemNoturnaVedacitCanhoto(
+            @Param("limiteTentativas") int limiteTentativas,
+            Pageable pageable
+    );
+
+    @Query("""
+            SELECT l
+            FROM LogIntegracaoModel l
             WHERE l.sistemaDestino = :destino
               AND l.status = 'ERRO_DESTINO'
               AND (l.tentativasDados >= 3 OR l.tentativasCanhoto >= 3)
+              AND NOT EXISTS (
+                  SELECT posterior
+                  FROM LogIntegracaoModel posterior
+                  WHERE posterior.sistemaDestino = l.sistemaDestino
+                    AND (
+                        (l.chaveCte IS NOT NULL AND l.chaveCte <> '' AND posterior.chaveCte = l.chaveCte)
+                        OR (
+                            (l.chaveCte IS NULL OR l.chaveCte = '')
+                            AND l.occurrenceId IS NOT NULL
+                            AND posterior.occurrenceId = l.occurrenceId
+                        )
+                    )
+                    AND (
+                        posterior.dataProcessamento > l.dataProcessamento
+                        OR (posterior.dataProcessamento = l.dataProcessamento AND posterior.id > l.id)
+                    )
+              )
             ORDER BY l.dataProcessamento ASC, l.id ASC
             """)
     List<LogIntegracaoModel> findQuarentenaByDestino(@Param("destino") String destino);
@@ -97,6 +168,23 @@ public interface LogIntegracaoRepository extends JpaRepository<LogIntegracaoMode
                     WHERE l.status = 'ERRO_DESTINO'
                       AND (l.tentativasDados >= 3 OR l.tentativasCanhoto >= 3)
                       AND l.sistemaDestino IN :destinos
+                      AND NOT EXISTS (
+                          SELECT posterior
+                          FROM LogIntegracaoModel posterior
+                          WHERE posterior.sistemaDestino = l.sistemaDestino
+                            AND (
+                                (l.chaveCte IS NOT NULL AND l.chaveCte <> '' AND posterior.chaveCte = l.chaveCte)
+                                OR (
+                                    (l.chaveCte IS NULL OR l.chaveCte = '')
+                                    AND l.occurrenceId IS NOT NULL
+                                    AND posterior.occurrenceId = l.occurrenceId
+                                )
+                            )
+                            AND (
+                                posterior.dataProcessamento > l.dataProcessamento
+                                OR (posterior.dataProcessamento = l.dataProcessamento AND posterior.id > l.id)
+                            )
+                      )
                     ORDER BY l.dataProcessamento DESC, l.id DESC
                     """,
             countQuery = """
@@ -105,6 +193,23 @@ public interface LogIntegracaoRepository extends JpaRepository<LogIntegracaoMode
                     WHERE l.status = 'ERRO_DESTINO'
                       AND (l.tentativasDados >= 3 OR l.tentativasCanhoto >= 3)
                       AND l.sistemaDestino IN :destinos
+                      AND NOT EXISTS (
+                          SELECT posterior
+                          FROM LogIntegracaoModel posterior
+                          WHERE posterior.sistemaDestino = l.sistemaDestino
+                            AND (
+                                (l.chaveCte IS NOT NULL AND l.chaveCte <> '' AND posterior.chaveCte = l.chaveCte)
+                                OR (
+                                    (l.chaveCte IS NULL OR l.chaveCte = '')
+                                    AND l.occurrenceId IS NOT NULL
+                                    AND posterior.occurrenceId = l.occurrenceId
+                                )
+                            )
+                            AND (
+                                posterior.dataProcessamento > l.dataProcessamento
+                                OR (posterior.dataProcessamento = l.dataProcessamento AND posterior.id > l.id)
+                            )
+                      )
                     """
     )
     Page<LogIntegracaoModel> findErrosManuais(@Param("destinos") List<String> destinos, Pageable pageable);
@@ -123,6 +228,23 @@ public interface LogIntegracaoRepository extends JpaRepository<LogIntegracaoMode
             WHERE l.sistemaDestino = :destino
               AND l.status = 'ERRO_DESTINO'
               AND (l.tentativasDados >= 3 OR l.tentativasCanhoto >= 3)
+              AND NOT EXISTS (
+                  SELECT posterior
+                  FROM LogIntegracaoModel posterior
+                  WHERE posterior.sistemaDestino = l.sistemaDestino
+                    AND (
+                        (l.chaveCte IS NOT NULL AND l.chaveCte <> '' AND posterior.chaveCte = l.chaveCte)
+                        OR (
+                            (l.chaveCte IS NULL OR l.chaveCte = '')
+                            AND l.occurrenceId IS NOT NULL
+                            AND posterior.occurrenceId = l.occurrenceId
+                        )
+                    )
+                    AND (
+                        posterior.dataProcessamento > l.dataProcessamento
+                        OR (posterior.dataProcessamento = l.dataProcessamento AND posterior.id > l.id)
+                    )
+              )
             """)
     int resetarQuarentenaByDestino(@Param("destino") String destino);
 

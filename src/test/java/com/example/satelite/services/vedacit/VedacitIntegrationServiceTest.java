@@ -183,6 +183,38 @@ class VedacitIntegrationServiceTest {
     }
 
     @Test
+    void deveReprocessarXmlPorChaveSemDependerDaOcorrenciaHistorica() throws Exception {
+        RodogarciaClient rodogarciaClient = mock(RodogarciaClient.class);
+        EslRequestPolicyService politicaEsl = criarPoliticaEslExecutora();
+        ICTe portaCte = mock(ICTe.class);
+        String chaveNfe = "35260760642774001209550010002329831546555019";
+        String chaveCte = "35260760960473000758570030000521491971250456";
+        when(rodogarciaClient.buscarXmlCte("Bearer token-cte", chaveCte))
+                .thenReturn(new CteResponseDTO(List.of(new CteDataDTO(new CteItemDTO(1L, "autorizado", "<cte/>")))));
+
+        VedacitIntegrationService service = new VedacitIntegrationService(
+                mock(ImageDownloader.class), rodogarciaClient, politicaEsl
+        ) {
+            @Override
+            protected ICTe criarPortaCte() {
+                return portaCte;
+            }
+        };
+        ReflectionTestUtils.setField(service, "tokenCteXmlEsl", "token-cte");
+        ReflectionTestUtils.setField(service, "envioXmlCteHabilitado", true);
+
+        ResultadoIntegracao resultado = service.reprocessarXmlCtePorChaves(
+                chaveNfe, chaveCte, ResultadoIntegracao.STATUS_RECEBIDO
+        );
+
+        assertEquals(ResultadoIntegracao.STATUS_ENVIADO, resultado.status());
+        assertEquals(ResultadoIntegracao.STATUS_SUCESSO, resultado.statusDados());
+        assertEquals(ResultadoIntegracao.STATUS_RECEBIDO, resultado.statusCanhoto());
+        verify(portaCte).enviarArquivoXMLCTe(any(byte[].class));
+        verify(rodogarciaClient).buscarXmlCte("Bearer token-cte", chaveCte);
+    }
+
+    @Test
     void deveRetornarErroDadosLimpoQuandoXmlCteHabilitadoSemChaveCte() {
         RodogarciaClient rodogarciaClient = mock(RodogarciaClient.class);
         EslRequestPolicyService politicaEsl = criarPoliticaEslExecutora();

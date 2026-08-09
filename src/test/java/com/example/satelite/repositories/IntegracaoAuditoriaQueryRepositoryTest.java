@@ -191,6 +191,9 @@ class IntegracaoAuditoriaQueryRepositoryTest {
         );
 
         assertTrue(sqlCaptor.getValue().contains("l.sistema_destino IN (:destinos)"));
+        assertTrue(sqlCaptor.getValue().contains("AND NOT EXISTS"));
+        assertTrue(sqlCaptor.getValue().contains("posterior.chave_cte = l.chave_cte"));
+        assertTrue(sqlCaptor.getValue().contains("posterior.occurrence_id = l.occurrence_id"));
         assertFalse(sqlCaptor.getValue().contains("SELIA_PLP"));
         assertEquals(List.of("PPG", "SELIA"), paramsCaptor.getValue().getValue("destinos"));
     }

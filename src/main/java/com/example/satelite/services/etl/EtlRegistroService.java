@@ -297,6 +297,39 @@ public class EtlRegistroService {
         }
     }
 
+    /**
+     * Reenvia somente o XML do CT-e para um erro tecnico Vedacit ja auditado.
+     * A chave do CT-e vem do proprio log, evitando depender da ocorrencia ESL
+     * que pode ter saído da janela historica de consulta.
+     */
+    public ResultadoRegistro reprocessarXmlCteVedacitPorChave(LogIntegracaoModel logIntegracao) {
+        if (!ehCandidatoXmlCteVedacit(logIntegracao)) {
+            return ResultadoRegistro.IGNORADO;
+        }
+
+        String chaveNfe = logIntegracao.getChaveNfe();
+        try {
+            ResultadoIntegracao resultado = vedacitIntegrationService.reprocessarXmlCtePorChaves(
+                    chaveNfe,
+                    logIntegracao.getChaveCte(),
+                    logIntegracao.getStatusCanhoto()
+            );
+            etlEstadoIntegracaoService.aplicarResultadoIntegracao(logIntegracao, resultado);
+            etlEstadoIntegracaoService.salvar(logIntegracao);
+            return etlEstadoIntegracaoService.converterResultadoRegistro(resultado);
+        } catch (Exception e) {
+            if (e instanceof InterruptedException) {
+                Thread.currentThread().interrupt();
+            }
+
+            ResultadoIntegracao erro = ResultadoIntegracao.erroDados(e.getMessage());
+            etlEstadoIntegracaoService.aplicarResultadoIntegracao(logIntegracao, erro);
+            etlEstadoIntegracaoService.salvar(logIntegracao);
+            log.error("❌ [VEDACIT] NF {}: erro na repescagem técnica do XML - {}", chaveNfe, e.getMessage());
+            return ResultadoRegistro.ERRO;
+        }
+    }
+
     public ResultadoRegistro processarOcorrencia(
             String destino,
             String headerAuth,
@@ -656,6 +689,17 @@ public class EtlRegistroService {
                 && STATUS_ERRO_DESTINO.equals(logIntegracao.getStatus())
                 && STATUS_SUCESSO.equals(logIntegracao.getStatusDados())
                 && STATUS_ERRO_DESTINO.equals(logIntegracao.getStatusCanhoto())
+                && logIntegracao.getChaveNfe() != null
+                && logIntegracao.getChaveNfe().length() == 44
+                && logIntegracao.getChaveCte() != null
+                && !logIntegracao.getChaveCte().isBlank();
+    }
+
+    private boolean ehCandidatoXmlCteVedacit(LogIntegracaoModel logIntegracao) {
+        return logIntegracao != null
+                && DESTINO_VEDACIT.equals(logIntegracao.getSistemaDestino())
+                && STATUS_ERRO_DESTINO.equals(logIntegracao.getStatus())
+                && STATUS_ERRO_DESTINO.equals(logIntegracao.getStatusDados())
                 && logIntegracao.getChaveNfe() != null
                 && logIntegracao.getChaveNfe().length() == 44
                 && logIntegracao.getChaveCte() != null

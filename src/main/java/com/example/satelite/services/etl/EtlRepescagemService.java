@@ -144,8 +144,91 @@ public class EtlRepescagemService {
         return new ResultadoReprocessamentoCanhotoVedacit(registros.size(), enviados, pendentes, erros);
     }
 
+    /**
+     * Repescagem noturna limitada a falhas tecnicas Vedacit. Recusas de negocio
+     * e CT-es sem chave ficam fora da selecao e continuam visiveis na quarentena.
+     */
+    public ResultadoRepescagemNoturnaVedacit reprocessarPendenciasTecnicasVedacit(
+            int limiteItens,
+            int limiteTentativas
+    ) {
+        int limiteSeguro = Math.max(1, Math.min(limiteItens, 500));
+        int tentativasSeguras = Math.max(1, limiteTentativas);
+        List<LogIntegracaoModel> dados = normalizarLista(
+                logIntegracaoRepository.findCandidatosRepescagemNoturnaVedacitDados(
+                        tentativasSeguras,
+                        PageRequest.of(0, limiteSeguro)
+                )
+        );
+        int restante = Math.max(0, limiteSeguro - dados.size());
+        List<LogIntegracaoModel> canhotos = restante == 0
+                ? List.of()
+                : normalizarLista(logIntegracaoRepository.findCandidatosRepescagemNoturnaVedacitCanhoto(
+                        tentativasSeguras,
+                        PageRequest.of(0, restante)
+                ));
+
+        if (dados.isEmpty() && canhotos.isEmpty()) {
+            log.info("🌙 [VEDACIT] Repescagem noturna: nenhuma falha técnica elegível encontrada.");
+            return new ResultadoRepescagemNoturnaVedacit(0, 0, 0, 0, 0);
+        }
+
+        int enviados = 0;
+        int pendentes = 0;
+        int erros = 0;
+        List<LogIntegracaoModel> registros = new ArrayList<>(dados.size() + canhotos.size());
+        registros.addAll(dados);
+        registros.addAll(canhotos);
+
+        log.warn(
+                "🌙 [VEDACIT] Iniciando repescagem noturna registrada: xml={} canhotos={} limite_tentativas={}.",
+                dados.size(), canhotos.size(), tentativasSeguras
+        );
+        for (int indice = 0; indice < registros.size(); indice++) {
+            LogIntegracaoModel registro = registros.get(indice);
+            ResultadoRegistro resultado = indice < dados.size()
+                    ? etlRegistroService.reprocessarXmlCteVedacitPorChave(registro)
+                    : etlRegistroService.reprocessarCanhotoVedacitPorCte(registro);
+            if (resultado == ResultadoRegistro.ENVIADO) {
+                enviados++;
+            } else if (resultado == ResultadoRegistro.PENDENTE_FOTO) {
+                pendentes++;
+            } else if (resultado.erro()) {
+                erros++;
+            }
+
+            log.info("🌙 [VEDACIT] NF {}: repescagem noturna resultado={}", registro.getChaveNfe(), resultado);
+            if (indice < registros.size() - 1 && !pausarEntreRegistros()) {
+                log.warn("⏹️ [VEDACIT] Repescagem noturna interrompida antes de concluir os candidatos.");
+                break;
+            }
+        }
+
+        ResultadoRepescagemNoturnaVedacit resultado = new ResultadoRepescagemNoturnaVedacit(
+                dados.size(), canhotos.size(), enviados, pendentes, erros
+        );
+        log.warn(
+                "🌙 [VEDACIT] Repescagem noturna finalizada: selecionados_xml={} selecionados_canhoto={} enviados={} pendentes={} erros={}.",
+                resultado.selecionadosXml(), resultado.selecionadosCanhoto(), resultado.enviados(),
+                resultado.pendentes(), resultado.erros()
+        );
+        return resultado;
+    }
+
     public record ResultadoReprocessamentoCanhotoVedacit(
             int selecionados,
+            int enviados,
+            int pendentes,
+            int erros
+    ) {
+        public boolean concluidoSemErro() {
+            return erros == 0;
+        }
+    }
+
+    public record ResultadoRepescagemNoturnaVedacit(
+            int selecionadosXml,
+            int selecionadosCanhoto,
             int enviados,
             int pendentes,
             int erros
@@ -162,6 +245,10 @@ public class EtlRepescagemService {
         }
 
         List<LogIntegracaoModel> registros = logIntegracaoRepository.findErrosManuaisDesde(inicioCiclo);
+        return registros != null ? registros : List.of();
+    }
+
+    private List<LogIntegracaoModel> normalizarLista(List<LogIntegracaoModel> registros) {
         return registros != null ? registros : List.of();
     }
 

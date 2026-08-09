@@ -190,6 +190,23 @@ public class IntegracaoAuditoriaQueryRepository {
                 WHERE l.status = 'ERRO_DESTINO'
                   AND (l.tentativas_dados >= 3 OR l.tentativas_canhoto >= 3)
                   AND l.sistema_destino IN (:destinos)
+                  AND NOT EXISTS (
+                      SELECT 1
+                      FROM dbo.tb_log_integracao posterior
+                      WHERE posterior.sistema_destino = l.sistema_destino
+                        AND (
+                            (l.chave_cte IS NOT NULL AND l.chave_cte <> '' AND posterior.chave_cte = l.chave_cte)
+                            OR (
+                                (l.chave_cte IS NULL OR l.chave_cte = '')
+                                AND l.occurrence_id IS NOT NULL
+                                AND posterior.occurrence_id = l.occurrence_id
+                            )
+                        )
+                        AND (
+                            posterior.data_processamento > l.data_processamento
+                            OR (posterior.data_processamento = l.data_processamento AND posterior.id > l.id)
+                        )
+                  )
                 ORDER BY l.data_processamento DESC, l.id DESC
                 """;
 

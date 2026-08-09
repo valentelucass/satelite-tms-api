@@ -158,6 +158,43 @@ public class VedacitIntegrationService {
         }
     }
 
+    /**
+     * Recupera somente o XML de um CT-e que ja possui auditoria Vedacit.
+     * Nao consulta ocorrencia historica, nao envia ocorrencia de entrega e nao
+     * toca no canhoto existente.
+     */
+    public ResultadoIntegracao reprocessarXmlCtePorChaves(
+            String chaveNfe,
+            String chaveCte,
+            String statusCanhotoAtual
+    ) {
+        String chaveNfeNormalizada = textoObrigatorio(chaveNfe, "Chave NF-e ausente para repescagem do XML");
+        String chaveCteNormalizada = textoObrigatorio(chaveCte, "Chave CTe ausente para repescagem do XML");
+        String statusCanhoto = statusCanhotoAtual == null || statusCanhotoAtual.isBlank()
+                ? ResultadoIntegracao.STATUS_NAO_APLICAVEL
+                : statusCanhotoAtual;
+
+        if (!envioXmlCteHabilitado) {
+            return ResultadoIntegracao.erroDados("Envio de XML do CT-e desabilitado por feature toggle");
+        }
+
+        try {
+            log.info("🌙 [VEDACIT] NF {}: repescagem técnica do XML por CT-e={}", chaveNfeNormalizada, chaveCteNormalizada);
+            byte[] xmlCte = baixarXmlCte(chaveCteNormalizada, chaveNfeNormalizada);
+            enviarXmlCte(xmlCte, chaveNfeNormalizada, chaveCteNormalizada);
+            return ResultadoIntegracao.vedacitConcluido(ResultadoIntegracao.STATUS_SUCESSO, statusCanhoto);
+        } catch (EslRequestTransientException e) {
+            throw e;
+        } catch (Exception e) {
+            if (e instanceof InterruptedException) {
+                Thread.currentThread().interrupt();
+            }
+            log.error("❌ [VEDACIT] NF {}: erro na repescagem técnica do XML - {}. CTe={}",
+                    chaveNfeNormalizada, e.getMessage(), chaveCteNormalizada);
+            return ResultadoIntegracao.erroDados(e.getMessage());
+        }
+    }
+
     public ResultadoIntegracao processarOcorrencia(
             EslOcorrenciaDTO ocorrencia,
             ComprovanteEslDTO comprovante,
@@ -448,6 +485,10 @@ public class VedacitIntegrationService {
 
     private byte[] baixarXmlCte(EslOcorrenciaDTO ocorrencia, String chaveNfe) {
         String chaveCte = obterChaveCteObrigatoria(ocorrencia);
+        return baixarXmlCte(chaveCte, chaveNfe);
+    }
+
+    private byte[] baixarXmlCte(String chaveCte, String chaveNfe) {
         String token = obterTokenCteXmlEsl();
 
         log.info("Baixando XML do CT-e na ESL usando a chave: {}", chaveCte);
@@ -460,6 +501,13 @@ public class VedacitIntegrationService {
 
         log.info("📄 [VEDACIT] NF {}: XML do CT-e baixado com sucesso ({} bytes). CTe={}", chaveNfe, xmlCte.length, chaveCte);
         return xmlCte;
+    }
+
+    private String textoObrigatorio(String valor, String mensagem) {
+        if (valor == null || valor.isBlank()) {
+            throw new IllegalArgumentException(mensagem);
+        }
+        return valor.trim();
     }
 
     private String extrairXmlCte(CteResponseDTO response) {
