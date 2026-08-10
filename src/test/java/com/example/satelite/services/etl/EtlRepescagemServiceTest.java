@@ -153,4 +153,48 @@ class EtlRepescagemServiceTest {
         verify(etlRegistroService).reprocessarXmlCteVedacitPorChave(erroXml);
         verify(etlRegistroService, never()).reprocessarCanhotoVedacitPorCte(any());
     }
+
+    @Test
+    void deveRecuperarChaveCteDeErroHistorico401SemReenviarCanhoto() {
+        LogIntegracaoRepository repository = mock(LogIntegracaoRepository.class);
+        EtlRegistroService etlRegistroService = mock(EtlRegistroService.class);
+        EtlRepescagemService service = new EtlRepescagemService(
+                repository,
+                etlRegistroService,
+                mock(EtlEstadoIntegracaoService.class),
+                mock(PpgIntegrationService.class),
+                mock(VedacitIntegrationService.class)
+        );
+        ReflectionTestUtils.setField(service, "intervaloEntreRegistrosMs", 0L);
+
+        String chaveCte = "35260760960473000758570030000513821605790206";
+        LogIntegracaoModel historico401 = LogIntegracaoModel.builder()
+                .id(30L)
+                .sistemaDestino("VEDACIT")
+                .chaveNfe("35260760642774001209550010002329831546555019")
+                .status(ResultadoIntegracao.STATUS_ERRO_DESTINO)
+                .statusDados(ResultadoIntegracao.STATUS_ERRO_DESTINO)
+                .statusCanhoto("RECEBIDO")
+                .tentativasDados(4)
+                .mensagemErroDados("[401 Unauthorized] during [GET] to [https://rodogarcia.eslcloud.com.br/api/ctes?key="
+                        + chaveCte + "]")
+                .build();
+
+        when(repository.findCandidatosRepescagemNoturnaVedacitDados(eq(5), any()))
+                .thenReturn(List.of());
+        when(repository.findQuarentenaByDestino("VEDACIT")).thenReturn(List.of(historico401));
+        when(repository.findCandidatosRepescagemNoturnaVedacitCanhoto(eq(5), any()))
+                .thenReturn(List.of());
+        when(etlRegistroService.reprocessarXmlCteVedacitPorChave(historico401))
+                .thenReturn(ResultadoRegistro.ENVIADO);
+
+        EtlRepescagemService.ResultadoRepescagemNoturnaVedacit resultado =
+                service.reprocessarPendenciasTecnicasVedacit(1, 5);
+
+        assertEquals(chaveCte, historico401.getChaveCte());
+        assertEquals(1, resultado.selecionadosXml());
+        assertEquals(1, resultado.enviados());
+        verify(etlRegistroService).reprocessarXmlCteVedacitPorChave(historico401);
+        verify(etlRegistroService, never()).reprocessarCanhotoVedacitPorCte(any());
+    }
 }

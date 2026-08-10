@@ -4,6 +4,9 @@ import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import java.util.Optional;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -26,6 +29,8 @@ public class EtlRepescagemService {
     private static final String DESTINO_PPG = "PPG";
     private static final String DESTINO_SELIA = "SELIA";
     private static final String DESTINO_VEDACIT = "VEDACIT";
+    private static final String STATUS_ERRO_DESTINO = "ERRO_DESTINO";
+    private static final Pattern CHAVE_CTE_NA_MENSAGEM = Pattern.compile("[?&](?:cte_)?key=([0-9]{44})");
 
     private final LogIntegracaoRepository logIntegracaoRepository;
     private final EtlRegistroService etlRegistroService;
@@ -154,12 +159,18 @@ public class EtlRepescagemService {
     ) {
         int limiteSeguro = Math.max(1, Math.min(limiteItens, 500));
         int tentativasSeguras = Math.max(1, limiteTentativas);
-        List<LogIntegracaoModel> dados = normalizarLista(
+        List<LogIntegracaoModel> dados = new ArrayList<>(normalizarLista(
                 logIntegracaoRepository.findCandidatosRepescagemNoturnaVedacitDados(
                         tentativasSeguras,
                         PageRequest.of(0, limiteSeguro)
                 )
+        ));
+        int restanteParaHistoricos = Math.max(0, limiteSeguro - dados.size());
+        List<LogIntegracaoModel> dadosHistoricos = buscarDadosHistoricosTecnicosVedacit(
+                restanteParaHistoricos,
+                tentativasSeguras
         );
+        dados.addAll(dadosHistoricos);
         int restante = Math.max(0, limiteSeguro - dados.size());
         List<LogIntegracaoModel> canhotos = restante == 0
                 ? List.of()
@@ -181,8 +192,8 @@ public class EtlRepescagemService {
         registros.addAll(canhotos);
 
         log.warn(
-                "🌙 [VEDACIT] Iniciando repescagem noturna registrada: xml={} canhotos={} limite_tentativas={}.",
-                dados.size(), canhotos.size(), tentativasSeguras
+                "🌙 [VEDACIT] Iniciando repescagem noturna registrada: xml={} (historicos={}) canhotos={} limite_tentativas={}.",
+                dados.size(), dadosHistoricos.size(), canhotos.size(), tentativasSeguras
         );
         for (int indice = 0; indice < registros.size(); indice++) {
             LogIntegracaoModel registro = registros.get(indice);
@@ -250,6 +261,76 @@ public class EtlRepescagemService {
 
     private List<LogIntegracaoModel> normalizarLista(List<LogIntegracaoModel> registros) {
         return registros != null ? registros : List.of();
+    }
+
+    /**
+     * Recupera somente erros técnicos históricos em que a chave do CT-e ficou
+     * registrada no URL da falha 401, mas não chegou a ser persistida no campo
+     * próprio da auditoria. A chave é validada pelo formato antes do reenvio e
+     * passa a compor o mesmo log auditável da tentativa original.
+     */
+    private List<LogIntegracaoModel> buscarDadosHistoricosTecnicosVedacit(
+            int limite,
+            int limiteTentativas
+    ) {
+        if (limite <= 0) {
+            return List.of();
+        }
+
+        List<LogIntegracaoModel> candidatos = normalizarLista(
+                logIntegracaoRepository.findQuarentenaByDestino(DESTINO_VEDACIT)
+        );
+        List<LogIntegracaoModel> selecionados = new ArrayList<>();
+        for (LogIntegracaoModel candidato : candidatos) {
+            if (!ehCandidatoHistoricoTecnicoVedacit(candidato, limiteTentativas)) {
+                continue;
+            }
+
+            Optional<String> chaveCte = extrairChaveCteDaMensagem(candidato);
+            if (chaveCte.isEmpty()) {
+                continue;
+            }
+
+            candidato.setChaveCte(chaveCte.get());
+            selecionados.add(candidato);
+            if (selecionados.size() >= limite) {
+                break;
+            }
+        }
+        return selecionados;
+    }
+
+    private boolean ehCandidatoHistoricoTecnicoVedacit(
+            LogIntegracaoModel registro,
+            int limiteTentativas
+    ) {
+        return registro != null
+                && DESTINO_VEDACIT.equals(registro.getSistemaDestino())
+                && STATUS_ERRO_DESTINO.equals(registro.getStatus())
+                && STATUS_ERRO_DESTINO.equals(registro.getStatusDados())
+                && registro.getChaveNfe() != null
+                && registro.getChaveNfe().length() == 44
+                && (registro.getChaveCte() == null || registro.getChaveCte().isBlank())
+                && valorTentativas(registro.getTentativasDados()) < limiteTentativas
+                && mensagemTecnica(registro).toLowerCase(Locale.ROOT).contains("401 unauthorized");
+    }
+
+    private Optional<String> extrairChaveCteDaMensagem(LogIntegracaoModel registro) {
+        Matcher matcher = CHAVE_CTE_NA_MENSAGEM.matcher(mensagemTecnica(registro));
+        return matcher.find() ? Optional.of(matcher.group(1)) : Optional.empty();
+    }
+
+    private String mensagemTecnica(LogIntegracaoModel registro) {
+        if (registro == null) {
+            return "";
+        }
+        if (registro.getMensagemErroDados() != null && !registro.getMensagemErroDados().isBlank()) {
+            return registro.getMensagemErroDados();
+        }
+        if (registro.getMensagemErroCanhoto() != null && !registro.getMensagemErroCanhoto().isBlank()) {
+            return registro.getMensagemErroCanhoto();
+        }
+        return registro.getErro() != null ? registro.getErro() : "";
     }
 
     private List<LogIntegracaoModel> buscarErrosParciaisCanhotoPendentesRetry() {

@@ -1,14 +1,17 @@
 package com.example.satelite.services.etl;
 
 import java.time.LocalDateTime;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Locale;
 import java.util.Set;
 import java.util.regex.Pattern;
 import java.util.function.Consumer;
+import java.util.stream.Stream;
 
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -16,9 +19,11 @@ import org.springframework.web.server.ResponseStatusException;
 
 import com.example.satelite.dto.etl.QuarentenaErroManualDTO;
 import com.example.satelite.dto.etl.QuarentenaErroManualExportacaoDTO;
+import com.example.satelite.dto.etl.QuarentenaHistoricoDTO;
 import com.example.satelite.models.LogIntegracaoModel;
 import com.example.satelite.repositories.IntegracaoAuditoriaQueryRepository;
 import com.example.satelite.repositories.LogIntegracaoRepository;
+import com.example.satelite.repositories.QuarentenaEventoRepository;
 
 @Service
 public class QuarentenaService {
@@ -31,13 +36,24 @@ public class QuarentenaService {
 
     private final LogIntegracaoRepository logIntegracaoRepository;
     private final IntegracaoAuditoriaQueryRepository integracaoAuditoriaQueryRepository;
+    private final QuarentenaEventoRepository quarentenaEventoRepository;
+
+    @Autowired
+    public QuarentenaService(
+            LogIntegracaoRepository logIntegracaoRepository,
+            IntegracaoAuditoriaQueryRepository integracaoAuditoriaQueryRepository,
+            QuarentenaEventoRepository quarentenaEventoRepository
+    ) {
+        this.logIntegracaoRepository = logIntegracaoRepository;
+        this.integracaoAuditoriaQueryRepository = integracaoAuditoriaQueryRepository;
+        this.quarentenaEventoRepository = quarentenaEventoRepository;
+    }
 
     public QuarentenaService(
             LogIntegracaoRepository logIntegracaoRepository,
             IntegracaoAuditoriaQueryRepository integracaoAuditoriaQueryRepository
     ) {
-        this.logIntegracaoRepository = logIntegracaoRepository;
-        this.integracaoAuditoriaQueryRepository = integracaoAuditoriaQueryRepository;
+        this(logIntegracaoRepository, integracaoAuditoriaQueryRepository, null);
     }
 
     public List<LogIntegracaoModel> findQuarentenaByDestino(String destino) {
@@ -57,6 +73,56 @@ public class QuarentenaService {
                 normalizarDestinosConsulta(destinosRecebidos),
                 item -> consumidor.accept(mapearErroManual(item))
         );
+    }
+
+    public Page<QuarentenaHistoricoDTO> buscarHistoricoRepescagens(
+            Pageable pageable,
+            List<String> destinosRecebidos,
+            LocalDate dataInicial,
+            LocalDate dataFinal
+    ) {
+        if (quarentenaEventoRepository == null) {
+            return Page.empty(pageable);
+        }
+        LocalDate fim = dataFinal != null ? dataFinal : LocalDate.now();
+        LocalDate inicio = dataInicial != null ? dataInicial : fim.minusDays(89);
+        if (inicio.isAfter(fim)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Periodo de consulta invalido.");
+        }
+        return quarentenaEventoRepository.buscarHistoricoRepescagens(
+                inicio.atStartOfDay(),
+                fim.plusDays(1).atStartOfDay(),
+                normalizarDestinosConsulta(destinosRecebidos),
+                pageable
+        ).map(item -> new QuarentenaHistoricoDTO(
+                item.getId(), item.getDestino(), item.getChaveNfe(), extrairNumeroNf(item.getChaveNfe()),
+                item.getEtapa(), item.getEntradaQuarentenaEm(), item.getReprocessadoEm(),
+                item.getResultado(), erroLimpo(item.getMensagem(), null, null)
+        ));
+    }
+
+    @Transactional(readOnly = true)
+    public void exportarHistoricoRepescagens(
+            List<String> destinosRecebidos,
+            LocalDate dataInicial,
+            LocalDate dataFinal,
+            Consumer<QuarentenaHistoricoDTO> consumidor
+    ) {
+        LocalDate fim = dataFinal != null ? dataFinal : LocalDate.now();
+        LocalDate inicio = dataInicial != null ? dataInicial : fim.minusDays(89);
+        if (inicio.isAfter(fim)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Periodo de consulta invalido.");
+        }
+        try (Stream<QuarentenaEventoRepository.HistoricoProjection> eventos = quarentenaEventoRepository
+                .exportarHistoricoRepescagens(
+                        inicio.atStartOfDay(), fim.plusDays(1).atStartOfDay(), normalizarDestinosConsulta(destinosRecebidos)
+                )) {
+            eventos.map(item -> new QuarentenaHistoricoDTO(
+                    item.getId(), item.getDestino(), item.getChaveNfe(), extrairNumeroNf(item.getChaveNfe()),
+                    item.getEtapa(), item.getEntradaQuarentenaEm(), item.getReprocessadoEm(),
+                    item.getResultado(), erroLimpo(item.getMensagem(), null, null)
+            )).forEach(consumidor);
+        }
     }
 
     @Transactional

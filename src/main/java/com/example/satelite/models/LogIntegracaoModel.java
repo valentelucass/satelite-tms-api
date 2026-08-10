@@ -8,6 +8,7 @@ import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
+import jakarta.persistence.Transient;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -75,6 +76,11 @@ public class LogIntegracaoModel {
     private Integer tentativasCanhoto;
     @Column(name = "data_processamento", nullable = false)
     private LocalDateTime dataProcessamento;
+
+    @Transient
+    private boolean estavaEmQuarentena;
+    @Transient
+    private String resultadoDaRepescagem;
 
 
 }

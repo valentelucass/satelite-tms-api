@@ -10,7 +10,9 @@ import org.springframework.stereotype.Service;
 
 import com.example.satelite.dto.rodogarcia.EslOcorrenciaDTO;
 import com.example.satelite.models.LogIntegracaoModel;
+import com.example.satelite.models.QuarentenaEventoModel;
 import com.example.satelite.repositories.LogIntegracaoRepository;
+import com.example.satelite.repositories.QuarentenaEventoRepository;
 import com.example.satelite.services.ResultadoIntegracao;
 
 @Service
@@ -25,22 +27,34 @@ public class EtlEstadoIntegracaoService {
 
     private final LogIntegracaoRepository logIntegracaoRepository;
     private final AuditoriaDataHoraService auditoriaDataHoraService;
+    private final QuarentenaEventoRepository quarentenaEventoRepository;
 
     @Autowired
     public EtlEstadoIntegracaoService(
             LogIntegracaoRepository logIntegracaoRepository,
-            AuditoriaDataHoraService auditoriaDataHoraService
+            AuditoriaDataHoraService auditoriaDataHoraService,
+            QuarentenaEventoRepository quarentenaEventoRepository
     ) {
         this.logIntegracaoRepository = logIntegracaoRepository;
         this.auditoriaDataHoraService = auditoriaDataHoraService;
+        this.quarentenaEventoRepository = quarentenaEventoRepository;
     }
 
     public EtlEstadoIntegracaoService(LogIntegracaoRepository logIntegracaoRepository) {
-        this(logIntegracaoRepository, new AuditoriaDataHoraService(logIntegracaoRepository));
+        this(logIntegracaoRepository, new AuditoriaDataHoraService(logIntegracaoRepository), null);
+    }
+
+    public EtlEstadoIntegracaoService(
+            LogIntegracaoRepository logIntegracaoRepository,
+            AuditoriaDataHoraService auditoriaDataHoraService
+    ) {
+        this(logIntegracaoRepository, auditoriaDataHoraService, null);
     }
 
     public LogIntegracaoModel salvar(LogIntegracaoModel logIntegracao) {
-        return logIntegracaoRepository.save(logIntegracao);
+        LogIntegracaoModel salvo = logIntegracaoRepository.save(logIntegracao);
+        registrarEventosQuarentena(salvo);
+        return salvo;
     }
 
     public List<LogIntegracaoModel> buscarPendenciasCanhoto(String destino, String statusCanhoto) {
@@ -100,6 +114,7 @@ public class EtlEstadoIntegracaoService {
     }
 
     public void aplicarResultadoIntegracao(LogIntegracaoModel logIntegracao, ResultadoIntegracao resultado) {
+        boolean estavaEmQuarentena = estaEmQuarentena(logIntegracao);
         LocalDateTime agora = agoraAuditoria();
         String statusDadosAnterior = logIntegracao.getStatusDados();
         String statusCanhotoAnterior = logIntegracao.getStatusCanhoto();
@@ -123,6 +138,9 @@ public class EtlEstadoIntegracaoService {
             logIntegracao.setDataProcessamentoCanhoto(agora);
             logIntegracao.setTentativasCanhoto(incrementar(logIntegracao.getTentativasCanhoto()));
         }
+
+        logIntegracao.setEstavaEmQuarentena(estavaEmQuarentena);
+        logIntegracao.setResultadoDaRepescagem(estavaEmQuarentena ? resultado.status() : null);
     }
 
     public ResultadoRegistro converterResultadoRegistro(ResultadoIntegracao resultado) {
@@ -193,6 +211,70 @@ public class EtlEstadoIntegracaoService {
         }
 
         return resultado.mensagemErroCanhoto();
+    }
+
+    private void registrarEventosQuarentena(LogIntegracaoModel logIntegracao) {
+        if (quarentenaEventoRepository == null || logIntegracao == null || logIntegracao.getId() == null) {
+            return;
+        }
+
+        if (estaEmQuarentena(logIntegracao)
+                && !quarentenaEventoRepository.existsByLogIntegracaoIdAndTipoEvento(
+                        logIntegracao.getId(), "ENTRADA_QUARENTENA")) {
+            quarentenaEventoRepository.save(evento(logIntegracao, "ENTRADA_QUARENTENA", "PENDENTE"));
+        }
+
+        if (logIntegracao.isEstavaEmQuarentena() && logIntegracao.getResultadoDaRepescagem() != null) {
+            quarentenaEventoRepository.save(evento(
+                    logIntegracao,
+                    "REPESCAGEM",
+                    resultadoRepescagem(logIntegracao.getResultadoDaRepescagem())
+            ));
+            logIntegracao.setEstavaEmQuarentena(false);
+            logIntegracao.setResultadoDaRepescagem(null);
+        }
+    }
+
+    private QuarentenaEventoModel evento(LogIntegracaoModel logIntegracao, String tipoEvento, String resultado) {
+        return QuarentenaEventoModel.builder()
+                .logIntegracaoId(logIntegracao.getId())
+                .tipoEvento(tipoEvento)
+                .resultado(resultado)
+                .etapa(etapaAfetada(logIntegracao))
+                .mensagem(logIntegracao.getErro())
+                .dataEvento(logIntegracao.getDataProcessamento() != null
+                        ? logIntegracao.getDataProcessamento() : agoraAuditoria())
+                .build();
+    }
+
+    private boolean estaEmQuarentena(LogIntegracaoModel logIntegracao) {
+        return logIntegracao != null
+                && STATUS_ERRO_DESTINO.equals(logIntegracao.getStatus())
+                && (valorTentativas(logIntegracao.getTentativasDados()) >= 3
+                || valorTentativas(logIntegracao.getTentativasCanhoto()) >= 3);
+    }
+
+    private String resultadoRepescagem(String status) {
+        if (STATUS_ENVIADO.equals(status) || STATUS_SUCESSO.equals(status)) {
+            return "SUCESSO";
+        }
+        if (STATUS_ERRO_DESTINO.equals(status)) {
+            return "ERRO";
+        }
+        return "PENDENTE";
+    }
+
+    private String etapaAfetada(LogIntegracaoModel logIntegracao) {
+        boolean dados = STATUS_ERRO_DESTINO.equals(logIntegracao.getStatusDados());
+        boolean canhoto = STATUS_ERRO_DESTINO.equals(logIntegracao.getStatusCanhoto());
+        if (dados && canhoto) {
+            return "DADOS_E_COMPROVANTE";
+        }
+        return dados ? "DADOS" : canhoto ? "COMPROVANTE" : "GERAL";
+    }
+
+    private int valorTentativas(Integer tentativas) {
+        return tentativas != null ? tentativas : 0;
     }
 
     private Long obterOccurrenceId(EslOcorrenciaDTO ocorrencia) {
