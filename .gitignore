@@ -109,6 +109,7 @@ desktop.ini
 # Private/internal documentation
 /docs/info-iniciais/
 /docs/SUPPORT/
+/docs/SECRETO/
 
 # Operational batch scripts are versioned; local helpers remain ignored.
 scripts/*
