@@ -22,13 +22,13 @@ class QuarentenaControllerTest {
     @Test
     void deveConsultarTodosOsDestinosQuandoNaoHaSelecao() {
         LogIntegracaoRepository repository = mock(LogIntegracaoRepository.class);
-        when(repository.findErrosManuais(eq(List.of("PPG", "VEDACIT", "SELIA")), any(PageRequest.class)))
+        when(repository.findErrosManuais(eq(List.of("PPG", "VEDACIT", "SELIA", "SUPPORTE")), any(PageRequest.class)))
                 .thenReturn(Page.empty());
         QuarentenaController controller = controller(repository);
 
         controller.listarErrosManuais(0, 100, null);
 
-        verify(repository).findErrosManuais(eq(List.of("PPG", "VEDACIT", "SELIA")), any(PageRequest.class));
+        verify(repository).findErrosManuais(eq(List.of("PPG", "VEDACIT", "SELIA", "SUPPORTE")), any(PageRequest.class));
     }
 
     @Test

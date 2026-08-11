@@ -2,6 +2,7 @@ package com.example.satelite.services.etl;
 
 import java.util.Locale;
 import java.util.Set;
+import java.util.function.IntToLongFunction;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -26,11 +27,50 @@ public class EtlResilienciaService {
     @Value("${INTEGRATION_TRANSIENT_BACKOFF_MS:15000}")
     private long backoffErroTransitorioMs = 15000;
 
+    @Value("${VEDACIT_XML_RETRY_INITIAL_BACKOFF_MS:15000}")
+    private long vedacitXmlRetryInitialBackoffMs = 15000;
+
+    @Value("${VEDACIT_XML_RETRY_BACKOFF_MULTIPLIER:2}")
+    private long vedacitXmlRetryBackoffMultiplier = 2;
+
+    @Value("${VEDACIT_XML_RETRY_MAX_BACKOFF_MS:120000}")
+    private long vedacitXmlRetryMaxBackoffMs = 120000;
+
     public ResultadoRegistro processarOcorrenciaComRetentativas(
             String destino,
             String chaveNfe,
             LogIntegracaoModel logIntegracao,
             ProcessamentoRegistroTentativa processamento
+    ) {
+        return processarComRetentativas(
+                destino,
+                chaveNfe,
+                logIntegracao,
+                processamento,
+                tentativasConsumidas -> backoffTransitorioMs()
+        );
+    }
+
+    public ResultadoRegistro processarEmissaoXmlVedacitComRetentativas(
+            String chaveNfe,
+            LogIntegracaoModel logIntegracao,
+            ProcessamentoRegistroTentativa processamento
+    ) {
+        return processarComRetentativas(
+                "VEDACIT",
+                chaveNfe,
+                logIntegracao,
+                processamento,
+                this::backoffProgressivoXmlVedacitMs
+        );
+    }
+
+    private ResultadoRegistro processarComRetentativas(
+            String destino,
+            String chaveNfe,
+            LogIntegracaoModel logIntegracao,
+            ProcessamentoRegistroTentativa processamento,
+            IntToLongFunction politicaDeEspera
     ) {
         while (true) {
             ResultadoRegistro resultado = processamento.processar();
@@ -48,15 +88,16 @@ public class EtlResilienciaService {
                 return resultadoErroAposTentativa(destino, chaveNfe, logIntegracao);
             }
 
+            long esperaMs = politicaDeEspera.applyAsLong(tentativasConsumidas);
             log.warn(
                     "⏸️ [{}] NF {}: erro HTTP temporário detectado após a tentativa {}/{}. Pausando {} ms antes de retomar o mesmo registro.",
                     destino,
                     chaveNfe,
                     tentativasConsumidas,
                     limiteMaximoTentativas(),
-                    backoffTransitorioMs()
+                    esperaMs
             );
-            pausarAposErroTransitorio();
+            pausarAposErroTransitorio(esperaMs);
         }
     }
 
@@ -181,8 +222,26 @@ public class EtlResilienciaService {
         return Math.max(0, backoffErroTransitorioMs);
     }
 
-    private void pausarAposErroTransitorio() {
-        long esperaMs = backoffTransitorioMs();
+    long backoffProgressivoXmlVedacitMs(int tentativasConsumidas) {
+        long esperaMs = Math.min(
+                Math.max(0, vedacitXmlRetryInitialBackoffMs),
+                Math.max(0, vedacitXmlRetryMaxBackoffMs)
+        );
+        long tetoMs = Math.max(0, vedacitXmlRetryMaxBackoffMs);
+        long multiplicador = Math.max(1, vedacitXmlRetryBackoffMultiplier);
+
+        for (int indice = 1; indice < Math.max(1, tentativasConsumidas); indice++) {
+            if (esperaMs >= tetoMs || esperaMs > tetoMs / multiplicador) {
+                return tetoMs;
+            }
+            esperaMs *= multiplicador;
+        }
+
+        return esperaMs;
+    }
+
+    void pausarAposErroTransitorio(long esperaMs) {
+        esperaMs = Math.max(0, esperaMs);
         if (esperaMs <= 0) {
             return;
         }

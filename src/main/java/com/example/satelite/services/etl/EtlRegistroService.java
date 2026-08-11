@@ -413,8 +413,7 @@ public class EtlRegistroService {
                         ocorrencia,
                         STATUS_RECEBIDO
                 ));
-        return etlResilienciaService.processarOcorrenciaComRetentativas(
-                DESTINO_VEDACIT,
+        return etlResilienciaService.processarEmissaoXmlVedacitComRetentativas(
                 obterChaveNfe(ocorrencia),
                 logIntegracao,
                 () -> processarEmissaoXmlVedacitComLog(cursorNextId, ocorrencia, logIntegracao)

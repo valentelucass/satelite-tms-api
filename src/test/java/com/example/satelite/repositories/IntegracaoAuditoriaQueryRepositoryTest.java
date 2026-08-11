@@ -105,7 +105,7 @@ class IntegracaoAuditoriaQueryRepositoryTest {
         repository.buscarPendencias(filtros(null, null, "TODOS"), 0, 20);
 
         String sql = capturarSqlTabela(jdbcTemplate);
-        assertTrue(sql.contains("l.sistema_destino IN ('VEDACIT', 'PPG', 'SELIA')"));
+        assertTrue(sql.contains("l.sistema_destino IN ('VEDACIT', 'PPG', 'SELIA', 'SUPPORTE')"));
         assertFalse(sql.contains("l.status_canhoto = 'PENDENTE_FOTO'"));
         assertFalse(sql.contains("l.status IN ('ENVIADO', 'PROCESSADO')"));
         assertFalse(sql.contains("request_payload"));

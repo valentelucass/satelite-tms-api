@@ -140,6 +140,44 @@ class OrquestradorEtlServiceTest {
     }
 
     @Test
+    void deveSepararCursorDeEmissaoXmlDaEntregaVedacitSemBuscarCanhoto() {
+        Dependencias dependencias = criarDependencias();
+        ReflectionTestUtils.setField(dependencias.service(), "ppgEnabled", false);
+        ReflectionTestUtils.setField(dependencias.service(), "repescagemEnabled", false);
+
+        ControleCursor cursorXml = ControleCursor.builder()
+                .sistemaDestino("VEDACIT_XML")
+                .cursorNextId(900L)
+                .dataAtualizacao(LocalDateTime.now())
+                .build();
+        ControleCursor cursorEntrega = ControleCursor.builder()
+                .sistemaDestino("VEDACIT")
+                .cursorNextId(800L)
+                .dataAtualizacao(LocalDateTime.now())
+                .build();
+        when(dependencias.controleCursorRepository().findBySistemaDestino("VEDACIT_XML"))
+                .thenReturn(Optional.of(cursorXml));
+        when(dependencias.controleCursorRepository().findBySistemaDestino("VEDACIT"))
+                .thenReturn(Optional.of(cursorEntrega));
+        when(dependencias.rodogarciaClient().buscarOcorrencias(
+                "Bearer token-vedacit", 900L, null, null, 110
+        )).thenReturn(loteVazio());
+        when(dependencias.rodogarciaClient().buscarOcorrencias(
+                "Bearer token-vedacit", 800L, null, null, 1
+        )).thenReturn(loteVazio());
+
+        dependencias.service().executarFluxos();
+
+        verify(dependencias.rodogarciaClient()).buscarOcorrencias(
+                "Bearer token-vedacit", 900L, null, null, 110
+        );
+        verify(dependencias.rodogarciaClient()).buscarOcorrencias(
+                "Bearer token-vedacit", 800L, null, null, 1
+        );
+        verify(dependencias.rodogarciaClient(), times(0)).buscarComprovante(anyString(), anyString());
+    }
+
+    @Test
     void deveConsultarQuarentenaSomenteDoDestinoExecutado() {
         Dependencias dependencias = criarDependencias();
         when(dependencias.controleCursorRepository().findBySistemaDestino("PPG")).thenReturn(Optional.empty());

@@ -2,7 +2,12 @@ package com.example.satelite.services.etl;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.spy;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import org.junit.jupiter.api.BeforeEach;
@@ -111,6 +116,39 @@ class EtlResilienciaServiceTest {
 
         assertEquals(ResultadoRegistro.ERRO, resultado);
         assertEquals(1, chamadas.get());
+    }
+
+    @Test
+    void deveAplicarBackoffProgressivoSomenteNoRetryDeXmlVedacit() {
+        EtlResilienciaService serviceComEspiao = spy(service);
+        ReflectionTestUtils.setField(serviceComEspiao, "vedacitXmlRetryInitialBackoffMs", 100L);
+        ReflectionTestUtils.setField(serviceComEspiao, "vedacitXmlRetryBackoffMultiplier", 2L);
+        ReflectionTestUtils.setField(serviceComEspiao, "vedacitXmlRetryMaxBackoffMs", 250L);
+        List<Long> esperas = new ArrayList<>();
+        doAnswer(invocation -> {
+            esperas.add(invocation.getArgument(0));
+            return null;
+        }).when(serviceComEspiao).pausarAposErroTransitorio(anyLong());
+
+        LogIntegracaoModel logIntegracao = new LogIntegracaoModel();
+        AtomicInteger chamadas = new AtomicInteger();
+
+        ResultadoRegistro resultado = serviceComEspiao.processarEmissaoXmlVedacitComRetentativas(
+                "nf-123",
+                logIntegracao,
+                () -> {
+                    int tentativa = chamadas.incrementAndGet();
+                    if (tentativa <= 2) {
+                        marcarErroDestino(logIntegracao, "HTTP 503 Service Unavailable", tentativa);
+                        return ResultadoRegistro.ERRO;
+                    }
+                    return ResultadoRegistro.ENVIADO;
+                }
+        );
+
+        assertEquals(ResultadoRegistro.ENVIADO, resultado);
+        assertEquals(List.of(100L, 200L), esperas);
+        assertEquals(250L, serviceComEspiao.backoffProgressivoXmlVedacitMs(3));
     }
 
     private void marcarErroDestino(LogIntegracaoModel logIntegracao, String mensagem, int tentativa) {
