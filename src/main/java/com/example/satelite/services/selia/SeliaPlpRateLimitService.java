@@ -9,6 +9,7 @@ import java.util.Iterator;
 import java.util.Map;
 
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 /**
@@ -28,6 +29,7 @@ public class SeliaPlpRateLimitService {
     private final Map<String, Janela> buckets = new HashMap<>();
     private long ultimaLimpezaEmMs;
 
+    @Autowired
     public SeliaPlpRateLimitService(
             @Value("${SELIA_INTELIPOST_PLP_RATE_LIMIT_ENABLED:true}") boolean habilitado,
             @Value("${SELIA_INTELIPOST_PLP_RATE_LIMIT_WINDOW_MS:60000}") long janelaMs,

@@ -74,6 +74,9 @@ public class EtlRegistroService {
     @Value("${RODOGARCIA_MASTER_API_REST:}")
     private String tokenMasterEsl;
 
+    @Value("${SFTP_RODOGARCIA_ENABLED:false}")
+    private boolean sftpRodogarciaHabilitado;
+
     @Autowired
     public EtlRegistroService(
             RodogarciaClient rodogarciaClient,
@@ -255,25 +258,9 @@ public class EtlRegistroService {
                     chaveNfe,
                     logIntegracao.getChaveCte()
             );
-            ResultadoBuscaComprovante buscaComprovante = buscarComprovanteEntregaOpcional(
-                    DESTINO_VEDACIT,
-                    "",
-                    ocorrencia
-            );
-            ComprovanteEslDTO comprovante = buscaComprovante.comprovante();
-            if (!comprovanteTemUrlImagem(comprovante)) {
-                ResultadoIntegracao pendencia = ResultadoIntegracao.parcialCanhotoPendente(
-                        STATUS_SUCESSO,
-                        normalizarMotivoCanhotoIndisponivel(buscaComprovante.motivoIndisponivel())
-                );
-                etlEstadoIntegracaoService.aplicarResultadoIntegracao(logIntegracao, pendencia);
-                etlEstadoIntegracaoService.salvar(logIntegracao);
-                return ResultadoRegistro.PENDENTE_FOTO;
-            }
-
             ResultadoIntegracao resultado = vedacitIntegrationService.processarOcorrencia(
                     ocorrencia,
-                    comprovante,
+                    null,
                     true,
                     false
             );
@@ -400,13 +387,23 @@ public class EtlRegistroService {
         }
 
         if (logExistente.isPresent()
-                && ResultadoIntegracao.STATUS_PENDENTE_ORIGEM.equals(logExistente.get().getStatusDados())) {
+                && ResultadoIntegracao.STATUS_PENDENTE_ORIGEM.equals(logExistente.get().getStatusDados())
+                && !sftpRodogarciaHabilitado) {
             log.info(
                     "⏸️ [VEDACIT] NF {}: XML do CT-e permanece pendente de disponibilização na ESL. CTe={}",
                     obterChaveNfe(ocorrencia),
                     obterChaveCte(ocorrencia)
             );
             return ResultadoRegistro.PENDENTE_ORIGEM;
+        }
+
+        if (logExistente.isPresent()
+                && ResultadoIntegracao.STATUS_PENDENTE_ORIGEM.equals(logExistente.get().getStatusDados())) {
+            log.info(
+                    "📄 [VEDACIT] NF {}: nova fonte SFTP habilitada; reavaliando XML pendente. CTe={}",
+                    obterChaveNfe(ocorrencia),
+                    obterChaveCte(ocorrencia)
+            );
         }
 
         if (logExistente.isPresent() && etlResilienciaService.limiteTentativasAtingido(logExistente.get())) {
@@ -528,7 +525,8 @@ public class EtlRegistroService {
             }
 
             boolean comprovanteObrigatorio = comprovanteObrigatorio(destino, ocorrencia);
-            ResultadoBuscaComprovante buscaComprovante = comprovanteObrigatorio
+            boolean vedacitComprovanteComFontePrioritaria = DESTINO_VEDACIT.equals(destino) && comprovanteObrigatorio;
+            ResultadoBuscaComprovante buscaComprovante = comprovanteObrigatorio && !vedacitComprovanteComFontePrioritaria
                     ? buscarComprovanteEntregaOpcional(destino, headerAuth, ocorrencia)
                     : ResultadoBuscaComprovante.semComprovante(null);
             ComprovanteEslDTO comprovante = buscaComprovante.comprovante();
@@ -539,7 +537,7 @@ public class EtlRegistroService {
                 comprovanteProcessamento = null;
             }
 
-            if (comprovanteObrigatorio && comprovanteProcessamento == null) {
+            if (comprovanteObrigatorio && comprovanteProcessamento == null && !vedacitComprovanteComFontePrioritaria) {
                 String motivoPendente = normalizarMotivoCanhotoIndisponivel(buscaComprovante.motivoIndisponivel());
                 ResultadoIntegracao resultadoPendente = ResultadoIntegracao.pendenteFotoObrigatorio(motivoPendente);
                 etlEstadoIntegracaoService.aplicarResultadoIntegracao(logIntegracao, resultadoPendente);

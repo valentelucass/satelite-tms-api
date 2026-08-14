@@ -77,6 +77,9 @@ public class EtlFluxoDestinoService {
     @Value("${ETL_PAGINATION_PACING_PAUSE_MS:30000}")
     private long pausaPacingPaginacaoMs = PAUSA_PADRAO_PACING_PAGINACAO_MS;
 
+    @Value("${APP_ETL_PENDENCIAS_ENABLED:true}")
+    private boolean processarPendenciasEnabled = true;
+
     public EtlFluxoDestinoService(
             RodogarciaClient rodogarciaClient,
             ControleCursorRepository controleCursorRepository,
@@ -121,7 +124,7 @@ public class EtlFluxoDestinoService {
         try {
             String headerAuth = "Bearer " + tokenEsl;
             Long cursorAtual = request.buscarCursorInicial() ? buscarUltimoCursor(identificadorCursor) : null;
-            if (processarPendencias && request.processarPendencias()) {
+            if (processarPendencias && request.processarPendencias() && processarPendenciasEnabled) {
                 ResultadoPagina resultadoPendencias = etlRegistroService.processarPendenciasDestino(
                         destino,
                         headerAuth,

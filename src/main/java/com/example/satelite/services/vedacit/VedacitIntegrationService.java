@@ -75,6 +75,12 @@ public class VedacitIntegrationService {
     @Value("${RODOGARCIA_MASTER_API_REST:}")
     private String tokenCteXmlEsl;
 
+    @Value("${RODOGARCIA_TOKEN_VEDACIT_COMPROVANTE:}")
+    private String tokenComprovanteEsl;
+
+    @Value("${RODOGARCIA_TOKEN_VEDACIT:}")
+    private String tokenVedacitEsl;
+
     @Value("${VEDACIT_SEND_OCCURRENCE_ENABLED:true}")
     private boolean envioOcorrenciaHabilitado;
 
@@ -298,16 +304,14 @@ public class VedacitIntegrationService {
             return ResultadoIntegracao.vedacitConcluido(statusDados, ResultadoIntegracao.STATUS_NAO_APLICAVEL);
         }
 
-        if (!comprovanteTemImagem(comprovante)) {
-            log.warn("⏳ [VEDACIT] NF {}: Canhoto ainda não disponível na ESL. CTe={}", chaveNfe, cteKey);
-            return ResultadoIntegracao.parcialCanhotoPendente(statusDados, "Canhoto ainda não disponível na ESL");
-        }
-
         try {
             Canhoto canhoto = converterParaCanhoto(ocorrencia, comprovante, dataOcorrencia, formatter);
             enviarCanhoto(canhoto, chaveNfe, cteKey);
             statusCanhoto = ResultadoIntegracao.STATUS_SUCESSO;
             return ResultadoIntegracao.vedacitConcluido(statusDados, statusCanhoto);
+        } catch (CanhotoIndisponivelNaOrigemException e) {
+            log.warn("⏳ [VEDACIT] NF {}: Canhoto indisponível no SFTP e na ESL. CTe={}", chaveNfe, cteKey);
+            return ResultadoIntegracao.parcialCanhotoPendente(statusDados, e.getMessage());
         } catch (EslRequestTransientException e) {
             throw e;
         } catch (Exception e) {
@@ -436,14 +440,13 @@ public class VedacitIntegrationService {
     ) throws Exception {
         String chaveNfe = ocorrencia.invoice().key();
         String cteKey = ocorrencia.freight().cteKey();
-        Optional<byte[]> canhotoSftp = vedacitSftpDocumentSource == null ? Optional.empty()
-                : vedacitSftpDocumentSource.buscarComprovante(cteKey, chaveNfe).map(documento -> documento.conteudo());
+        Optional<byte[]> canhotoSftp = buscarComprovanteSftp(cteKey, chaveNfe);
         byte[] imagemOriginal;
         if (canhotoSftp.isPresent()) {
             imagemOriginal = canhotoSftp.get();
             log.info("⬇️ [VEDACIT] NF {}: Canhoto obtido via SFTP. CTe={}", chaveNfe, cteKey);
         } else {
-            String urlImagem = obterUrlImagem(comprovante);
+            String urlImagem = obterUrlImagem(obterComprovanteEslFallback(comprovante, cteKey));
             log.info("⬇️ [VEDACIT] NF {}: Baixando imagem do canhoto via ESL... CTe={}", chaveNfe, cteKey);
             imagemOriginal = imageDownloader.baixarImagemDaUrl(urlImagem, cteKey);
         }
@@ -549,6 +552,57 @@ public class VedacitIntegrationService {
         }
     }
 
+    private Optional<byte[]> buscarComprovanteSftp(String chaveCte, String chaveNfe) {
+        if (vedacitSftpDocumentSource == null) {
+            return Optional.empty();
+        }
+        try {
+            return vedacitSftpDocumentSource.buscarComprovante(chaveCte, chaveNfe)
+                    .map(documento -> documento.conteudo())
+                    .filter(conteudo -> conteudo.length > 0);
+        } catch (RuntimeException e) {
+            log.warn("⚠️ [VEDACIT] SFTP indisponível para canhoto; usando fallback ESL. CTe={} motivo={}",
+                    chaveCte, e.getMessage());
+            return Optional.empty();
+        }
+    }
+
+    private ComprovanteEslDTO obterComprovanteEslFallback(ComprovanteEslDTO comprovanteAtual, String chaveCte) {
+        if (comprovanteTemImagem(comprovanteAtual)) {
+            return comprovanteAtual;
+        }
+
+        try {
+            ComprovanteEslDTO comprovante = eslRequestPolicyService.executarComTelemetria(
+                    EslRequestContext.criar("VEDACIT", "DELIVERY_RECEIPT"),
+                    () -> rodogarciaClient.buscarComprovante("Bearer " + obterTokenComprovanteEsl(), chaveCte)
+            );
+            if (!comprovanteTemImagem(comprovante)) {
+                throw new CanhotoIndisponivelNaOrigemException("Canhoto ainda não disponível na ESL");
+            }
+            return comprovante;
+        } catch (EslRequestTransientException e) {
+            throw e;
+        } catch (CanhotoIndisponivelNaOrigemException e) {
+            throw e;
+        } catch (RuntimeException e) {
+            throw new CanhotoIndisponivelNaOrigemException("Canhoto ainda não disponível na ESL", e);
+        }
+    }
+
+    private String obterTokenComprovanteEsl() {
+        if (tokenComprovanteEsl != null && !tokenComprovanteEsl.isBlank()) {
+            return tokenComprovanteEsl.trim();
+        }
+        if (tokenCteXmlEsl != null && !tokenCteXmlEsl.isBlank()) {
+            return tokenCteXmlEsl.trim();
+        }
+        if (tokenVedacitEsl != null && !tokenVedacitEsl.isBlank()) {
+            return tokenVedacitEsl.trim();
+        }
+        throw new IllegalStateException("Token ESL Vedacit ausente para fallback do comprovante");
+    }
+
     private byte[] baixarXmlCteEsl(String chaveCte, String chaveNfe) {
         String token = obterTokenCteXmlEsl();
 
@@ -589,6 +643,16 @@ public class VedacitIntegrationService {
     private static final class XmlCteIndisponivelNaOrigemException extends RuntimeException {
         private XmlCteIndisponivelNaOrigemException(String mensagem) {
             super(mensagem);
+        }
+    }
+
+    private static final class CanhotoIndisponivelNaOrigemException extends RuntimeException {
+        private CanhotoIndisponivelNaOrigemException(String mensagem) {
+            super(mensagem);
+        }
+
+        private CanhotoIndisponivelNaOrigemException(String mensagem, Throwable causa) {
+            super(mensagem, causa);
         }
     }
 

@@ -14,7 +14,9 @@ import java.awt.Graphics2D;
 import java.awt.image.BufferedImage;
 import java.io.ByteArrayOutputStream;
 import java.time.OffsetDateTime;
+import java.time.Instant;
 import java.util.List;
+import java.util.Optional;
 import java.util.function.Supplier;
 
 import javax.imageio.ImageIO;
@@ -38,6 +40,8 @@ import com.example.satelite.dto.rodogarcia.EslOccurrenceDefDTO;
 import com.example.satelite.services.ResultadoIntegracao;
 import com.example.satelite.services.etl.EslRequestContext;
 import com.example.satelite.services.etl.EslRequestPolicyService;
+import com.example.satelite.services.origem.sftp.vedacit.VedacitSftpDocument;
+import com.example.satelite.services.origem.sftp.vedacit.VedacitSftpDocumentSource;
 import com.example.satelite.utils.ImageDownloader;
 import com.example.satelite.vedacit.cte.ICTe;
 import com.example.satelite.vedacit.nfe.Canhoto;
@@ -61,6 +65,22 @@ class VedacitIntegrationServiceTest {
         ReflectionTestUtils.setField(service, "soapReadTimeoutMs", 60000);
 
         assertNotNull(service.criarPortaOcorrencias());
+        assertNotNull(service.criarPortaNFe());
+        assertNotNull(service.criarPortaCte());
+    }
+
+    @Test
+    void deveCriarPortasSoapUsadasPeloFluxoDocumental() throws Exception {
+        VedacitIntegrationService service = new VedacitIntegrationService(
+                mock(ImageDownloader.class),
+                mock(RodogarciaClient.class),
+                criarPoliticaEslExecutora()
+        );
+        ReflectionTestUtils.setField(service, "vedacitToken", "token-vedacit");
+        ReflectionTestUtils.setField(service, "vedacitApiBaseUrl", "https://vedacit.multiembarcador.com.br/SGT.WebService");
+        ReflectionTestUtils.setField(service, "soapConnectTimeoutMs", 30000);
+        ReflectionTestUtils.setField(service, "soapReadTimeoutMs", 60000);
+
         assertNotNull(service.criarPortaNFe());
         assertNotNull(service.criarPortaCte());
     }
@@ -258,6 +278,110 @@ class VedacitIntegrationServiceTest {
         assertEquals(ResultadoIntegracao.STATUS_PENDENTE_ORIGEM, resultado.statusDados());
         assertEquals(ResultadoIntegracao.STATUS_NAO_APLICAVEL, resultado.statusCanhoto());
         assertEquals("XML do CT-e não encontrado na ESL", resultado.mensagemErroDados());
+    }
+
+    @Test
+    void devePreferirXmlDoSftpSemConsultarEsl() throws Exception {
+        RodogarciaClient rodogarciaClient = mock(RodogarciaClient.class);
+        EslRequestPolicyService politicaEsl = criarPoliticaEslExecutora();
+        VedacitSftpDocumentSource sftp = mock(VedacitSftpDocumentSource.class);
+        ICTe portaCte = mock(ICTe.class);
+        EslOcorrenciaDTO ocorrencia = criarOcorrencia();
+        byte[] xml = "<cte>35260612345678000123570010000012341000012345"
+                .concat("35260612345678000123550010000012341000012345</cte>").getBytes();
+        when(sftp.buscarXmlCte("35260612345678000123570010000012341000012345",
+                "35260612345678000123550010000012341000012345"))
+                .thenReturn(Optional.of(new VedacitSftpDocument(
+                        VedacitSftpDocument.Tipo.XML_CTE, "xml/amostra.xml",
+                        "35260612345678000123570010000012341000012345",
+                        "35260612345678000123550010000012341000012345",
+                        xml.length, Instant.now(), xml
+                )));
+
+        VedacitIntegrationService service = new VedacitIntegrationService(
+                mock(ImageDownloader.class), rodogarciaClient, politicaEsl, sftp
+        ) {
+            @Override
+            protected ICTe criarPortaCte() {
+                return portaCte;
+            }
+        };
+        ReflectionTestUtils.setField(service, "envioXmlCteHabilitado", true);
+
+        ResultadoIntegracao resultado = service.processarXmlCteEmitido(ocorrencia, null);
+
+        assertEquals(ResultadoIntegracao.STATUS_SUCESSO, resultado.statusDados());
+        verify(portaCte).enviarArquivoXMLCTe(xml);
+        verifyNoInteractions(rodogarciaClient);
+        verify(politicaEsl, never()).executarComTelemetria(any(EslRequestContext.class), any());
+    }
+
+    @Test
+    void devePreferirCanhotoDoSftpSemConsultarEsl() throws Exception {
+        ImageDownloader imageDownloader = mock(ImageDownloader.class);
+        RodogarciaClient rodogarciaClient = mock(RodogarciaClient.class);
+        EslRequestPolicyService politicaEsl = criarPoliticaEslExecutora();
+        VedacitSftpDocumentSource sftp = mock(VedacitSftpDocumentSource.class);
+        INFe portaNFe = mock(INFe.class);
+        byte[] imagem = criarImagemJpegTeste();
+        when(sftp.buscarComprovante("35260612345678000123570010000012341000012345",
+                "35260612345678000123550010000012341000012345"))
+                .thenReturn(Optional.of(new VedacitSftpDocument(
+                        VedacitSftpDocument.Tipo.COMPROVANTE, "comprovantes/amostra.jpg",
+                        "35260612345678000123570010000012341000012345",
+                        "35260612345678000123550010000012341000012345",
+                        imagem.length, Instant.now(), imagem
+                )));
+
+        VedacitIntegrationService service = new VedacitIntegrationService(
+                imageDownloader, rodogarciaClient, politicaEsl, sftp
+        ) {
+            @Override
+            protected INFe criarPortaNFe() {
+                return portaNFe;
+            }
+        };
+        ReflectionTestUtils.setField(service, "envioCanhotoHabilitado", true);
+
+        ResultadoIntegracao resultado = service.processarOcorrencia(criarOcorrencia(), null, true, false);
+
+        assertEquals(ResultadoIntegracao.STATUS_SUCESSO, resultado.statusCanhoto());
+        verify(portaNFe).enviarDigitalizacaoCanhoto(any(Canhoto.class));
+        verifyNoInteractions(imageDownloader, rodogarciaClient);
+        verify(politicaEsl, never()).executarComTelemetria(any(EslRequestContext.class), any());
+    }
+
+    @Test
+    void deveUsarEslQuandoSftpDoCanhotoFalhar() throws Exception {
+        ImageDownloader imageDownloader = mock(ImageDownloader.class);
+        RodogarciaClient rodogarciaClient = mock(RodogarciaClient.class);
+        EslRequestPolicyService politicaEsl = criarPoliticaEslExecutora();
+        VedacitSftpDocumentSource sftp = mock(VedacitSftpDocumentSource.class);
+        INFe portaNFe = mock(INFe.class);
+        when(sftp.buscarComprovante(any(), any())).thenThrow(new IllegalStateException("SFTP indisponível"));
+        when(rodogarciaClient.buscarComprovante("Bearer token-comprovante",
+                "35260612345678000123570010000012341000012345"))
+                .thenReturn(criarComprovante());
+        when(imageDownloader.baixarImagemDaUrl(any(), any())).thenReturn(criarImagemJpegTeste());
+
+        VedacitIntegrationService service = new VedacitIntegrationService(
+                imageDownloader, rodogarciaClient, politicaEsl, sftp
+        ) {
+            @Override
+            protected INFe criarPortaNFe() {
+                return portaNFe;
+            }
+        };
+        ReflectionTestUtils.setField(service, "envioCanhotoHabilitado", true);
+        ReflectionTestUtils.setField(service, "tokenComprovanteEsl", "token-comprovante");
+
+        ResultadoIntegracao resultado = service.processarOcorrencia(criarOcorrencia(), null, true, false);
+
+        assertEquals(ResultadoIntegracao.STATUS_SUCESSO, resultado.statusCanhoto());
+        verify(rodogarciaClient).buscarComprovante("Bearer token-comprovante",
+                "35260612345678000123570010000012341000012345");
+        verify(imageDownloader).baixarImagemDaUrl("https://assinada.exemplo/canhoto.jpg",
+                "35260612345678000123570010000012341000012345");
     }
 
     @Test

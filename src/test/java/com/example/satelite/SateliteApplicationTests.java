@@ -7,8 +7,10 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import com.example.satelite.clients.PpgClient;
 import com.example.satelite.clients.RodogarciaClient;
 import com.example.satelite.repositories.ControleCursorRepository;
+import com.example.satelite.repositories.EslRequestTelemetryRepository;
 import com.example.satelite.repositories.IntegracaoAuditoriaQueryRepository;
 import com.example.satelite.repositories.LogIntegracaoRepository;
+import com.example.satelite.repositories.QuarentenaEventoRepository;
 
 @SpringBootTest(properties = {
 		"spring.autoconfigure.exclude="
@@ -46,6 +48,12 @@ class SateliteApplicationTests {
 
 	@MockitoBean
 	private IntegracaoAuditoriaQueryRepository integracaoAuditoriaQueryRepository;
+
+	@MockitoBean
+	private QuarentenaEventoRepository quarentenaEventoRepository;
+
+	@MockitoBean
+	private EslRequestTelemetryRepository eslRequestTelemetryRepository;
 
 	@Test
 	void contextLoads() {

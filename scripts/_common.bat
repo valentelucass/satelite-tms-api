@@ -55,7 +55,7 @@ if /I "%COMMON_REQUIRE_JAR%"=="true" (
 
 if exist "%JAVA_17_EXECUTABLE%" set "JAVA_EXECUTABLE=%JAVA_17_EXECUTABLE%"
 if not defined JAVA_EXECUTABLE set "JAVA_EXECUTABLE=java"
-if exist "%SATELITE_RUNTIME_CLASSES%\com\example\satelite\SateliteApplication.class" if exist "%PROJECT_ROOT%\target\selia-worker-inspect\BOOT-INF\lib" set "SATELITE_RUNTIME_CLASSPATH_AVAILABLE=true"
+if exist "%SATELITE_RUNTIME_CLASSES%\com\example\satelite\SateliteApplication.class" if exist "%PROJECT_ROOT%\target\selia-worker-inspect\BOOT-INF\lib\sshj-0.39.0.jar" set "SATELITE_RUNTIME_CLASSPATH_AVAILABLE=true"
 
 if not exist "%LOGS_DIR%" mkdir "%LOGS_DIR%" >nul 2>&1
 
