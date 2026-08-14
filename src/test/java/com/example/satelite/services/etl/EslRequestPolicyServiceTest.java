@@ -11,6 +11,8 @@ import java.time.Duration;
 import java.time.LocalDate;
 import java.util.Collections;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.ArrayList;
+import java.util.List;
 
 import org.junit.jupiter.api.Test;
 
@@ -25,10 +27,12 @@ class EslRequestPolicyServiceTest {
     private final EslRequestPolicyService service = new EslRequestPolicyService(
             0,
             0,
+            2,
             30,
             183,
             Duration.ofHours(1).toMillis(),
-            Duration.ofHours(12).toMillis()
+            Duration.ofHours(12).toMillis(),
+            new RecordingTelemetry()
     );
 
     @Test
@@ -95,7 +99,7 @@ class EslRequestPolicyServiceTest {
     }
 
     @Test
-    void deveAplicarBackoffERepetirHttp429AteSucesso() {
+    void deveAplicarBackoffERepetirHttp429DentroDoLimiteConfigurado() {
         AtomicInteger chamadas = new AtomicInteger();
 
         String retorno = service.executar("buscarXmlCte", () -> {
@@ -108,6 +112,39 @@ class EslRequestPolicyServiceTest {
 
         assertEquals("ok", retorno);
         assertEquals(2, chamadas.get());
+    }
+
+    @Test
+    void deveEncerrarHttp429AposLimiteDeNovasTentativas() {
+        AtomicInteger chamadas = new AtomicInteger();
+
+        EslRequestPolicyService.EslRequestTransientException erro = assertThrows(
+                EslRequestPolicyService.EslRequestTransientException.class,
+                () -> service.executar("buscarXmlCte", () -> {
+                    chamadas.incrementAndGet();
+                    throw criarErroEsl(429, "Too Many Requests", "rate limit");
+                })
+        );
+
+        assertEquals(429, erro.status());
+        assertEquals(3, chamadas.get());
+    }
+
+    @Test
+    void deveRegistrarTentativasComContextoSemDadosFiscais() {
+        RecordingTelemetry telemetry = new RecordingTelemetry();
+        EslRequestPolicyService serviceComTelemetria = new EslRequestPolicyService(
+                0, 0, 2, 30, 183, Duration.ofHours(1).toMillis(), Duration.ofHours(12).toMillis(), telemetry
+        );
+
+        serviceComTelemetria.executarComTelemetria(EslRequestContext.criar("VEDACIT", "CTE_XML"), () -> "ok");
+
+        assertEquals(1, telemetry.eventos.size());
+        Evento evento = telemetry.eventos.get(0);
+        assertEquals("VEDACIT", evento.contexto().destino());
+        assertEquals("CTE_XML", evento.contexto().rota());
+        assertEquals(200, evento.statusHttp());
+        assertFalse(evento.retry());
     }
 
     @Test
@@ -165,5 +202,17 @@ class EslRequestPolicyServiceTest {
                 StandardCharsets.UTF_8,
                 new RequestTemplate()
         );
+    }
+
+    private static final class RecordingTelemetry implements EslRequestTelemetryRecorder {
+        private final List<Evento> eventos = new ArrayList<>();
+
+        @Override
+        public void registrar(EslRequestContext contexto, Integer statusHttp, int tentativa, boolean retry, long duracaoMs) {
+            eventos.add(new Evento(contexto, statusHttp, tentativa, retry));
+        }
+    }
+
+    private record Evento(EslRequestContext contexto, Integer statusHttp, int tentativa, boolean retry) {
     }
 }

@@ -91,6 +91,14 @@ public class EtlEstadoIntegracaoService {
         return logIntegracao != null && STATUS_FINALIZADOS_SEM_REENVIO.contains(logIntegracao.getStatus());
     }
 
+    public boolean deveReprocessarIgnoradoSemEnvio(String destino, LogIntegracaoModel logIntegracao) {
+        return "SELIA".equals(destino)
+                && logIntegracao != null
+                && STATUS_IGNORADO.equals(logIntegracao.getStatus())
+                && textoVazio(logIntegracao.getRequestPayload())
+                && textoVazio(logIntegracao.getResponsePayload());
+    }
+
     public LogIntegracaoModel criarLogComStatus(
             String destino,
             Long cursorNextId,
@@ -111,6 +119,10 @@ public class EtlEstadoIntegracaoService {
                 .sistemaDestino(destino)
                 .dataProcessamento(agoraAuditoria())
                 .build();
+    }
+
+    private boolean textoVazio(String valor) {
+        return valor == null || valor.isBlank();
     }
 
     public void aplicarResultadoIntegracao(LogIntegracaoModel logIntegracao, ResultadoIntegracao resultado) {
@@ -156,6 +168,10 @@ public class EtlEstadoIntegracaoService {
             return ResultadoRegistro.PENDENTE_FOTO;
         }
 
+        if (resultado.pendenteOrigem()) {
+            return ResultadoRegistro.PENDENTE_ORIGEM;
+        }
+
         return ResultadoRegistro.ENVIADO;
     }
 
@@ -194,6 +210,7 @@ public class EtlEstadoIntegracaoService {
         return statusNovo != null
                 && !ResultadoIntegracao.STATUS_NAO_APLICAVEL.equals(statusNovo)
                 && !ResultadoIntegracao.STATUS_PENDENTE_FOTO.equals(statusNovo)
+                && !ResultadoIntegracao.STATUS_PENDENTE_ORIGEM.equals(statusNovo)
                 && (STATUS_ERRO_DESTINO.equals(statusNovo) || !statusNovo.equals(statusAnterior));
     }
 

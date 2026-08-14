@@ -4,6 +4,7 @@ import java.time.OffsetDateTime;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -52,6 +53,12 @@ public class SeliaIntegrationService {
     @Value("${SELIA_INTELIPOST_DELIVERY_EVENT_CODE:}")
     private String deliveryEventCode;
 
+    @Value("${SELIA_INTELIPOST_EVENT_CODE_MAP:}")
+    private String eventCodeMap;
+
+    @Value("${SELIA_INTELIPOST_ALL_EVENTS_ENABLED:false}")
+    private boolean allEventsEnabled;
+
     @Value("${SELIA_INTELIPOST_RECEIPT_TYPE:POD}")
     private String receiptType;
 
@@ -77,6 +84,10 @@ public class SeliaIntegrationService {
 
     public ResultadoIntegracao processarOcorrencia(EslOcorrenciaDTO ocorrencia, ComprovanteEslDTO comprovante) {
         String chaveNfe = obterChaveNfe(ocorrencia);
+        if (!ocorrenciaAceita(ocorrencia)) {
+            log.info("[SELIA] NF {} ignorada: codigo ESL sem DePara configurado.", chaveNfe);
+            return ResultadoIntegracao.ignorado();
+        }
         if (!notaFiscalPermitida(ocorrencia)) {
             log.warn("[SELIA] NF {} ignorada por não pertencer à whitelist.", chaveNfe);
             return ResultadoIntegracao.ignorado();
@@ -94,7 +105,7 @@ public class SeliaIntegrationService {
                         request
                 );
             }
-            log.info("[SELIA] NF {}: ocorrência e comprovante enviados para AddEvents.", chaveNfe);
+            log.info("[SELIA] NF {}: ocorrência enviada para AddEvents.", chaveNfe);
             return ResultadoIntegracao.enviado();
         } catch (FeignException e) {
             if (e.status() == 429) {
@@ -108,6 +119,18 @@ public class SeliaIntegrationService {
 
             throw e;
         }
+    }
+
+    public boolean ocorrenciaAceita(EslOcorrenciaDTO ocorrencia) {
+        return codigoDestino(ocorrencia) != null;
+    }
+
+    public boolean exigeComprovante(EslOcorrenciaDTO ocorrencia) {
+        return codigoOcorrencia(ocorrencia) == 1;
+    }
+
+    public Integer filtroCodigoOcorrencia() {
+        return allEventsEnabled ? null : 1;
     }
 
     public boolean notaFiscalPermitida(EslOcorrenciaDTO ocorrencia) {
@@ -129,17 +152,19 @@ public class SeliaIntegrationService {
             throw new IllegalStateException("occurrence_at ausente para envio SELIA");
         }
 
-        SeliaTrackingAttachmentDTO comprovanteDto = new SeliaTrackingAttachmentDTO(
-                obterUrlComprovante(comprovante),
-                obrigatorio(receiptType, "SELIA_INTELIPOST_RECEIPT_TYPE"),
-                "canhoto-" + chaveNfe + ".jpg",
-                obrigatorio(receiptMimeType, "SELIA_INTELIPOST_RECEIPT_MIME_TYPE")
-        );
+        List<SeliaTrackingAttachmentDTO> anexos = exigeComprovante(ocorrencia)
+                ? List.of(new SeliaTrackingAttachmentDTO(
+                        obterUrlComprovante(comprovante),
+                        obrigatorio(receiptType, "SELIA_INTELIPOST_RECEIPT_TYPE"),
+                        "canhoto-" + chaveNfe + ".jpg",
+                        obrigatorio(receiptMimeType, "SELIA_INTELIPOST_RECEIPT_MIME_TYPE")
+                ))
+                : List.of();
         SeliaTrackingEventDTO evento = new SeliaTrackingEventDTO(
                 dataOcorrencia.toString(),
-                obrigatorio(deliveryEventCode, "SELIA_INTELIPOST_DELIVERY_EVENT_CODE"),
+                codigoDestinoObrigatorio(ocorrencia),
                 descricaoOcorrencia(ocorrencia),
-                List.of(comprovanteDto)
+                anexos
         );
 
         return obterIdentificacoesEntrega(ocorrencia, chaveNfe).stream()
@@ -229,6 +254,53 @@ public class SeliaIntegrationService {
         }
 
         return ocorrencia.occurrence().description().trim();
+    }
+
+    private String codigoDestinoObrigatorio(EslOcorrenciaDTO ocorrencia) {
+        String codigo = codigoDestino(ocorrencia);
+        if (codigo == null) {
+            throw new IllegalStateException("Ocorrência SELIA sem DePara configurado");
+        }
+        return codigo;
+    }
+
+    private String codigoDestino(EslOcorrenciaDTO ocorrencia) {
+        int codigoEsl = codigoOcorrencia(ocorrencia);
+        if (codigoEsl == 1) {
+            return valorConfigurado(deliveryEventCode);
+        }
+        return obterDeParaEventos().get(codigoEsl);
+    }
+
+    private int codigoOcorrencia(EslOcorrenciaDTO ocorrencia) {
+        if (ocorrencia == null || ocorrencia.occurrence() == null || ocorrencia.occurrence().code() == null) {
+            return Integer.MIN_VALUE;
+        }
+        return ocorrencia.occurrence().code();
+    }
+
+    private Map<Integer, String> obterDeParaEventos() {
+        if (eventCodeMap == null || eventCodeMap.isBlank()) {
+            return Map.of();
+        }
+
+        return Arrays.stream(eventCodeMap.split(","))
+                .map(String::trim)
+                .filter(item -> !item.isBlank())
+                .map(item -> item.split("=", 2))
+                .filter(partes -> partes.length == 2)
+                .collect(Collectors.toUnmodifiableMap(
+                        partes -> Integer.parseInt(partes[0].trim()),
+                        partes -> valorConfigurado(partes[1]),
+                        (primeiro, segundo) -> primeiro
+                ));
+    }
+
+    private String valorConfigurado(String valor) {
+        if (valor == null || valor.isBlank()) {
+            return null;
+        }
+        return valor.trim();
     }
 
     private String obterChaveNfe(EslOcorrenciaDTO ocorrencia) {

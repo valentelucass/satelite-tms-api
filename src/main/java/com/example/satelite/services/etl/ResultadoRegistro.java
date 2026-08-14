@@ -5,6 +5,7 @@ public enum ResultadoRegistro {
     IGNORADO(false, false),
     JA_PROCESSADO(false, false),
     PENDENTE_FOTO(false, false),
+    PENDENTE_ORIGEM(false, false),
     ERRO(true, false),
     ERRO_INFRAESTRUTURA(true, true);
 

@@ -341,6 +341,7 @@ public class EtlRegistroService {
                 etlEstadoIntegracaoService.buscarLogIntegracaoExistente(destino, ocorrencia);
         if (logExistente.isPresent()
                 && etlEstadoIntegracaoService.finalizadoSemReenvio(logExistente.get())
+                && !etlEstadoIntegracaoService.deveReprocessarIgnoradoSemEnvio(destino, logExistente.get())
                 && (!DESTINO_VEDACIT.equals(destino)
                 || etlEstadoIntegracaoService.statusSucesso(logExistente.get().getStatusCanhoto()))) {
             log.info(
@@ -396,6 +397,16 @@ public class EtlRegistroService {
                     obterChaveCte(ocorrencia)
             );
             return ResultadoRegistro.JA_PROCESSADO;
+        }
+
+        if (logExistente.isPresent()
+                && ResultadoIntegracao.STATUS_PENDENTE_ORIGEM.equals(logExistente.get().getStatusDados())) {
+            log.info(
+                    "⏸️ [VEDACIT] NF {}: XML do CT-e permanece pendente de disponibilização na ESL. CTe={}",
+                    obterChaveNfe(ocorrencia),
+                    obterChaveCte(ocorrencia)
+            );
+            return ResultadoRegistro.PENDENTE_ORIGEM;
         }
 
         if (logExistente.isPresent() && etlResilienciaService.limiteTentativasAtingido(logExistente.get())) {
@@ -493,15 +504,15 @@ public class EtlRegistroService {
             logIntegracao.setDataProcessamento(etlEstadoIntegracaoService.agoraAuditoria());
             etlEstadoIntegracaoService.salvar(logIntegracao);
 
-            if (!modoTesteE2eImagem && !ehEntregaRealizada(ocorrencia)) {
+            if (!modoTesteE2eImagem && !ocorrenciaPermitidaParaDestino(destino, ocorrencia)) {
                 etlEstadoIntegracaoService.aplicarResultadoIntegracao(logIntegracao, ResultadoIntegracao.ignorado());
                 etlEstadoIntegracaoService.salvar(logIntegracao);
 
-                log.info("⏭️ [{}] NF {}: Ignorada (Código diferente de 1).", destino, obterChaveNfe(ocorrencia));
+                log.info("⏭️ [{}] NF {}: Ignorada (código ESL sem tratamento para o destino).", destino, obterChaveNfe(ocorrencia));
                 return ResultadoRegistro.IGNORADO;
             }
 
-            if (modoTesteE2eImagem && !ehEntregaRealizada(ocorrencia)) {
+            if (modoTesteE2eImagem && !ocorrenciaPermitidaParaDestino(destino, ocorrencia)) {
                 log.warn(
                         "🧪 [{}] NF {}: Modo E2E ativo, filtro occurrence.code == 1 bypassado. codigo_origem={}",
                         destino,
@@ -516,8 +527,10 @@ public class EtlRegistroService {
                 return ResultadoRegistro.IGNORADO;
             }
 
-            log.info("📄 [{}] NF {}: Buscando comprovante de entrega na ESL...", destino, obterChaveNfe(ocorrencia));
-            ResultadoBuscaComprovante buscaComprovante = buscarComprovanteEntregaOpcional(destino, headerAuth, ocorrencia);
+            boolean comprovanteObrigatorio = comprovanteObrigatorio(destino, ocorrencia);
+            ResultadoBuscaComprovante buscaComprovante = comprovanteObrigatorio
+                    ? buscarComprovanteEntregaOpcional(destino, headerAuth, ocorrencia)
+                    : ResultadoBuscaComprovante.semComprovante(null);
             ComprovanteEslDTO comprovante = buscaComprovante.comprovante();
 
             String chave = obterChaveNfe(ocorrencia);
@@ -526,7 +539,7 @@ public class EtlRegistroService {
                 comprovanteProcessamento = null;
             }
 
-            if ((DESTINO_PPG.equals(destino) || DESTINO_SELIA.equals(destino)) && comprovanteProcessamento == null) {
+            if (comprovanteObrigatorio && comprovanteProcessamento == null) {
                 String motivoPendente = normalizarMotivoCanhotoIndisponivel(buscaComprovante.motivoIndisponivel());
                 ResultadoIntegracao resultadoPendente = ResultadoIntegracao.pendenteFotoObrigatorio(motivoPendente);
                 etlEstadoIntegracaoService.aplicarResultadoIntegracao(logIntegracao, resultadoPendente);
@@ -624,8 +637,8 @@ public class EtlRegistroService {
             return Optional.empty();
         }
 
-        EslLoteResponseDTO lote = eslRequestPolicyService.executar(
-                "buscarOcorrenciaPendente invoice_key=" + chaveNfe,
+        EslLoteResponseDTO lote = eslRequestPolicyService.executarComTelemetria(
+                EslRequestContext.criar(pendencia.getSistemaDestino(), "OCCURRENCE_BY_INVOICE"),
                 () -> rodogarciaClient.buscarOcorrencias(
                         headerAuth,
                         null,
@@ -760,8 +773,8 @@ public class EtlRegistroService {
 
         ComprovanteEslDTO comprovante;
         try {
-            comprovante = eslRequestPolicyService.executar(
-                    "buscarComprovante cte_key=" + cteKey,
+            comprovante = eslRequestPolicyService.executarComTelemetria(
+                    EslRequestContext.criar(destino, "DELIVERY_RECEIPT"),
                     () -> rodogarciaClient.buscarComprovante(obterHeaderComprovante(destino, headerAuth), cteKey)
             );
         } catch (EslRequestTransientException e) {
@@ -925,6 +938,20 @@ public class EtlRegistroService {
         }
 
         return true;
+    }
+
+    private boolean ocorrenciaPermitidaParaDestino(String destino, EslOcorrenciaDTO ocorrencia) {
+        if (DESTINO_SELIA.equals(destino)) {
+            return seliaIntegrationService != null && seliaIntegrationService.ocorrenciaAceita(ocorrencia);
+        }
+        return ehEntregaRealizada(ocorrencia);
+    }
+
+    private boolean comprovanteObrigatorio(String destino, EslOcorrenciaDTO ocorrencia) {
+        if (DESTINO_SELIA.equals(destino)) {
+            return seliaIntegrationService != null && seliaIntegrationService.exigeComprovante(ocorrencia);
+        }
+        return DESTINO_PPG.equals(destino);
     }
 
     boolean modoTesteE2eImagemAtivo() {

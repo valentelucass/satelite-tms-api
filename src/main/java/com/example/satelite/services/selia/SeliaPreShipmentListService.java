@@ -134,12 +134,18 @@ public class SeliaPreShipmentListService {
             throw new SeliaPlpProcessingException(HttpStatus.SERVICE_UNAVAILABLE,
                     "Autenticação de PLP não configurada.");
         }
-        if (!textoPreenchido(chaveRecebida) || !MessageDigest.isEqual(
-                logisticProviderApiKey.trim().getBytes(StandardCharsets.UTF_8),
-                chaveRecebida.trim().getBytes(StandardCharsets.UTF_8)
-        )) {
+        if (!chaveAutenticada(chaveRecebida)) {
             throw new SeliaPlpProcessingException(HttpStatus.UNAUTHORIZED, "Não autorizado.");
         }
+    }
+
+    public boolean chaveAutenticada(String chaveRecebida) {
+        return textoPreenchido(logisticProviderApiKey)
+                && textoPreenchido(chaveRecebida)
+                && MessageDigest.isEqual(
+                logisticProviderApiKey.trim().getBytes(StandardCharsets.UTF_8),
+                chaveRecebida.trim().getBytes(StandardCharsets.UTF_8)
+        );
     }
 
     private DadosPlp validarRequisicao(SeliaPreShipmentListRequestDTO requisicao) {

@@ -113,6 +113,59 @@ class OrquestradorEtlServiceTest {
     }
 
     @Test
+    void deveConsultarSeliaSemFiltroDeOcorrenciaQuandoLinhaDoTempoEstaAtiva() {
+        Dependencias dependencias = criarDependencias();
+        ReflectionTestUtils.setField(dependencias.service(), "ppgEnabled", false);
+        ReflectionTestUtils.setField(dependencias.service(), "vedacitEnabled", false);
+        ReflectionTestUtils.setField(dependencias.service(), "seliaEnabled", true);
+        ReflectionTestUtils.setField(dependencias.service(), "repescagemEnabled", false);
+        when(dependencias.seliaIntegrationService().filtroCodigoOcorrencia()).thenReturn(null);
+        when(dependencias.controleCursorRepository().findBySistemaDestino("SELIA")).thenReturn(Optional.empty());
+        when(dependencias.rodogarciaClient().buscarOcorrencias(
+                eq("Bearer token-selia"), isNull(), isNull(), isNull(), isNull()
+        )).thenReturn(loteVazio());
+
+        dependencias.service().executarFluxos();
+
+        verify(dependencias.rodogarciaClient()).buscarOcorrencias(
+                "Bearer token-selia", null, null, null, null
+        );
+    }
+
+    @Test
+    void deveProcessarPaginaEmOrdemCronologica() {
+        Dependencias dependencias = criarDependencias();
+        when(dependencias.logIntegracaoRepository().save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        when(dependencias.logIntegracaoRepository()
+                .findTopBySistemaDestinoAndOccurrenceIdOrderByDataProcessamentoDescIdDesc(eq("SELIA"), any()))
+                .thenReturn(Optional.empty());
+        List<Long> ordemProcessada = new java.util.ArrayList<>();
+        EslLoteResponseDTO lote = new EslLoteResponseDTO(
+                List.of(
+                        criarOcorrencia(20L, 1, "cte-20", "2026-06-17T12:00:00-03:00", null),
+                        criarOcorrencia(10L, 1, "cte-10", "2026-06-17T10:00:00-03:00", null)
+                ),
+                new EslPagingDTO(20L, 2)
+        );
+
+        dependencias.etlFluxoDestinoService().processarPagina(
+                "SELIA",
+                "Bearer token-selia",
+                20L,
+                lote,
+                ExecucaoEtlRequest.incremental(1),
+                0,
+                (ocorrencia, comprovante, logIntegracao) -> {
+                    ordemProcessada.add(ocorrencia.id());
+                    return ResultadoIntegracao.enviado();
+                },
+                null
+        );
+
+        assertEquals(List.of(10L, 20L), ordemProcessada);
+    }
+
+    @Test
     void devePriorizarCursorPersistidoSemCombinarComLookbackTemporal() {
         Dependencias dependencias = criarDependencias();
         ReflectionTestUtils.setField(dependencias.etlFluxoDestinoService(), "lookbackIncrementalHoras", 24);
@@ -470,24 +523,24 @@ class OrquestradorEtlServiceTest {
     }
 
     @Test
-    void deveMarcarRegistroComoErroCanhotoQuandoEslRetorna500HtmlNoComprovante() {
+    void deveMarcarRegistroPpgComoErroCanhotoQuandoEslRetorna500HtmlNoComprovante() {
         Dependencias dependencias = criarDependencias();
-        ReflectionTestUtils.setField(dependencias.service(), "ppgEnabled", false);
+        ReflectionTestUtils.setField(dependencias.service(), "vedacitEnabled", false);
 
         when(dependencias.controleCursorRepository().findBySistemaDestino(anyString())).thenReturn(Optional.empty());
         when(dependencias.logIntegracaoRepository().save(any())).thenAnswer(invocation -> invocation.getArgument(0));
-        when(dependencias.rodogarciaClient().buscarOcorrencias(eq("Bearer token-vedacit"), isNull(), isNull(), isNull(), eq(1)))
+        when(dependencias.rodogarciaClient().buscarOcorrencias(eq("Bearer token-ppg"), isNull(), isNull(), isNull(), eq(1)))
                 .thenReturn(new EslLoteResponseDTO(
                         List.of(criarOcorrencia(10L, 1, "cte-10")),
                         new EslPagingDTO(99L, 1)
                 ));
-        when(dependencias.rodogarciaClient().buscarComprovante(eq("Bearer token-vedacit"), eq("cte-10")))
+        when(dependencias.rodogarciaClient().buscarComprovante(eq("Bearer token-ppg"), eq("cte-10")))
                 .thenThrow(criarErroServidorEslHtml());
 
         OrquestradorEtlService.ResultadoCiclo resultado = dependencias.service().executarFluxosComResultado();
 
         assertFalse(resultado.erroCritico());
-        assertEquals(1, resultado.resultadoVedacit().erros());
+        assertEquals(1, resultado.resultadoPpg().erros());
 
         ArgumentCaptor<LogIntegracaoModel> logCaptor = ArgumentCaptor.forClass(LogIntegracaoModel.class);
         verify(dependencias.logIntegracaoRepository(), atLeastOnce()).save(logCaptor.capture());
@@ -496,9 +549,8 @@ class OrquestradorEtlServiceTest {
                         && log.getMensagemErroCanhoto() != null
                         && log.getMensagemErroCanhoto().contains("HTTP 500")
                         && !log.getMensagemErroCanhoto().contains("<!doctype html>")));
-        verify(dependencias.rodogarciaClient(), times(3)).buscarComprovante("Bearer token-vedacit", "cte-10");
-        verify(dependencias.vedacitIntegrationService(), times(0))
-                .processarOcorrencia(any(), any(), anyBoolean(), anyBoolean());
+        verify(dependencias.rodogarciaClient(), times(3)).buscarComprovante("Bearer token-ppg", "cte-10");
+        verify(dependencias.ppgIntegrationService(), times(0)).processarOcorrencia(any(), any());
     }
 
     @Test
@@ -1179,6 +1231,7 @@ class OrquestradorEtlServiceTest {
     private Dependencias criarDependencias() {
         RodogarciaClient rodogarciaClient = mock(RodogarciaClient.class);
         PpgIntegrationService ppgIntegrationService = mock(PpgIntegrationService.class);
+        SeliaIntegrationService seliaIntegrationService = mock(SeliaIntegrationService.class);
         VedacitIntegrationService vedacitIntegrationService = mock(VedacitIntegrationService.class);
         LogIntegracaoRepository logIntegracaoRepository = mock(LogIntegracaoRepository.class);
         ControleCursorRepository controleCursorRepository = mock(ControleCursorRepository.class);
@@ -1229,7 +1282,8 @@ class OrquestradorEtlServiceTest {
                 etlResilienciaService,
                 etlEstadoIntegracaoService,
                 ppgIntegrationService,
-                vedacitIntegrationService
+                vedacitIntegrationService,
+                seliaIntegrationService
         );
         EtlFluxoDestinoService etlFluxoDestinoService = new EtlFluxoDestinoService(
                 rodogarciaClient,
@@ -1241,6 +1295,9 @@ class OrquestradorEtlServiceTest {
         ReflectionTestUtils.setField(etlFluxoDestinoService, "pausaPacingPaginacaoMs", 0L);
         when(ppgIntegrationService.notaFiscalPermitida(any())).thenReturn(true);
         when(ppgIntegrationService.processarOcorrencia(any(), any())).thenReturn(ResultadoIntegracao.enviado());
+        when(seliaIntegrationService.notaFiscalPermitida(any())).thenReturn(true);
+        when(seliaIntegrationService.ocorrenciaAceita(any())).thenReturn(true);
+        when(seliaIntegrationService.exigeComprovante(any())).thenReturn(false);
         when(vedacitIntegrationService.notaFiscalPermitida(any())).thenReturn(true);
         when(vedacitIntegrationService.processarOcorrencia(any(), any(), anyBoolean(), anyBoolean()))
                 .thenReturn(ResultadoIntegracao.enviado());
@@ -1258,6 +1315,8 @@ class OrquestradorEtlServiceTest {
 
         OrquestradorEtlService service = new OrquestradorEtlService(
                 ppgIntegrationService,
+                seliaIntegrationService,
+                null,
                 vedacitIntegrationService,
                 etlEstadoIntegracaoService,
                 etlFluxoDestinoService,
@@ -1266,6 +1325,7 @@ class OrquestradorEtlServiceTest {
         );
         ReflectionTestUtils.setField(service, "tokenPpgEsl", "token-ppg");
         ReflectionTestUtils.setField(service, "tokenVedacitEsl", "token-vedacit");
+        ReflectionTestUtils.setField(service, "tokenSeliaEsl", "token-selia");
         ReflectionTestUtils.setField(service, "maxPaginasPorCiclo", 1);
         ReflectionTestUtils.setField(etlResilienciaService, "backoffErroTransitorioMs", 0L);
 
@@ -1273,6 +1333,7 @@ class OrquestradorEtlServiceTest {
                 service,
                 rodogarciaClient,
                 ppgIntegrationService,
+                seliaIntegrationService,
                 vedacitIntegrationService,
                 logIntegracaoRepository,
                 controleCursorRepository,
@@ -1393,6 +1454,7 @@ class OrquestradorEtlServiceTest {
             OrquestradorEtlService service,
             RodogarciaClient rodogarciaClient,
             PpgIntegrationService ppgIntegrationService,
+            SeliaIntegrationService seliaIntegrationService,
             VedacitIntegrationService vedacitIntegrationService,
             LogIntegracaoRepository logIntegracaoRepository,
             ControleCursorRepository controleCursorRepository,

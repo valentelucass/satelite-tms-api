@@ -1,6 +1,7 @@
 package com.example.satelite.services.etl;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -142,6 +143,26 @@ class EtlEstadoIntegracaoServiceTest {
     }
 
     @Test
+    void naoDeveIncrementarTentativaQuandoXmlFicaPendenteNaOrigem() {
+        EtlEstadoIntegracaoService service = new EtlEstadoIntegracaoService(mock(LogIntegracaoRepository.class));
+        LogIntegracaoModel log = LogIntegracaoModel.builder()
+                .statusDados(ResultadoIntegracao.STATUS_RECEBIDO)
+                .statusCanhoto(ResultadoIntegracao.STATUS_NAO_APLICAVEL)
+                .tentativasDados(0)
+                .tentativasCanhoto(0)
+                .build();
+
+        service.aplicarResultadoIntegracao(
+                log,
+                ResultadoIntegracao.pendenteOrigemDados(ResultadoIntegracao.STATUS_NAO_APLICAVEL, "XML ausente")
+        );
+
+        assertEquals(ResultadoIntegracao.STATUS_PENDENTE_ORIGEM, log.getStatusDados());
+        assertEquals(0, log.getTentativasDados());
+        assertNull(log.getDataProcessamentoDados());
+    }
+
+    @Test
     void deveConverterResultadoIntegracaoParaResultadoRegistro() {
         EtlEstadoIntegracaoService service = new EtlEstadoIntegracaoService(mock(LogIntegracaoRepository.class));
 
@@ -152,9 +173,29 @@ class EtlEstadoIntegracaoServiceTest {
                 service.converterResultadoRegistro(ResultadoIntegracao.pendenteFotoPpg("pendente"))
         );
         assertEquals(
+                ResultadoRegistro.PENDENTE_ORIGEM,
+                service.converterResultadoRegistro(ResultadoIntegracao.pendenteOrigemDados(null, "XML ausente"))
+        );
+        assertEquals(
                 ResultadoRegistro.ERRO,
                 service.converterResultadoRegistro(ResultadoIntegracao.erroDados("falha"))
         );
+    }
+
+    @Test
+    void deveLiberarSomenteIgnoradoSeliaSemRequestOuResponseParaReprocessamento() {
+        EtlEstadoIntegracaoService service = new EtlEstadoIntegracaoService(mock(LogIntegracaoRepository.class));
+        LogIntegracaoModel ignoradoSemEnvio = LogIntegracaoModel.builder()
+                .status(ResultadoIntegracao.STATUS_IGNORADO)
+                .build();
+        LogIntegracaoModel ignoradoComRequest = LogIntegracaoModel.builder()
+                .status(ResultadoIntegracao.STATUS_IGNORADO)
+                .requestPayload("{\\\"evento\\\":true}")
+                .build();
+
+        assertTrue(service.deveReprocessarIgnoradoSemEnvio("SELIA", ignoradoSemEnvio));
+        assertFalse(service.deveReprocessarIgnoradoSemEnvio("PPG", ignoradoSemEnvio));
+        assertFalse(service.deveReprocessarIgnoradoSemEnvio("SELIA", ignoradoComRequest));
     }
 
     @Test

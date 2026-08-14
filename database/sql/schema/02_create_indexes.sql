@@ -3,6 +3,18 @@
 USE [$(DatabaseName)];
 GO
 
+IF NOT EXISTS (
+    SELECT 1 FROM sys.indexes
+    WHERE object_id = OBJECT_ID(N'dbo.tb_esl_request_telemetria')
+      AND name = N'IX_tb_esl_request_telemetria_periodo'
+)
+BEGIN
+    CREATE INDEX IX_tb_esl_request_telemetria_periodo
+        ON dbo.tb_esl_request_telemetria(data_evento DESC, rota, destino)
+        INCLUDE (origem, status_http, tentativa, retry, fallback, cache_status, duracao_ms);
+END;
+GO
+
 SET ANSI_NULLS ON;
 SET QUOTED_IDENTIFIER ON;
 GO

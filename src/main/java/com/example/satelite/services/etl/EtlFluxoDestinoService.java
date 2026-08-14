@@ -5,6 +5,7 @@ import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
 import java.util.Arrays;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Objects;
 
@@ -110,7 +111,7 @@ public class EtlFluxoDestinoService {
             String identificadorCursor,
             String tokenEsl,
             ExecucaoEtlRequest request,
-            int codigoOcorrencia,
+            Integer codigoOcorrencia,
             boolean processarPendencias,
             ProcessadorDestino processadorDestino
     ) {
@@ -398,16 +399,10 @@ public class EtlFluxoDestinoService {
             Long cursorAtual,
             String invoiceKeyParam,
             String sinceParam,
-            int codigoOcorrencia
+            Integer codigoOcorrencia
     ) {
-        String operacao = "buscarOcorrencias destino=" + destino
-                + " pagina=" + pagina
-                + " cursor=" + cursorAtual
-                + " invoice_key=" + invoiceKeyParam
-                + " since=" + sinceParam;
-
-        return eslRequestPolicyService.executar(
-                operacao,
+        return eslRequestPolicyService.executarComTelemetria(
+                EslRequestContext.criar(destino, "OCCURRENCE_LIST"),
                 () -> rodogarciaClient.buscarOcorrencias(
                         headerAuth,
                         cursorAtual,
@@ -447,12 +442,21 @@ public class EtlFluxoDestinoService {
             ExecucaoEtlRequest request,
             int falhasInfraestruturaConsecutivasInicial,
             ProcessadorDestino processadorDestino,
-            int codigoOcorrencia
+            Integer codigoOcorrencia
     ) {
         ResultadoPagina resultado = ResultadoPagina.vazio(falhasInfraestruturaConsecutivasInicial);
         int indice = 0;
 
-        for (EslOcorrenciaDTO ocorrencia : lote.data()) {
+        List<EslOcorrenciaDTO> ocorrenciasOrdenadas = lote.data().stream()
+                .filter(Objects::nonNull)
+                .sorted(Comparator.comparing(
+                        this::obterDataReferenciaPeriodo,
+                        Comparator.nullsLast(Comparator.naturalOrder())
+                ).thenComparing(ocorrencia -> etlRegistroService.obterOccurrenceId(ocorrencia),
+                        Comparator.nullsLast(Comparator.naturalOrder())))
+                .toList();
+
+        for (EslOcorrenciaDTO ocorrencia : ocorrenciasOrdenadas) {
             if (ocorrenciaDepoisDataFinal(request, ocorrencia)) {
                 log.info(
                         "⏭️ [DESTINO: {}] occurrence_id={} ignorada fora da janela retroativa. data_referencia={} data_final={}",
@@ -465,7 +469,7 @@ public class EtlFluxoDestinoService {
             }
 
             ResultadoRegistro registro = DESTINO_VEDACIT.equals(destino)
-                    && codigoOcorrencia == EtapaVedacit.EMISSAO_XML.codigoOcorrencia()
+                    && Integer.valueOf(EtapaVedacit.EMISSAO_XML.codigoOcorrencia()).equals(codigoOcorrencia)
                     ? etlRegistroService.processarEmissaoXmlVedacit(headerAuth, cursorNextId, ocorrencia)
                     : etlRegistroService.processarOcorrencia(
                             destino,

@@ -3,6 +3,7 @@ package com.example.satelite.services.vedacit;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import com.example.satelite.clients.RodogarciaClient;
@@ -15,7 +16,9 @@ import com.example.satelite.dto.rodogarcia.CteResponseDTO;
 import com.example.satelite.dto.rodogarcia.EslOcorrenciaDTO;
 import com.example.satelite.services.ResultadoIntegracao;
 import com.example.satelite.services.etl.EslRequestPolicyService;
+import com.example.satelite.services.etl.EslRequestContext;
 import com.example.satelite.services.etl.EslRequestPolicyService.EslRequestTransientException;
+import com.example.satelite.services.origem.sftp.vedacit.VedacitSftpDocumentSource;
 import com.example.satelite.utils.ImageDownloader;
 import com.example.satelite.utils.ImageUtils;
 import com.example.satelite.vedacit.cte.CTe;
@@ -48,6 +51,7 @@ import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.Base64;
 import java.util.List;
+import java.util.Optional;
 import java.util.Locale;
 import java.util.Set;
 import java.util.stream.Collectors;
@@ -95,15 +99,27 @@ public class VedacitIntegrationService {
     private final ImageDownloader imageDownloader;
     private final RodogarciaClient rodogarciaClient;
     private final EslRequestPolicyService eslRequestPolicyService;
+    private final VedacitSftpDocumentSource vedacitSftpDocumentSource;
 
     public VedacitIntegrationService(
             ImageDownloader imageDownloader,
             RodogarciaClient rodogarciaClient,
             EslRequestPolicyService eslRequestPolicyService
     ) {
+        this(imageDownloader, rodogarciaClient, eslRequestPolicyService, null);
+    }
+
+    @Autowired
+    public VedacitIntegrationService(
+            ImageDownloader imageDownloader,
+            RodogarciaClient rodogarciaClient,
+            EslRequestPolicyService eslRequestPolicyService,
+            VedacitSftpDocumentSource vedacitSftpDocumentSource
+    ) {
         this.imageDownloader = imageDownloader;
         this.rodogarciaClient = rodogarciaClient;
         this.eslRequestPolicyService = eslRequestPolicyService;
+        this.vedacitSftpDocumentSource = vedacitSftpDocumentSource;
     }
 
     public ResultadoIntegracao processarOcorrencia(EslOcorrenciaDTO ocorrencia, ComprovanteEslDTO comprovante) {
@@ -146,6 +162,9 @@ public class VedacitIntegrationService {
             byte[] xmlCte = baixarXmlCte(ocorrencia, chaveNfe);
             enviarXmlCte(xmlCte, chaveNfe, cteKey);
             return ResultadoIntegracao.vedacitConcluido(ResultadoIntegracao.STATUS_SUCESSO, statusCanhoto);
+        } catch (XmlCteIndisponivelNaOrigemException e) {
+            log.warn("⏸️ [VEDACIT] NF {}: XML do CT-e indisponível na ESL. CTe={}", chaveNfe, cteKey);
+            return ResultadoIntegracao.pendenteOrigemDados(statusCanhoto, e.getMessage());
         } catch (EslRequestTransientException e) {
             throw e;
         } catch (Exception e) {
@@ -183,6 +202,9 @@ public class VedacitIntegrationService {
             byte[] xmlCte = baixarXmlCte(chaveCteNormalizada, chaveNfeNormalizada);
             enviarXmlCte(xmlCte, chaveNfeNormalizada, chaveCteNormalizada);
             return ResultadoIntegracao.vedacitConcluido(ResultadoIntegracao.STATUS_SUCESSO, statusCanhoto);
+        } catch (XmlCteIndisponivelNaOrigemException e) {
+            log.warn("⏸️ [VEDACIT] NF {}: XML do CT-e indisponível na ESL. CTe={}", chaveNfeNormalizada, chaveCteNormalizada);
+            return ResultadoIntegracao.pendenteOrigemDados(statusCanhoto, e.getMessage());
         } catch (EslRequestTransientException e) {
             throw e;
         } catch (Exception e) {
@@ -254,6 +276,9 @@ public class VedacitIntegrationService {
             }
         } catch (EslRequestTransientException e) {
             throw e;
+        } catch (XmlCteIndisponivelNaOrigemException e) {
+            log.warn("⏸️ [VEDACIT] NF {}: XML do CT-e indisponível na ESL. CTe={}", chaveNfe, cteKey);
+            return ResultadoIntegracao.pendenteOrigemDados(statusCanhoto, e.getMessage());
         } catch (Exception e) {
             if (e instanceof InterruptedException) {
                 Thread.currentThread().interrupt();
@@ -411,9 +436,17 @@ public class VedacitIntegrationService {
     ) throws Exception {
         String chaveNfe = ocorrencia.invoice().key();
         String cteKey = ocorrencia.freight().cteKey();
-        String urlImagem = obterUrlImagem(comprovante);
-        log.info("⬇️ [VEDACIT] NF {}: Baixando imagem do canhoto... CTe={}", chaveNfe, cteKey);
-        byte[] imagemOriginal = imageDownloader.baixarImagemDaUrl(urlImagem, cteKey);
+        Optional<byte[]> canhotoSftp = vedacitSftpDocumentSource == null ? Optional.empty()
+                : vedacitSftpDocumentSource.buscarComprovante(cteKey, chaveNfe).map(documento -> documento.conteudo());
+        byte[] imagemOriginal;
+        if (canhotoSftp.isPresent()) {
+            imagemOriginal = canhotoSftp.get();
+            log.info("⬇️ [VEDACIT] NF {}: Canhoto obtido via SFTP. CTe={}", chaveNfe, cteKey);
+        } else {
+            String urlImagem = obterUrlImagem(comprovante);
+            log.info("⬇️ [VEDACIT] NF {}: Baixando imagem do canhoto via ESL... CTe={}", chaveNfe, cteKey);
+            imagemOriginal = imageDownloader.baixarImagemDaUrl(urlImagem, cteKey);
+        }
         log.info("🖼️ [VEDACIT] NF {}: Imagem baixada com sucesso ({} bytes).", chaveNfe, imagemOriginal.length);
 
         byte[] imagemComprimida = comprimirImagemParaVedacit(chaveNfe, cteKey, imagemOriginal);
@@ -489,11 +522,39 @@ public class VedacitIntegrationService {
     }
 
     private byte[] baixarXmlCte(String chaveCte, String chaveNfe) {
+        Optional<byte[]> xmlSftp = buscarXmlCteSftp(chaveCte, chaveNfe);
+        if (xmlSftp.isPresent()) {
+            log.info("📄 [VEDACIT] NF {}: XML CT-e obtido via SFTP. CTe={}", chaveNfe, chaveCte);
+            return xmlSftp.get();
+        }
+
+        return baixarXmlCteEsl(chaveCte, chaveNfe);
+    }
+
+    private Optional<byte[]> buscarXmlCteSftp(String chaveCte, String chaveNfe) {
+        if (vedacitSftpDocumentSource == null) {
+            return Optional.empty();
+        }
+        try {
+            return vedacitSftpDocumentSource.buscarXmlCte(chaveCte, chaveNfe)
+                    .map(documento -> documento.conteudo())
+                    .filter(xml -> xml.length > 0)
+                    .filter(xml -> {
+                        String texto = new String(xml, StandardCharsets.UTF_8);
+                        return texto.contains(chaveCte) && texto.contains(chaveNfe);
+                    });
+        } catch (RuntimeException e) {
+            log.warn("⚠️ [VEDACIT] SFTP indisponível para XML CT-e; usando fallback ESL. CTe={} motivo={}", chaveCte, e.getMessage());
+            return Optional.empty();
+        }
+    }
+
+    private byte[] baixarXmlCteEsl(String chaveCte, String chaveNfe) {
         String token = obterTokenCteXmlEsl();
 
         log.info("Baixando XML do CT-e na ESL usando a chave: {}", chaveCte);
-        CteResponseDTO response = eslRequestPolicyService.executar(
-                "buscarXmlCte cte_key=" + chaveCte,
+        CteResponseDTO response = eslRequestPolicyService.executarComTelemetria(
+                EslRequestContext.criar("VEDACIT", "CTE_XML"),
                 () -> rodogarciaClient.buscarXmlCte("Bearer " + token, chaveCte)
         );
         String xmlString = extrairXmlCte(response);
@@ -512,17 +573,23 @@ public class VedacitIntegrationService {
 
     private String extrairXmlCte(CteResponseDTO response) {
         if (response == null || response.data() == null || response.data().isEmpty()) {
-            throw new IllegalStateException("XML do CT-e não encontrado na ESL");
+            throw new XmlCteIndisponivelNaOrigemException("XML do CT-e não encontrado na ESL");
         }
 
         CteDataDTO primeiroItem = response.data().get(0);
         CteItemDTO cte = primeiroItem == null ? null : primeiroItem.cte();
 
         if (cte == null || cte.xml() == null || cte.xml().isBlank()) {
-            throw new IllegalStateException("Resposta da ESL sem XML do CT-e");
+            throw new XmlCteIndisponivelNaOrigemException("Resposta da ESL sem XML do CT-e");
         }
 
         return cte.xml();
+    }
+
+    private static final class XmlCteIndisponivelNaOrigemException extends RuntimeException {
+        private XmlCteIndisponivelNaOrigemException(String mensagem) {
+            super(mensagem);
+        }
     }
 
     private void enviarXmlCte(byte[] xmlCte, String chaveNfe, String cteKey) throws Exception {

@@ -12,6 +12,7 @@ public record ResultadoIntegracao(
     public static final String STATUS_ENVIADO = "ENVIADO";
     public static final String STATUS_PARCIAL = "PARCIAL";
     public static final String STATUS_PENDENTE_FOTO = "PENDENTE_FOTO";
+    public static final String STATUS_PENDENTE_ORIGEM = "PENDENTE_ORIGEM";
     public static final String STATUS_ERRO_DESTINO = "ERRO_DESTINO";
     public static final String STATUS_SUCESSO = "SUCESSO";
     public static final String STATUS_NAO_APLICAVEL = "NAO_APLICAVEL";
@@ -36,6 +37,10 @@ public record ResultadoIntegracao(
         return new ResultadoIntegracao(STATUS_PARCIAL, statusDados, STATUS_PENDENTE_FOTO, null, mensagem);
     }
 
+    public static ResultadoIntegracao pendenteOrigemDados(String statusCanhoto, String mensagem) {
+        return new ResultadoIntegracao(STATUS_PENDENTE_ORIGEM, STATUS_PENDENTE_ORIGEM, statusCanhoto, mensagem, null);
+    }
+
     public static ResultadoIntegracao vedacitConcluido(String statusDados, String statusCanhoto) {
         return new ResultadoIntegracao(STATUS_ENVIADO, statusDados, statusCanhoto, null, null);
     }
@@ -58,6 +63,10 @@ public record ResultadoIntegracao(
 
     public boolean pendenteFoto() {
         return STATUS_PENDENTE_FOTO.equals(statusCanhoto);
+    }
+
+    public boolean pendenteOrigem() {
+        return STATUS_PENDENTE_ORIGEM.equals(statusDados);
     }
 
     public boolean erro() {

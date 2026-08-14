@@ -199,8 +199,11 @@ public class OrquestradorEtlService {
             } else if (seliaEnabled && seliaIntegrationService != null) {
                 resultadoSelia = etlFluxoDestinoService.executarFluxoDestino(
                         DESTINO_SELIA,
+                        DESTINO_SELIA,
                         tokenSeliaEsl,
                         execucao,
+                        seliaIntegrationService.filtroCodigoOcorrencia(),
+                        true,
                         (ocorrencia, comprovante, logIntegracao) ->
                                 seliaIntegrationService.processarOcorrencia(ocorrencia, comprovante)
                 );

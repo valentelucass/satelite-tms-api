@@ -42,6 +42,12 @@ BEGIN
     SET @sql = N'GRANT SELECT, INSERT, UPDATE ON dbo.tb_log_integracao TO ' + QUOTENAME(@appUser) + N';';
     EXEC sys.sp_executesql @sql;
 
+    IF OBJECT_ID(N'dbo.tb_esl_request_telemetria', N'U') IS NOT NULL
+    BEGIN
+        SET @sql = N'GRANT SELECT, INSERT ON dbo.tb_esl_request_telemetria TO ' + QUOTENAME(@appUser) + N';';
+        EXEC sys.sp_executesql @sql;
+    END;
+
     IF OBJECT_ID(N'dbo.tb_controle_cursor', N'U') IS NOT NULL
     BEGIN
         SET @sql = N'GRANT SELECT, INSERT, UPDATE ON dbo.tb_controle_cursor TO ' + QUOTENAME(@appUser) + N';';

@@ -3,7 +3,6 @@ package com.example.satelite.services.vedacit;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.contains;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -37,6 +36,7 @@ import com.example.satelite.dto.rodogarcia.EslInvoiceDTO;
 import com.example.satelite.dto.rodogarcia.EslOcorrenciaDTO;
 import com.example.satelite.dto.rodogarcia.EslOccurrenceDefDTO;
 import com.example.satelite.services.ResultadoIntegracao;
+import com.example.satelite.services.etl.EslRequestContext;
 import com.example.satelite.services.etl.EslRequestPolicyService;
 import com.example.satelite.utils.ImageDownloader;
 import com.example.satelite.vedacit.cte.ICTe;
@@ -146,7 +146,7 @@ class VedacitIntegrationServiceTest {
         assertEquals(ResultadoIntegracao.STATUS_ENVIADO, resultado.status());
         assertEquals(ResultadoIntegracao.STATUS_SUCESSO, resultado.statusDados());
         assertEquals(ResultadoIntegracao.STATUS_NAO_APLICAVEL, resultado.statusCanhoto());
-        verify(politicaEsl).executar(contains("buscarXmlCte"), any());
+        verify(politicaEsl).executarComTelemetria(any(EslRequestContext.class), any());
     }
 
     @Test
@@ -179,7 +179,7 @@ class VedacitIntegrationServiceTest {
         assertEquals(ResultadoIntegracao.STATUS_SUCESSO, resultado.statusDados());
         assertEquals(ResultadoIntegracao.STATUS_NAO_APLICAVEL, resultado.statusCanhoto());
         verify(portaCte).enviarArquivoXMLCTe(any(byte[].class));
-        verify(politicaEsl).executar(contains("buscarXmlCte"), any());
+        verify(politicaEsl).executarComTelemetria(any(EslRequestContext.class), any());
     }
 
     @Test
@@ -232,8 +232,32 @@ class VedacitIntegrationServiceTest {
         assertEquals(ResultadoIntegracao.STATUS_ERRO_DESTINO, resultado.status());
         assertEquals(ResultadoIntegracao.STATUS_ERRO_DESTINO, resultado.statusDados());
         assertEquals("Chave CTe ausente para envio do XML CT-e", resultado.mensagemErroDados());
-        verify(politicaEsl, never()).executar(contains("buscarXmlCte"), any());
+        verify(politicaEsl, never()).executarComTelemetria(any(EslRequestContext.class), any());
         verifyNoInteractions(rodogarciaClient);
+    }
+
+    @Test
+    void deveClassificarXmlCteAusenteNaEslComoPendenteDeOrigem() {
+        RodogarciaClient rodogarciaClient = mock(RodogarciaClient.class);
+        EslRequestPolicyService politicaEsl = criarPoliticaEslExecutora();
+
+        when(rodogarciaClient.buscarXmlCte(
+                "Bearer token-cte",
+                "35260612345678000123570010000012341000012345"
+        )).thenReturn(new CteResponseDTO(List.of()));
+
+        VedacitIntegrationService service = new VedacitIntegrationService(
+                mock(ImageDownloader.class), rodogarciaClient, politicaEsl
+        );
+        ReflectionTestUtils.setField(service, "tokenCteXmlEsl", "token-cte");
+        ReflectionTestUtils.setField(service, "envioXmlCteHabilitado", true);
+
+        ResultadoIntegracao resultado = service.processarXmlCteEmitido(criarOcorrencia(), null);
+
+        assertEquals(ResultadoIntegracao.STATUS_PENDENTE_ORIGEM, resultado.status());
+        assertEquals(ResultadoIntegracao.STATUS_PENDENTE_ORIGEM, resultado.statusDados());
+        assertEquals(ResultadoIntegracao.STATUS_NAO_APLICAVEL, resultado.statusCanhoto());
+        assertEquals("XML do CT-e não encontrado na ESL", resultado.mensagemErroDados());
     }
 
     @Test
@@ -306,7 +330,7 @@ class VedacitIntegrationServiceTest {
 
     private EslRequestPolicyService criarPoliticaEslExecutora() {
         EslRequestPolicyService service = mock(EslRequestPolicyService.class);
-        when(service.executar(any(), any())).thenAnswer(invocation -> {
+        when(service.executarComTelemetria(any(EslRequestContext.class), any())).thenAnswer(invocation -> {
             Supplier<?> chamada = invocation.getArgument(1);
             return chamada.get();
         });

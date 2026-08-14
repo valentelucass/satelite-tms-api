@@ -87,8 +87,8 @@ public class RecuperacaoDirigidaVedacitRunner implements CommandLineRunner, Exit
 
         for (String chaveNfe : chaves) {
             try {
-                EslLoteResponseDTO lote = eslRequestPolicyService.executar(
-                        "recuperacao XML Vedacit invoice_key=" + chaveNfe,
+                EslLoteResponseDTO lote = eslRequestPolicyService.executarComTelemetria(
+                        EslRequestContext.criar("VEDACIT", "VEDACIT_XML_RECOVERY"),
                         () -> rodogarciaClient.buscarOcorrencias(
                                 "Bearer " + token, null, chaveNfe, null, EtapaVedacit.EMISSAO_XML.codigoOcorrencia()
                         )

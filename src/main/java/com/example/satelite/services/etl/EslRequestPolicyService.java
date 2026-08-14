@@ -36,39 +36,67 @@ public class EslRequestPolicyService {
     private final ConcurrentMap<String, Instant> proximaExtracaoPorPeriodo = new ConcurrentHashMap<>();
     private final long intervaloMinimoRequisicoesMs;
     private final long cooldownTooManyRequestsMs;
+    private final int maximoRetriesTooManyRequests;
     private final long limiteDiasPeriodoLivre;
     private final long limiteDiasPeriodoMedio;
     private final Duration cooldownPeriodoMedio;
     private final Duration cooldownPeriodoLongo;
+    private final EslRequestTelemetryRecorder telemetryRecorder;
 
     public EslRequestPolicyService(
             @Value("${ESL_MIN_INTERVAL_BETWEEN_REQUESTS_MS:2000}") long intervaloMinimoRequisicoesMs,
             @Value("${ESL_TOO_MANY_REQUESTS_BACKOFF_MS:120000}") long cooldownTooManyRequestsMs,
+            @Value("${ESL_TOO_MANY_REQUESTS_MAX_RETRIES:2}") int maximoRetriesTooManyRequests,
             @Value("${ESL_PERIOD_FREE_LIMIT_DAYS:30}") long limiteDiasPeriodoLivre,
             @Value("${ESL_PERIOD_MEDIUM_LIMIT_DAYS:183}") long limiteDiasPeriodoMedio,
             @Value("${ESL_PERIOD_MEDIUM_COOLDOWN_MS:3600000}") long cooldownPeriodoMedioMs,
-            @Value("${ESL_PERIOD_LONG_COOLDOWN_MS:43200000}") long cooldownPeriodoLongoMs
+            @Value("${ESL_PERIOD_LONG_COOLDOWN_MS:43200000}") long cooldownPeriodoLongoMs,
+            EslRequestTelemetryRecorder telemetryRecorder
     ) {
         this.intervaloMinimoRequisicoesMs = Math.max(0, intervaloMinimoRequisicoesMs);
         this.cooldownTooManyRequestsMs = Math.max(0, cooldownTooManyRequestsMs);
+        this.maximoRetriesTooManyRequests = Math.max(0, maximoRetriesTooManyRequests);
         this.limiteDiasPeriodoLivre = Math.max(0, limiteDiasPeriodoLivre);
         this.limiteDiasPeriodoMedio = Math.max(this.limiteDiasPeriodoLivre, limiteDiasPeriodoMedio);
         this.cooldownPeriodoMedio = Duration.ofMillis(Math.max(0, cooldownPeriodoMedioMs));
         this.cooldownPeriodoLongo = Duration.ofMillis(Math.max(0, cooldownPeriodoLongoMs));
+        this.telemetryRecorder = Objects.requireNonNull(telemetryRecorder, "Telemetria ESL deve ser informada");
     }
 
     public <T> T executar(String operacao, Supplier<T> chamada) {
-        Objects.requireNonNull(chamada, "Chamada ESL deve ser informada");
-        String operacaoNormalizada = normalizarOperacao(operacao);
+        return executarInterno(
+                EslRequestContext.criar("NAO_INFORMADO", "NAO_CLASSIFICADA"),
+                normalizarOperacao(operacao),
+                chamada
+        );
+    }
 
+    public <T> T executarComTelemetria(EslRequestContext contexto, Supplier<T> chamada) {
+        Objects.requireNonNull(contexto, "Contexto de telemetria ESL deve ser informado");
+        return executarInterno(contexto, contexto.rota(), chamada);
+    }
+
+    private <T> T executarInterno(EslRequestContext contexto, String operacaoNormalizada, Supplier<T> chamada) {
+        Objects.requireNonNull(chamada, "Chamada ESL deve ser informada");
+
+        int retriesTooManyRequests = 0;
         while (true) {
             aguardarProximaRequisicao();
+            long inicioChamada = System.nanoTime();
+            int tentativa = retriesTooManyRequests + 1;
 
             try {
-                return chamada.get();
+                T resposta = chamada.get();
+                registrarTelemetria(contexto, 200, tentativa, retriesTooManyRequests > 0, inicioChamada);
+                return resposta;
             } catch (RetryableException e) {
+                registrarTelemetria(contexto, normalizarStatusHttp(e.status()), tentativa, retriesTooManyRequests > 0, inicioChamada);
                 if (e.status() == 429) {
-                    tratarTooManyRequests(operacaoNormalizada, e);
+                    retriesTooManyRequests = tratarTooManyRequests(
+                            operacaoNormalizada,
+                            e,
+                            retriesTooManyRequests
+                    );
                     continue;
                 }
 
@@ -78,10 +106,20 @@ public class EslRequestPolicyService {
 
                 throw tratarFalhaTransporte(operacaoNormalizada, e);
             } catch (FeignException.TooManyRequests e) {
-                tratarTooManyRequests(operacaoNormalizada, e);
+                registrarTelemetria(contexto, 429, tentativa, retriesTooManyRequests > 0, inicioChamada);
+                retriesTooManyRequests = tratarTooManyRequests(
+                        operacaoNormalizada,
+                        e,
+                        retriesTooManyRequests
+                );
             } catch (FeignException e) {
+                registrarTelemetria(contexto, normalizarStatusHttp(e.status()), tentativa, retriesTooManyRequests > 0, inicioChamada);
                 if (e.status() == 429) {
-                    tratarTooManyRequests(operacaoNormalizada, e);
+                    retriesTooManyRequests = tratarTooManyRequests(
+                            operacaoNormalizada,
+                            e,
+                            retriesTooManyRequests
+                    );
                     continue;
                 }
 
@@ -91,8 +129,10 @@ public class EslRequestPolicyService {
 
                 throw e;
             } catch (EslRequestTransientException e) {
+                registrarTelemetria(contexto, normalizarStatusHttp(e.status()), tentativa, retriesTooManyRequests > 0, inicioChamada);
                 throw e;
             } catch (RuntimeException e) {
+                registrarTelemetria(contexto, STATUS_SEM_RESPOSTA_HTTP, tentativa, retriesTooManyRequests > 0, inicioChamada);
                 if (falhaTransporteOuTimeout(e)) {
                     throw tratarFalhaTransporte(operacaoNormalizada, e);
                 }
@@ -100,6 +140,21 @@ public class EslRequestPolicyService {
                 throw e;
             }
         }
+    }
+
+    private void registrarTelemetria(
+            EslRequestContext contexto,
+            Integer statusHttp,
+            int tentativa,
+            boolean retry,
+            long inicioChamada
+    ) {
+        long duracaoMs = Duration.ofNanos(Math.max(0, System.nanoTime() - inicioChamada)).toMillis();
+        telemetryRecorder.registrar(contexto, statusHttp, tentativa, retry, duracaoMs);
+    }
+
+    private Integer normalizarStatusHttp(int status) {
+        return status > 0 ? status : null;
     }
 
     public void aguardarProximaRequisicao() {
@@ -153,13 +208,32 @@ public class EslRequestPolicyService {
         proximaExtracaoPorPeriodo.put(chave, Instant.now().plus(cooldown));
     }
 
-    private void tratarTooManyRequests(String operacaoNormalizada, FeignException e) {
+    private int tratarTooManyRequests(String operacaoNormalizada, FeignException e, int retriesJaRealizados) {
+        if (retriesJaRealizados >= maximoRetriesTooManyRequests) {
+            log.warn(
+                    "ESL retornou HTTP 429 em {} e atingiu o limite configurado de {} nova(s) tentativa(s). "
+                            + "A chamada sera encerrada para nova avaliacao no proximo ciclo.",
+                    operacaoNormalizada,
+                    maximoRetriesTooManyRequests
+            );
+            throw new EslRequestTransientException(
+                    operacaoNormalizada,
+                    429,
+                    "ESL retornou HTTP 429 apos " + retriesJaRealizados + " nova(s) tentativa(s)",
+                    e
+            );
+        }
+
+        int proximaTentativa = retriesJaRealizados + 1;
         log.warn(
-                "ESL retornou HTTP 429 em {}. Aplicando backoff bloqueante antes de repetir a chamada. mensagem={}",
+                "ESL retornou HTTP 429 em {}. Aplicando backoff antes da nova tentativa {}/{}. mensagem={}",
                 operacaoNormalizada,
+                proximaTentativa,
+                maximoRetriesTooManyRequests,
                 e.getMessage()
         );
         pausarAposTooManyRequests();
+        return proximaTentativa;
     }
 
     private EslRequestTransientException tratarFalhaTransitoria(String operacao, FeignException e) {
