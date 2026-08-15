@@ -149,6 +149,55 @@ public class EtlRepescagemService {
         return new ResultadoReprocessamentoCanhotoVedacit(registros.size(), enviados, pendentes, erros);
     }
 
+    private void registrarOrigemSftpDoCanhoto(LogIntegracaoModel registro) {
+        registro.setCanhotoOrigem("SFTP");
+        etlEstadoIntegracaoService.salvar(registro);
+    }
+
+    /**
+     * Processa somente pendências de foto cujo XML já foi integrado e cujo CT-e
+     * está auditado. O runner correspondente exige fonte SFTP exclusiva, sem
+     * fallback para ESL, para evitar carga acidental na origem durante lote.
+     */
+    public ResultadoReprocessamentoCanhotoVedacit reprocessarCanhotosPendentesFotoSftpVedacit(
+            int limite,
+            long intervaloEntreItensMs
+    ) {
+        int limiteSeguro = Math.max(1, limite);
+        List<LogIntegracaoModel> registros = logIntegracaoRepository.findCanhotosPendentesFotoVedacit(
+                PageRequest.of(0, limiteSeguro)
+        );
+        if (registros == null || registros.isEmpty()) {
+            log.info("🎯 [VEDACIT] Nenhum canhoto PENDENTE_FOTO com CT-e elegível no lote SFTP.");
+            return new ResultadoReprocessamentoCanhotoVedacit(0, 0, 0, 0);
+        }
+
+        int enviados = 0;
+        int pendentes = 0;
+        int erros = 0;
+        log.warn("🎯 [VEDACIT] Iniciando lote SFTP exclusivo de {} canhoto(s) pendente(s).", registros.size());
+        for (int indice = 0; indice < registros.size(); indice++) {
+            LogIntegracaoModel registro = registros.get(indice);
+            ResultadoRegistro resultado = etlRegistroService.reprocessarCanhotoVedacitPorCte(registro);
+            if (resultado == ResultadoRegistro.ENVIADO) {
+                enviados++;
+                registrarOrigemSftpDoCanhoto(registro);
+            } else if (resultado == ResultadoRegistro.PENDENTE_FOTO) {
+                pendentes++;
+            } else if (resultado.erro()) {
+                erros++;
+            }
+            log.info("🎯 [VEDACIT] NF {}: resultado do lote SFTP={}", registro.getChaveNfe(), resultado);
+
+            if (indice < registros.size() - 1 && !pausarEntreRegistros(intervaloEntreItensMs)) {
+                log.warn("⏹️ [VEDACIT] Lote SFTP interrompido antes de concluir os candidatos.");
+                break;
+            }
+        }
+
+        return new ResultadoReprocessamentoCanhotoVedacit(registros.size(), enviados, pendentes, erros);
+    }
+
     /**
      * Repescagem noturna limitada a falhas tecnicas Vedacit. Recusas de negocio
      * e CT-es sem chave ficam fora da selecao e continuam visiveis na quarentena.
@@ -424,7 +473,11 @@ public class EtlRepescagemService {
     }
 
     private boolean pausarEntreRegistros() {
-        long esperaMs = Math.max(0, intervaloEntreRegistrosMs);
+        return pausarEntreRegistros(intervaloEntreRegistrosMs);
+    }
+
+    private boolean pausarEntreRegistros(long intervaloMs) {
+        long esperaMs = Math.max(0, intervaloMs);
         if (esperaMs <= 0) {
             return true;
         }

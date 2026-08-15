@@ -155,6 +155,45 @@ class EtlRepescagemServiceTest {
     }
 
     @Test
+    void deveReprocessarLoteSftpSomenteDeCanhotosPendentesComCte() {
+        LogIntegracaoRepository repository = mock(LogIntegracaoRepository.class);
+        EtlRegistroService etlRegistroService = mock(EtlRegistroService.class);
+        EtlEstadoIntegracaoService estadoIntegracaoService = mock(EtlEstadoIntegracaoService.class);
+        EtlRepescagemService service = new EtlRepescagemService(
+                repository,
+                etlRegistroService,
+                estadoIntegracaoService,
+                mock(PpgIntegrationService.class),
+                mock(VedacitIntegrationService.class)
+        );
+        LogIntegracaoModel pendente = LogIntegracaoModel.builder()
+                .id(40L)
+                .sistemaDestino("VEDACIT")
+                .chaveNfe("35260860642774001209550010002365771266072428")
+                .chaveCte("35260860960473000758570030000541141709521720")
+                .status(ResultadoIntegracao.STATUS_PARCIAL)
+                .statusDados(ResultadoIntegracao.STATUS_SUCESSO)
+                .statusCanhoto(ResultadoIntegracao.STATUS_PENDENTE_FOTO)
+                .build();
+
+        when(repository.findCanhotosPendentesFotoVedacit(any())).thenReturn(List.of(pendente));
+        when(etlRegistroService.reprocessarCanhotoVedacitPorCte(pendente)).thenReturn(ResultadoRegistro.ENVIADO);
+
+        EtlRepescagemService.ResultadoReprocessamentoCanhotoVedacit resultado =
+                service.reprocessarCanhotosPendentesFotoSftpVedacit(10, 0);
+
+        assertEquals(1, resultado.selecionados());
+        assertEquals(1, resultado.enviados());
+        assertEquals(0, resultado.pendentes());
+        assertEquals(0, resultado.erros());
+        verify(repository).findCanhotosPendentesFotoVedacit(any());
+        verify(repository, never()).findErrosParciaisCanhotoVedacit(any());
+        verify(etlRegistroService).reprocessarCanhotoVedacitPorCte(pendente);
+        assertEquals("SFTP", pendente.getCanhotoOrigem());
+        verify(estadoIntegracaoService).salvar(pendente);
+    }
+
+    @Test
     void deveRecuperarChaveCteDeErroHistorico401SemReenviarCanhoto() {
         LogIntegracaoRepository repository = mock(LogIntegracaoRepository.class);
         EtlRegistroService etlRegistroService = mock(EtlRegistroService.class);

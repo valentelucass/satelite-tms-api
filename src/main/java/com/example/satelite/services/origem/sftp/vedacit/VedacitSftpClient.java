@@ -54,6 +54,25 @@ public class VedacitSftpClient implements VedacitSftpDocumentSource {
         return buscar(VedacitSftpPathPolicy.caminhoComprovantes(basePath, clientPath), VedacitSftpDocument.Tipo.COMPROVANTE, cte, nfe, true);
     }
 
+    /**
+     * Confirma conectividade, autenticação e acesso à pasta de comprovantes
+     * sem listar, baixar ou alterar qualquer documento remoto.
+     */
+    public void verificarDisponibilidade() {
+        if (!enabled) return;
+        validarConfiguracao();
+        try (SSHClient ssh = new SSHClient()) {
+            ssh.addHostKeyVerifier(FingerprintVerifier.getInstance(hostKeySha256));
+            ssh.connect(host, port);
+            ssh.authPassword(username, password);
+            try (SFTPClient sftp = ssh.newSFTPClient()) {
+                sftp.stat(VedacitSftpPathPolicy.caminhoComprovantes(basePath, clientPath));
+            }
+        } catch (IOException e) {
+            throw new IllegalStateException("SFTP Vedacit indisponível para o lote: " + resumirCausa(e), e);
+        }
+    }
+
     private Optional<VedacitSftpDocument> buscar(String directory, VedacitSftpDocument.Tipo tipo, String cte, String nfe, boolean nomeDeterministico) {
         if (!enabled) return Optional.empty();
         validarConfiguracao();
@@ -92,5 +111,14 @@ public class VedacitSftpClient implements VedacitSftpDocumentSource {
     }
     private void validarConfiguracao() {
         if (host.isBlank() || username.isBlank() || password.isBlank() || hostKeySha256.isBlank() || port <= 0 || maxFileSizeBytes <= 0) throw new IllegalStateException("Configuração SFTP Vedacit incompleta");
+    }
+
+    private String resumirCausa(IOException erro) {
+        Throwable causa = erro;
+        while (causa.getCause() != null) {
+            causa = causa.getCause();
+        }
+        String mensagem = causa.getMessage();
+        return causa.getClass().getSimpleName() + (mensagem == null || mensagem.isBlank() ? "" : ": " + mensagem);
     }
 }

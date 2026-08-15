@@ -54,6 +54,14 @@ import java.util.List;
 import java.util.Optional;
 import java.util.Locale;
 import java.util.Set;
+import java.util.concurrent.Callable;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.ThreadFactory;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.stream.Collectors;
 
 @Service
@@ -90,6 +98,9 @@ public class VedacitIntegrationService {
     @Value("${VEDACIT_SEND_CTE_XML_ENABLED:false}")
     private boolean envioXmlCteHabilitado;
 
+    @Value("${VEDACIT_SFTP_RECEIPT_ONLY:false}")
+    private boolean canhotoExclusivamenteSftp;
+
     @Value("${VEDACIT_NFE_WHITELIST:}")
     private String nfeWhitelist;
 
@@ -101,6 +112,9 @@ public class VedacitIntegrationService {
 
     @Value("${VEDACIT_SOAP_READ_TIMEOUT_MS:180000}")
     private int soapReadTimeoutMs;
+
+    @Value("${VEDACIT_SOAP_INVOCATION_TIMEOUT_MS:210000}")
+    private int soapInvocationTimeoutMs;
 
     private final ImageDownloader imageDownloader;
     private final RodogarciaClient rodogarciaClient;
@@ -310,7 +324,10 @@ public class VedacitIntegrationService {
             statusCanhoto = ResultadoIntegracao.STATUS_SUCESSO;
             return ResultadoIntegracao.vedacitConcluido(statusDados, statusCanhoto);
         } catch (CanhotoIndisponivelNaOrigemException e) {
-            log.warn("⏳ [VEDACIT] NF {}: Canhoto indisponível no SFTP e na ESL. CTe={}", chaveNfe, cteKey);
+            String origemConsultada = canhotoExclusivamenteSftp
+                    ? "no SFTP (lote exclusivo; ESL não consultada)"
+                    : "no SFTP e na ESL";
+            log.warn("⏳ [VEDACIT] NF {}: Canhoto indisponível {}. CTe={}", chaveNfe, origemConsultada, cteKey);
             return ResultadoIntegracao.parcialCanhotoPendente(statusDados, e.getMessage());
         } catch (EslRequestTransientException e) {
             throw e;
@@ -409,7 +426,10 @@ public class VedacitIntegrationService {
         log.info("📤 [VEDACIT] NF {}: Enviando ocorrência para MultiTMS...", chaveNfe);
         RetornoOfint retorno;
         try {
-            retorno = porta.adicionarOcorrencia(ocorrenciaVedacit);
+            retorno = executarSoapComPrazo(
+                    () -> porta.adicionarOcorrencia(ocorrenciaVedacit),
+                    "ocorrência"
+            );
         } catch (Exception e) {
             if (erroDuplicidadeVedacit(e)) {
                 logarConciliacaoDuplicidadeVedacit("Ocorrência", chaveNfe, cteKey);
@@ -446,6 +466,11 @@ public class VedacitIntegrationService {
             imagemOriginal = canhotoSftp.get();
             log.info("⬇️ [VEDACIT] NF {}: Canhoto obtido via SFTP. CTe={}", chaveNfe, cteKey);
         } else {
+            if (canhotoExclusivamenteSftp) {
+                throw new CanhotoIndisponivelNaOrigemException(
+                        "Canhoto não encontrado no SFTP para o lote exclusivo; fallback ESL desabilitado"
+                );
+            }
             String urlImagem = obterUrlImagem(obterComprovanteEslFallback(comprovante, cteKey));
             log.info("⬇️ [VEDACIT] NF {}: Baixando imagem do canhoto via ESL... CTe={}", chaveNfe, cteKey);
             imagemOriginal = imageDownloader.baixarImagemDaUrl(urlImagem, cteKey);
@@ -496,7 +521,10 @@ public class VedacitIntegrationService {
         log.info("📤 [VEDACIT] NF {}: Enviando digitalização do canhoto...", chaveNfe);
         RetornoOfboolean retorno;
         try {
-            retorno = porta.enviarDigitalizacaoCanhoto(canhoto);
+            retorno = executarSoapComPrazo(
+                    () -> porta.enviarDigitalizacaoCanhoto(canhoto),
+                    "digitalização do canhoto"
+            );
         } catch (Exception e) {
             if (erroDuplicidadeVedacit(e)) {
                 logarConciliacaoDuplicidadeVedacit("Canhoto", chaveNfe, cteKey);
@@ -662,7 +690,10 @@ public class VedacitIntegrationService {
         log.info("📤 [VEDACIT] NF {}: Enviando XML do CT-e para MultiTMS... CTe={}", chaveNfe, cteKey);
         RetornoOfstring retorno;
         try {
-            retorno = porta.enviarArquivoXMLCTe(xmlCte);
+            retorno = executarSoapComPrazo(
+                    () -> porta.enviarArquivoXMLCTe(xmlCte),
+                    "XML do CT-e"
+            );
         } catch (Exception e) {
             if (erroDuplicidadeVedacit(e)) {
                 logarConciliacaoDuplicidadeVedacit("XML do CT-e", chaveNfe, cteKey);
@@ -785,6 +816,33 @@ public class VedacitIntegrationService {
         bindingProvider.getRequestContext().put("javax.xml.ws.client.receiveTimeout", String.valueOf(soapReadTimeoutMs));
         bindingProvider.getRequestContext().put("jakarta.xml.ws.client.connectionTimeout", String.valueOf(soapConnectTimeoutMs));
         bindingProvider.getRequestContext().put("jakarta.xml.ws.client.receiveTimeout", String.valueOf(soapReadTimeoutMs));
+    }
+
+    private <T> T executarSoapComPrazo(Callable<T> chamada, String etapa) throws Exception {
+        ThreadFactory threadFactory = runnable -> {
+            Thread thread = new Thread(runnable, "vedacit-soap-" + etapa.replaceAll("[^a-zA-Z0-9]", "-"));
+            thread.setDaemon(true);
+            return thread;
+        };
+        ExecutorService executor = Executors.newSingleThreadExecutor(threadFactory);
+        Future<T> future = executor.submit(chamada);
+        try {
+            return future.get(soapInvocationTimeoutMs, TimeUnit.MILLISECONDS);
+        } catch (TimeoutException e) {
+            future.cancel(true);
+            throw new IOException("Timeout total da Vedacit na etapa " + etapa + " após " + soapInvocationTimeoutMs + " ms", e);
+        } catch (ExecutionException e) {
+            Throwable causa = e.getCause();
+            if (causa instanceof Exception exception) {
+                throw exception;
+            }
+            if (causa instanceof Error error) {
+                throw error;
+            }
+            throw new IllegalStateException("Falha desconhecida no SOAP Vedacit: " + etapa, causa);
+        } finally {
+            executor.shutdownNow();
+        }
     }
 
     private String obterUrlImagem(ComprovanteEslDTO comprovante) {

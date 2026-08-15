@@ -74,6 +74,20 @@ public interface LogIntegracaoRepository extends JpaRepository<LogIntegracaoMode
             SELECT l
             FROM LogIntegracaoModel l
             WHERE l.sistemaDestino = 'VEDACIT'
+              AND l.statusDados = 'SUCESSO'
+              AND l.statusCanhoto = 'PENDENTE_FOTO'
+              AND l.chaveNfe IS NOT NULL
+              AND TRIM(l.chaveNfe) <> ''
+              AND l.chaveCte IS NOT NULL
+              AND TRIM(l.chaveCte) <> ''
+            ORDER BY l.dataProcessamento ASC, l.id ASC
+            """)
+    List<LogIntegracaoModel> findCanhotosPendentesFotoVedacit(Pageable pageable);
+
+    @Query("""
+            SELECT l
+            FROM LogIntegracaoModel l
+            WHERE l.sistemaDestino = 'VEDACIT'
               AND l.status = 'ERRO_DESTINO'
               AND l.statusDados = 'ERRO_DESTINO'
               AND l.chaveCte IS NOT NULL

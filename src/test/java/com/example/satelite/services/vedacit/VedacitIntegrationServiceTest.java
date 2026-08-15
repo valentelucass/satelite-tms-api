@@ -385,6 +385,27 @@ class VedacitIntegrationServiceTest {
     }
 
     @Test
+    void deveManterCanhotoPendenteSemConsultarEslNoLoteExclusivoSftp() {
+        ImageDownloader imageDownloader = mock(ImageDownloader.class);
+        RodogarciaClient rodogarciaClient = mock(RodogarciaClient.class);
+        EslRequestPolicyService politicaEsl = criarPoliticaEslExecutora();
+        VedacitSftpDocumentSource sftp = mock(VedacitSftpDocumentSource.class);
+        when(sftp.buscarComprovante(any(), any())).thenReturn(Optional.empty());
+
+        VedacitIntegrationService service = new VedacitIntegrationService(
+                imageDownloader, rodogarciaClient, politicaEsl, sftp
+        );
+        ReflectionTestUtils.setField(service, "envioCanhotoHabilitado", true);
+        ReflectionTestUtils.setField(service, "canhotoExclusivamenteSftp", true);
+
+        ResultadoIntegracao resultado = service.processarOcorrencia(criarOcorrencia(), null, true, false);
+
+        assertEquals(ResultadoIntegracao.STATUS_PENDENTE_FOTO, resultado.statusCanhoto());
+        verifyNoInteractions(imageDownloader, rodogarciaClient);
+        verify(politicaEsl, never()).executarComTelemetria(any(EslRequestContext.class), any());
+    }
+
+    @Test
     void deveConciliarDuplicidadeSoapNoCanhotoComoCanhotoEnviado() throws Exception {
         ImageDownloader imageDownloader = mock(ImageDownloader.class);
         INFe portaNFe = mock(INFe.class);

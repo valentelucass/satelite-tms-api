@@ -696,9 +696,9 @@ public class EtlRegistroService {
     private boolean ehCandidatoCanhotoVedacit(LogIntegracaoModel logIntegracao) {
         return logIntegracao != null
                 && DESTINO_VEDACIT.equals(logIntegracao.getSistemaDestino())
-                && STATUS_ERRO_DESTINO.equals(logIntegracao.getStatus())
                 && STATUS_SUCESSO.equals(logIntegracao.getStatusDados())
-                && STATUS_ERRO_DESTINO.equals(logIntegracao.getStatusCanhoto())
+                && (STATUS_ERRO_DESTINO.equals(logIntegracao.getStatusCanhoto())
+                        || ResultadoIntegracao.STATUS_PENDENTE_FOTO.equals(logIntegracao.getStatusCanhoto()))
                 && logIntegracao.getChaveNfe() != null
                 && logIntegracao.getChaveNfe().length() == 44
                 && logIntegracao.getChaveCte() != null
