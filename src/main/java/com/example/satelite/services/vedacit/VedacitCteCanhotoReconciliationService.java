@@ -52,6 +52,9 @@ public class VedacitCteCanhotoReconciliationService {
         if (exato.isPresent()) {
             return Decisao.encontrada(chaveCteOriginal, "EXATO", "Arquivo SFTP corresponde ao CT-e original", exato.get());
         }
+        if (documentos.isEmpty()) {
+            return Decisao.pendente("Não há comprovante SFTP válido para a NF-e");
+        }
 
         CteClassificacao classificacao = classificarPorXmlOficial(chaveCteOriginal);
         if ("1".equals(classificacao.tipoCte()) && classificacao.cteReferenciado() != null) {

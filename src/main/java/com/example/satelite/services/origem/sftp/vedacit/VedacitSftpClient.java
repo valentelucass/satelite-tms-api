@@ -76,6 +76,28 @@ public class VedacitSftpClient implements VedacitSftpDocumentSource {
         } catch (IOException e) { throw new IllegalStateException("Falha controlada na leitura SFTP Vedacit", e); }
     }
 
+    @Override public List<VedacitSftpDocument> listarComprovantes() {
+        if (!enabled) return List.of();
+        validarConfiguracao();
+        String directory = VedacitSftpPathPolicy.caminhoComprovantes(basePath, clientPath);
+        try (SSHClient ssh = new SSHClient()) {
+            ssh.addHostKeyVerifier(FingerprintVerifier.getInstance(hostKeySha256));
+            ssh.connect(host, port); ssh.authPassword(username, password);
+            try (SFTPClient sftp = ssh.newSFTPClient()) {
+                return sftp.ls(directory).stream()
+                        .map(file -> Map.entry(file, VedacitSftpPathPolicy.extrairChavesComprovante(file.getName())))
+                        .filter(entry -> entry.getValue().isPresent())
+                        .filter(entry -> entry.getKey().getAttributes().getSize() > 0 && entry.getKey().getAttributes().getSize() <= maxFileSizeBytes)
+                        .map(entry -> new VedacitSftpDocument(
+                                VedacitSftpDocument.Tipo.COMPROVANTE,
+                                "comprovantes/" + entry.getKey().getName(), entry.getValue().get().chaveCte(),
+                                entry.getValue().get().chaveNfe(), entry.getKey().getAttributes().getSize(),
+                                Instant.ofEpochSecond(entry.getKey().getAttributes().getMtime()), null
+                        )).toList();
+            }
+        } catch (IOException e) { throw new IllegalStateException("Falha controlada ao listar SFTP Vedacit", e); }
+    }
+
     /**
      * Confirma conectividade, autenticação e acesso à pasta de comprovantes
      * sem listar, baixar ou alterar qualquer documento remoto.

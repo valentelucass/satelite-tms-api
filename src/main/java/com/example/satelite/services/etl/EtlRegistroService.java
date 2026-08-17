@@ -749,7 +749,8 @@ public class EtlRegistroService {
                 && DESTINO_VEDACIT.equals(logIntegracao.getSistemaDestino())
                 && STATUS_SUCESSO.equals(logIntegracao.getStatusDados())
                 && (STATUS_ERRO_DESTINO.equals(logIntegracao.getStatusCanhoto())
-                        || ResultadoIntegracao.STATUS_PENDENTE_FOTO.equals(logIntegracao.getStatusCanhoto()))
+                        || ResultadoIntegracao.STATUS_PENDENTE_FOTO.equals(logIntegracao.getStatusCanhoto())
+                        || ResultadoIntegracao.STATUS_NAO_APLICAVEL.equals(logIntegracao.getStatusCanhoto()))
                 && logIntegracao.getChaveNfe() != null
                 && logIntegracao.getChaveNfe().length() == 44
                 && logIntegracao.getChaveCte() != null

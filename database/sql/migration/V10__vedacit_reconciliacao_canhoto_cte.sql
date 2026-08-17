@@ -1,5 +1,3 @@
-:ON ERROR EXIT
-
 USE [$(DatabaseName)];
 GO
 

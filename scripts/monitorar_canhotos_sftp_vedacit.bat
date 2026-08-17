@@ -11,8 +11,9 @@ echo.
 echo =========================================================
 echo  Monitor SFTP de Canhotos Vedacit Pendentes
 echo =========================================================
-echo Processa no maximo 100 canhotos por rodada, somente pelo
-echo SFTP. Enquanto houver lotes completos com confirmacoes, segue
+echo Processa no maximo 100 canhotos por rodada, priorizando NF-es
+echo que possuem comprovante no SFTP e reconciliando o CT-e pelo XML.
+echo Enquanto houver lotes completos com confirmacoes, segue
 echo automaticamente a cada 30 segundos. O intervalo informado so vale
 echo quando nao houver mais candidatos elegiveis. Use Ctrl+C para encerrar.
 echo Uma falha tecnica encerra o monitor para evitar repeticao cega.
@@ -48,6 +49,7 @@ if errorlevel 1 (
 
 set /a "WAIT_SECONDS=WAIT_MINUTES*60"
 set "VEDACIT_SFTP_DRAIN_UNTIL_IDLE=true"
+set "VEDACIT_SFTP_RECONCILIATION_ENABLED=true"
 echo.
 echo Monitor iniciado: lotes de %BATCH_LIMIT%, pausa curta de 30 segundos entre lotes ativos;
 echo nova consulta a cada %WAIT_MINUTES% minuto(s) somente apos esgotar os candidatos.

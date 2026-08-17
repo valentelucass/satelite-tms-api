@@ -11,6 +11,8 @@ import org.springframework.core.annotation.Order;
 import org.springframework.core.env.Environment;
 import org.springframework.stereotype.Component;
 
+import java.util.List;
+
 import com.example.satelite.services.origem.sftp.vedacit.VedacitSftpClient;
 
 /** Lote foreground, limitado e exclusivamente SFTP para canhotos Vedacit pendentes. */
@@ -67,12 +69,16 @@ public class ReprocessamentoCanhotoSftpVedacitRunner implements CommandLineRunne
                     PAUSA_ENTRE_RODADAS_PADRAO_MS,
                     PAUSA_ENTRE_RODADAS_MAXIMA_MS
             );
+            List<String> nfesComArquivoSftp = vedacitSftpClient.listarComprovantes().stream()
+                    .map(documento -> documento.chaveNfe()).distinct().toList();
+            log.info("📂 [VEDACIT] Inventário SFTP: {} NF-e(s) com comprovante elegível.", nfesComArquivoSftp.size());
             EtlRepescagemService.ResultadoReprocessamentoCanhotoVedacit resultado = executarRodadas(
                     limite,
                     intervaloMs,
                     drenarAteOcioso,
                     maximoRodadas,
-                    pausaEntreRodadasMs
+                    pausaEntreRodadasMs,
+                    nfesComArquivoSftp
             );
             exitCode = resultado.concluidoSemErro() ? 0 : 1;
             log.info(
@@ -98,7 +104,8 @@ public class ReprocessamentoCanhotoSftpVedacitRunner implements CommandLineRunne
             long intervaloMs,
             boolean drenarAteOcioso,
             int maximoRodadas,
-            long pausaEntreRodadasMs
+            long pausaEntreRodadasMs,
+            List<String> nfesComArquivoSftp
     ) {
         int selecionados = 0;
         int enviados = 0;
@@ -107,7 +114,7 @@ public class ReprocessamentoCanhotoSftpVedacitRunner implements CommandLineRunne
 
         for (int rodada = 1; rodada <= maximoRodadas; rodada++) {
             EtlRepescagemService.ResultadoReprocessamentoCanhotoVedacit rodadaResultado =
-                    etlRepescagemService.reprocessarCanhotosPendentesFotoSftpVedacit(limite, intervaloMs);
+                    etlRepescagemService.reprocessarCanhotosPendentesFotoSftpVedacit(limite, intervaloMs, nfesComArquivoSftp);
             selecionados += rodadaResultado.selecionados();
             enviados += rodadaResultado.enviados();
             pendentes += rodadaResultado.pendentes();

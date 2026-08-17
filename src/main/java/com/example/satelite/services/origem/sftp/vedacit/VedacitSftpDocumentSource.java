@@ -13,4 +13,9 @@ public interface VedacitSftpDocumentSource {
     default List<VedacitSftpDocument> buscarComprovantesPorNfe(String chaveNfe) {
         return List.of();
     }
+
+    /** Inventário somente de metadados; o conteúdo não é baixado. */
+    default List<VedacitSftpDocument> listarComprovantes() {
+        return List.of();
+    }
 }

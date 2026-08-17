@@ -77,6 +77,20 @@ class VedacitCteCanhotoReconciliationServiceTest {
         assertEquals("PENDENTE_RECONCILIACAO", decisao.tipo());
     }
 
+    @Test
+    void naoConsultaEslQuandoNaoHaArquivoSftpParaANfe() {
+        RodogarciaClient client = mock(RodogarciaClient.class);
+        EslRequestPolicyService policy = mock(EslRequestPolicyService.class);
+        VedacitSftpDocumentSource sftp = mock(VedacitSftpDocumentSource.class);
+        when(sftp.buscarComprovantesPorNfe(NFE)).thenReturn(List.of());
+
+        var decisao = new VedacitCteCanhotoReconciliationService(client, policy, sftp, "token")
+                .reconciliar(NFE, COMPLEMENTAR);
+
+        assertFalse(decisao.encontrada());
+        verifyNoInteractions(client, policy);
+    }
+
     private VedacitSftpDocument documento(String cte) {
         return new VedacitSftpDocument(VedacitSftpDocument.Tipo.COMPROVANTE, "comprovantes/x.jpg", cte, NFE, 1, Instant.EPOCH, new byte[] { 1 });
     }

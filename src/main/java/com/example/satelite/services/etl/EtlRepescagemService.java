@@ -163,10 +163,22 @@ public class EtlRepescagemService {
             int limite,
             long intervaloEntreItensMs
     ) {
+        return reprocessarCanhotosPendentesFotoSftpVedacit(limite, intervaloEntreItensMs, null);
+    }
+
+    public ResultadoReprocessamentoCanhotoVedacit reprocessarCanhotosPendentesFotoSftpVedacit(
+            int limite,
+            long intervaloEntreItensMs,
+            List<String> chavesNfeComArquivoSftp
+    ) {
         int limiteSeguro = Math.max(1, limite);
-        List<LogIntegracaoModel> registros = logIntegracaoRepository.findCanhotosPendentesFotoVedacit(
-                PageRequest.of(0, limiteSeguro)
-        );
+        List<LogIntegracaoModel> registros = chavesNfeComArquivoSftp == null
+                ? logIntegracaoRepository.findCanhotosPendentesFotoVedacit(PageRequest.of(0, limiteSeguro))
+                : chavesNfeComArquivoSftp.isEmpty()
+                        ? List.of()
+                        : logIntegracaoRepository.findCanhotosPendentesFotoVedacitPorNfes(
+                        chavesNfeComArquivoSftp, PageRequest.of(0, limiteSeguro)
+                        );
         if (registros == null || registros.isEmpty()) {
             log.info("🎯 [VEDACIT] Nenhum canhoto PENDENTE_FOTO com CT-e elegível no lote SFTP.");
             return new ResultadoReprocessamentoCanhotoVedacit(0, 0, 0, 0);
