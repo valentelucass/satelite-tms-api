@@ -6,7 +6,9 @@ import java.time.Instant;
 import java.nio.charset.StandardCharsets;
 import java.util.EnumSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
+import java.util.stream.Stream;
 
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
@@ -52,6 +54,26 @@ public class VedacitSftpClient implements VedacitSftpDocumentSource {
     }
     @Override public Optional<VedacitSftpDocument> buscarComprovante(String cte, String nfe) {
         return buscar(VedacitSftpPathPolicy.caminhoComprovantes(basePath, clientPath), VedacitSftpDocument.Tipo.COMPROVANTE, cte, nfe, true);
+    }
+
+    @Override public List<VedacitSftpDocument> buscarComprovantesPorNfe(String nfe) {
+        if (!enabled) return List.of();
+        validarConfiguracao();
+        if (nfe == null || !nfe.matches("\\d{44}")) throw new IllegalArgumentException("Chave NF-e SFTP inválida");
+        String directory = VedacitSftpPathPolicy.caminhoComprovantes(basePath, clientPath);
+        try (SSHClient ssh = new SSHClient()) {
+            ssh.addHostKeyVerifier(FingerprintVerifier.getInstance(hostKeySha256));
+            ssh.connect(host, port); ssh.authPassword(username, password);
+            try (SFTPClient sftp = ssh.newSFTPClient()) {
+                return sftp.ls(directory).stream()
+                        .map(file -> Map.entry(file, VedacitSftpPathPolicy.extrairChavesComprovante(file.getName())))
+                        .filter(entry -> entry.getValue().isPresent() && nfe.equals(entry.getValue().get().chaveNfe()))
+                        .filter(entry -> entry.getKey().getAttributes().getSize() > 0 && entry.getKey().getAttributes().getSize() <= maxFileSizeBytes)
+                        .map(entry -> criarDocumentoComprovante(sftp, directory, entry.getKey(), entry.getValue().get()))
+                        .flatMap(documento -> documento == null ? Stream.empty() : documento.stream())
+                        .toList();
+            }
+        } catch (IOException e) { throw new IllegalStateException("Falha controlada na leitura SFTP Vedacit", e); }
     }
 
     /**
@@ -108,6 +130,18 @@ public class VedacitSftpClient implements VedacitSftpDocumentSource {
             while ((read = file.read(offset, buffer, 0, buffer.length)) > 0) { output.write(buffer, 0, read); offset += read; }
             return output.toByteArray();
         }
+    }
+
+    private Optional<VedacitSftpDocument> criarDocumentoComprovante(
+            SFTPClient sftp, String directory, RemoteResourceInfo file, VedacitSftpPathPolicy.ChavesComprovante chaves
+    ) {
+        try {
+            long size = file.getAttributes().getSize(); long mtime = file.getAttributes().getMtime();
+            byte[] bytes = read(sftp, directory + "/" + file.getName(), size);
+            var after = sftp.stat(directory + "/" + file.getName());
+            if (bytes.length != size || after.getSize() != size || after.getMtime() != mtime) return Optional.empty();
+            return Optional.of(new VedacitSftpDocument(VedacitSftpDocument.Tipo.COMPROVANTE, "comprovantes/" + file.getName(), chaves.chaveCte(), chaves.chaveNfe(), size, Instant.ofEpochSecond(mtime), bytes));
+        } catch (IOException e) { throw new IllegalStateException("Falha ao ler comprovante SFTP Vedacit", e); }
     }
     private void validarConfiguracao() {
         if (host.isBlank() || username.isBlank() || password.isBlank() || hostKeySha256.isBlank() || port <= 0 || maxFileSizeBytes <= 0) throw new IllegalStateException("Configuração SFTP Vedacit incompleta");

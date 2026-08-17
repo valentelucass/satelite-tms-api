@@ -1,11 +1,14 @@
 package com.example.satelite.services.origem.sftp.vedacit;
 
 import java.util.Locale;
+import java.util.Optional;
 import java.util.Set;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /** Regras puras de caminho e nome; nunca permite sair da subpasta Vedacit configurada. */
 public final class VedacitSftpPathPolicy {
-    private static final Set<String> EXTENSOES_COMPROVANTE = Set.of("jpg", "jpeg", "jfif", "pdf");
+    private static final Set<String> EXTENSOES_COMPROVANTE = Set.of("jpg", "jpeg", "jfif", "png", "pdf");
 
     private VedacitSftpPathPolicy() { }
 
@@ -28,11 +31,21 @@ public final class VedacitSftpPathPolicy {
 
     public static boolean nomeComprovanteCorresponde(String nome, String chaveCte, String chaveNfe) {
         return nome != null && nome.matches("\\d+_" + chaveValida(chaveCte) + "_" + chaveValida(chaveNfe)
-                + "\\.(?i:jpg|jpeg|jfif|pdf)");
+                + "\\.(?i:jpg|jpeg|jfif|png|pdf)");
     }
 
+    public static Optional<ChavesComprovante> extrairChavesComprovante(String nome) {
+        if (nome == null) return Optional.empty();
+        String nomeSeguro = nome;
+        Matcher matcher = Pattern.compile("^\\d+_(\\d{44})_(\\d{44})\\.(?i:jpg|jpeg|jfif|png|pdf)$").matcher(nomeSeguro);
+        return matcher.matches() ? Optional.of(new ChavesComprovante(matcher.group(1), matcher.group(2))) : Optional.empty();
+    }
+
+    public record ChavesComprovante(String chaveCte, String chaveNfe) { }
+
     public static boolean extensaoComprovanteAceita(String nome) {
-        int ponto = nome == null ? -1 : nome.lastIndexOf('.');
+        if (nome == null) return false;
+        int ponto = nome.lastIndexOf('.');
         return ponto > 0 && EXTENSOES_COMPROVANTE.contains(nome.substring(ponto + 1).toLowerCase(Locale.ROOT));
     }
 

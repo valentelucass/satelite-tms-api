@@ -175,6 +175,33 @@ public class EtlEstadoIntegracaoService {
         return ResultadoRegistro.ENVIADO;
     }
 
+    public boolean jaExisteCanhotoVedacitEnviado(String chaveNfe) {
+        return logIntegracaoRepository.existsBySistemaDestinoAndChaveNfeAndStatusCanhoto(
+                "VEDACIT", chaveNfe, ResultadoIntegracao.STATUS_SUCESSO
+        );
+    }
+
+    /** Propaga somente o resultado do mesmo canhoto; não altera chave CT-e histórica. */
+    public void marcarCanhotosVedacitRelacionadosComoSucesso(
+            String chaveNfe, String chaveCteEfetiva, String tipo, String motivo
+    ) {
+        List<LogIntegracaoModel> relacionados = logIntegracaoRepository
+                .findBySistemaDestinoAndChaveNfeOrderByDataProcessamentoAscIdAsc("VEDACIT", chaveNfe);
+        for (LogIntegracaoModel relacionado : relacionados) {
+            if (!ResultadoIntegracao.STATUS_SUCESSO.equals(relacionado.getStatusDados())
+                    || ResultadoIntegracao.STATUS_SUCESSO.equals(relacionado.getStatusCanhoto())) {
+                continue;
+            }
+            relacionado.setCanhotoChaveCteEfetiva(chaveCteEfetiva);
+            relacionado.setCanhotoReconciliacaoTipo(tipo);
+            relacionado.setCanhotoReconciliacaoMotivo(motivo);
+            aplicarResultadoIntegracao(relacionado, ResultadoIntegracao.vedacitConcluido(
+                    ResultadoIntegracao.STATUS_SUCESSO, ResultadoIntegracao.STATUS_SUCESSO
+            ));
+            salvar(relacionado);
+        }
+    }
+
     public ResultadoIntegracao criarResultadoErroGenerico(String destino, Exception e) {
         String mensagem = e.getMessage();
         if (DESTINO_PPG.equals(destino)) {

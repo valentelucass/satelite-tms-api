@@ -125,7 +125,7 @@ public class RecuperacaoDirigidaVedacitRunner implements CommandLineRunner, Exit
 
     static List<String> carregarChaves(Path arquivo, int limite) throws IOException {
         try (var linhas = Files.lines(arquivo, StandardCharsets.UTF_8)) {
-            return linhas.map(String::trim)
+            return linhas.map(linha -> linha == null ? "" : linha.trim())
                     .filter(chave -> CHAVE_NFE.matcher(chave).matches())
                     .distinct()
                     .limit(limite)

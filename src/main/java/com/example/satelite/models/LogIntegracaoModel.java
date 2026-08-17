@@ -66,6 +66,12 @@ public class LogIntegracaoModel {
     private String canhotoMimeType;
     @Column(name = "canhoto_origem", length = 30)
     private String canhotoOrigem;
+    @Column(name = "canhoto_chave_cte_efetiva", length = 44)
+    private String canhotoChaveCteEfetiva;
+    @Column(name = "canhoto_reconciliacao_tipo", length = 50)
+    private String canhotoReconciliacaoTipo;
+    @Column(name = "canhoto_reconciliacao_motivo", length = 500)
+    private String canhotoReconciliacaoMotivo;
     @Column(name = "data_processamento_dados")
     private LocalDateTime dataProcessamentoDados;
     @Column(name = "data_processamento_canhoto")

@@ -27,6 +27,7 @@ import com.example.satelite.services.ppg.PpgIntegrationService;
 import com.example.satelite.services.selia.SeliaIntegrationService;
 import com.example.satelite.services.supporte.SupporteIntegrationService;
 import com.example.satelite.services.vedacit.VedacitIntegrationService;
+import com.example.satelite.services.vedacit.VedacitCteCanhotoReconciliationService;
 
 @Service
 public class EtlRegistroService {
@@ -76,6 +77,16 @@ public class EtlRegistroService {
 
     @Value("${SFTP_RODOGARCIA_ENABLED:false}")
     private boolean sftpRodogarciaHabilitado;
+
+    @Value("${VEDACIT_SFTP_RECONCILIATION_ENABLED:false}")
+    private boolean reconciliacaoSftpVedacitHabilitada;
+
+    private VedacitCteCanhotoReconciliationService vedacitCteCanhotoReconciliationService;
+
+    @Autowired
+    void configurarReconciliacaoVedacit(VedacitCteCanhotoReconciliationService service) {
+        this.vedacitCteCanhotoReconciliationService = service;
+    }
 
     @Autowired
     public EtlRegistroService(
@@ -253,6 +264,30 @@ public class EtlRegistroService {
         EslOcorrenciaDTO ocorrencia = reconstruirOcorrenciaVedacit(logIntegracao);
         String chaveNfe = obterChaveNfe(ocorrencia);
         try {
+            if (reconciliacaoSftpVedacitHabilitada
+                    && etlEstadoIntegracaoService.jaExisteCanhotoVedacitEnviado(chaveNfe)) {
+                log.info("⏭️ [VEDACIT] NF {}: canhoto já conciliado em CT-e relacionado; evitando reenvio.", chaveNfe);
+                return ResultadoRegistro.IGNORADO;
+            }
+            VedacitCteCanhotoReconciliationService.Decisao decisao = null;
+            if (reconciliacaoSftpVedacitHabilitada) {
+                if (vedacitCteCanhotoReconciliationService == null) {
+                    throw new IllegalStateException("Serviço de reconciliação Vedacit indisponível");
+                }
+                decisao = vedacitCteCanhotoReconciliationService.reconciliar(chaveNfe, logIntegracao.getChaveCte());
+                if (!decisao.encontrada()) {
+                    ResultadoIntegracao pendente = ResultadoIntegracao.parcialCanhotoPendente(
+                            STATUS_SUCESSO, decisao.motivo()
+                    );
+                    etlEstadoIntegracaoService.aplicarResultadoIntegracao(logIntegracao, pendente);
+                    etlEstadoIntegracaoService.salvar(logIntegracao);
+                    return ResultadoRegistro.PENDENTE_FOTO;
+                }
+                logIntegracao.setCanhotoChaveCteEfetiva(decisao.chaveCteEfetiva());
+                logIntegracao.setCanhotoReconciliacaoTipo(decisao.tipo());
+                logIntegracao.setCanhotoReconciliacaoMotivo(decisao.motivo());
+                ocorrencia = comChaveCte(ocorrencia, decisao.chaveCteEfetiva());
+            }
             log.info(
                     "🎯 [VEDACIT] NF {}: reprocessamento cirúrgico do canhoto. CTe={}",
                     chaveNfe,
@@ -266,6 +301,11 @@ public class EtlRegistroService {
             );
             etlEstadoIntegracaoService.aplicarResultadoIntegracao(logIntegracao, resultado);
             etlEstadoIntegracaoService.salvar(logIntegracao);
+            if (decisao != null && resultado.statusCanhoto().equals(STATUS_SUCESSO)) {
+                etlEstadoIntegracaoService.marcarCanhotosVedacitRelacionadosComoSucesso(
+                        chaveNfe, decisao.chaveCteEfetiva(), decisao.tipo(), decisao.motivo()
+                );
+            }
             return etlEstadoIntegracaoService.converterResultadoRegistro(resultado);
         } catch (Exception e) {
             if (e instanceof InterruptedException) {
@@ -282,6 +322,17 @@ public class EtlRegistroService {
             );
             return ResultadoRegistro.ERRO;
         }
+    }
+
+    private EslOcorrenciaDTO comChaveCte(EslOcorrenciaDTO ocorrencia, String chaveCteEfetiva) {
+        EslFreightDTO freight = ocorrencia.freight();
+        EslFreightDTO freightEfetivo = new EslFreightDTO(
+                freight.id(), chaveCteEfetiva, freight.orderNumber(), freight.volumeNumber()
+        );
+        return new EslOcorrenciaDTO(
+                ocorrencia.id(), ocorrencia.orderNumber(), ocorrencia.volumeNumber(), ocorrencia.occurrenceAt(),
+                ocorrencia.createdAt(), ocorrencia.invoice(), freightEfetivo, ocorrencia.occurrence()
+        );
     }
 
     /**

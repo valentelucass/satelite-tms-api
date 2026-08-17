@@ -41,6 +41,17 @@ public interface LogIntegracaoRepository extends JpaRepository<LogIntegracaoMode
             String status
     );
 
+    boolean existsBySistemaDestinoAndChaveNfeAndStatusCanhoto(
+            String sistemaDestino,
+            String chaveNfe,
+            String statusCanhoto
+    );
+
+    List<LogIntegracaoModel> findBySistemaDestinoAndChaveNfeOrderByDataProcessamentoAscIdAsc(
+            String sistemaDestino,
+            String chaveNfe
+    );
+
     List<LogIntegracaoModel> findBySistemaDestinoAndStatusCanhotoOrderByDataProcessamentoAscIdAsc(
             String sistemaDestino,
             String statusCanhoto

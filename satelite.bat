@@ -30,7 +30,9 @@ echo( R. Executar Carga Retroativa
 echo( H. Reprocessar somente Canhotos Vedacit com Erro
 echo( J. Processar lote SFTP de Canhotos Vedacit Pendentes
 echo( K. Monitorar lote SFTP de Canhotos Vedacit a cada 30 min
+echo( M. Previa de reconciliacao SFTP Vedacit (sem envio)
 echo( N. Reprocessar Pendencias Tecnicas Vedacit
+echo( O. Processar lote SFTP Vedacit reconciliado (apos previa)
 echo( T. Executar Testes E2E Isolados
 echo(
 echo( =================================================
@@ -41,14 +43,16 @@ echo( A. Status do Sistema ^(Procurar portas ativas^)
 echo( B. PARAR TUDO ^(Somente Java do Satelite^)
 echo( 0. Sair
 echo(
-choice /c 123456789ERHJKNTLAB0 /n /m "Escolha uma opcao: "
+choice /c 123456789ERHJKMNOTLAB0 /n /m "Escolha uma opcao: "
 
-if errorlevel 20 goto sair
-if errorlevel 19 goto parar_robo
-if errorlevel 18 goto status_robo
-if errorlevel 17 goto logs
-if errorlevel 16 goto testes_e2e
-if errorlevel 15 goto reprocessar_pendencias_tecnicas_vedacit
+if errorlevel 22 goto sair
+if errorlevel 21 goto parar_robo
+if errorlevel 20 goto status_robo
+if errorlevel 19 goto logs
+if errorlevel 18 goto testes_e2e
+if errorlevel 17 goto reprocessar_pendencias_tecnicas_vedacit
+if errorlevel 16 goto reprocessar_canhotos_sftp_vedacit_reconciliado
+if errorlevel 15 goto previa_reconciliacao_canhotos_sftp_vedacit
 if errorlevel 14 goto monitorar_canhotos_sftp_vedacit
 if errorlevel 13 goto reprocessar_canhotos_sftp_vedacit
 if errorlevel 12 goto reprocessar_canhotos_vedacit
@@ -141,6 +145,14 @@ goto pausar_menu
 
 :monitorar_canhotos_sftp_vedacit
 call scripts\monitorar_canhotos_sftp_vedacit.bat
+goto pausar_menu
+
+:previa_reconciliacao_canhotos_sftp_vedacit
+call scripts\previa_reconciliacao_canhotos_sftp_vedacit.bat
+goto pausar_menu
+
+:reprocessar_canhotos_sftp_vedacit_reconciliado
+call scripts\reprocessar_canhotos_sftp_vedacit_reconciliado.bat
 goto pausar_menu
 
 :reprocessar_pendencias_tecnicas_vedacit

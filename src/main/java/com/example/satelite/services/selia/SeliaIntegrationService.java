@@ -285,7 +285,7 @@ public class SeliaIntegrationService {
         }
 
         return Arrays.stream(eventCodeMap.split(","))
-                .map(String::trim)
+                .map(item -> item == null ? "" : item.trim())
                 .filter(item -> !item.isBlank())
                 .map(item -> item.split("=", 2))
                 .filter(partes -> partes.length == 2)

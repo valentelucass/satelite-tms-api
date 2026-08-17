@@ -21,6 +21,7 @@ class VedacitSftpPathPolicyTest {
     @Test
     void correlacionaSomenteComprovanteComAmbasAsChavesEExtensaoPermitida() {
         assertTrue(VedacitSftpPathPolicy.nomeComprovanteCorresponde("420789_" + CTE + "_" + NFE + ".jpg", CTE, NFE));
+        assertTrue(VedacitSftpPathPolicy.nomeComprovanteCorresponde("420789_" + CTE + "_" + NFE + ".png", CTE, NFE));
         assertFalse(VedacitSftpPathPolicy.nomeComprovanteCorresponde("420789_" + CTE + "_" + NFE + ".exe", CTE, NFE));
         assertFalse(VedacitSftpPathPolicy.nomeComprovanteCorresponde("420789_" + NFE + "_" + CTE + ".jpg", CTE, NFE));
     }
