@@ -205,6 +205,12 @@
 
 ## Tarefas Pendentes
 
+### Vedacit — operação SFTP
+
+- [ ] Conferir na Vedacit os `ERRO_DESTINO` produzidos no lote SFTP de 17/08/2026 antes de qualquer reenvio: timeout pode ter sido aceito remotamente; recusa explícita não deve ser repetida automaticamente.
+- [ ] Validar em operação controlada o resumo de console, inventário e dreno do lote SFTP: o monitor usa automaticamente lotes de 100, informa comprovantes/NF-es elegíveis/previsão de lotes e avança para a próxima centena quando houver progresso e menos de 25 erros isolados; ao atingir esse limite, pausa com os erros preservados para análise.
+- [ ] Ao terminar o dreno `K` com erros individuais, o monitor abre automaticamente a opção `P`, ainda exigindo `RETENTAR`. Ela processa exclusivamente um timeout ambíguo por execução, via SFTP sem fallback, com reconciliação, espera e prazo SOAP de cinco minutos; recusas explícitas ficam fora da seleção. Falha crítica retorna código 2 e não oferece reenvio.
+
 ### SELIA — rastreamento completo (prioridade atual)
 
 - [ ] Em ciclo isolado, definir `SELIA_INTELIPOST_ALL_EVENTS_ENABLED=true` e validar consulta ESL sem `occurrence_code`, ordenação cronológica, uma publicação por `occurrence.id` e cursor produtivo inalterado.

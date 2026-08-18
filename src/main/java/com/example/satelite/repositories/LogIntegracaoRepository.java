@@ -107,6 +107,30 @@ public interface LogIntegracaoRepository extends JpaRepository<LogIntegracaoMode
     );
 
     @Query("""
+            SELECT COUNT(DISTINCT l.chaveNfe) FROM LogIntegracaoModel l
+            WHERE l.sistemaDestino = 'VEDACIT' AND l.statusDados = 'SUCESSO'
+              AND l.statusCanhoto IN ('PENDENTE_FOTO', 'NAO_APLICAVEL')
+              AND l.chaveNfe IN :chavesNfe AND l.chaveCte IS NOT NULL AND TRIM(l.chaveCte) <> ''
+            """)
+    long countNfesCandidatasCanhotoVedacitPorNfes(@Param("chavesNfe") List<String> chavesNfe);
+
+    @Query("""
+            SELECT l FROM LogIntegracaoModel l
+            WHERE l.sistemaDestino = 'VEDACIT'
+              AND l.statusDados = 'SUCESSO'
+              AND l.statusCanhoto = 'ERRO_DESTINO'
+              AND l.chaveCte IS NOT NULL AND TRIM(l.chaveCte) <> ''
+              AND LOWER(COALESCE(l.mensagemErroCanhoto, l.erro, '')) LIKE '%read timed out%'
+              AND (l.canhotoOrigem = 'SFTP' OR l.canhotoReconciliacaoTipo IS NOT NULL)
+              AND COALESCE(l.tentativasCanhoto, 0) < :limiteTentativas
+            ORDER BY l.dataProcessamento ASC, l.id ASC
+            """)
+    List<LogIntegracaoModel> findTimeoutsAmbiguosCanhotoSftpVedacit(
+            @Param("limiteTentativas") int limiteTentativas,
+            Pageable pageable
+    );
+
+    @Query("""
             SELECT l
             FROM LogIntegracaoModel l
             WHERE l.sistemaDestino = 'VEDACIT'

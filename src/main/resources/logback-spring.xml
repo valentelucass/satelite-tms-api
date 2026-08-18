@@ -36,6 +36,12 @@
         <appender-ref ref="FILE"/>
     </logger>
 
+    <logger name="satelite.vedacit.sftp.detail" level="INFO" additivity="false">
+        <appender-ref ref="FILE"/>
+    </logger>
+
+    <logger name="com.sun.xml.ws.policy.EffectiveAlternativeSelector" level="ERROR"/>
+
     <root level="WARN">
         <appender-ref ref="CONSOLE"/>
         <appender-ref ref="FILE"/>

@@ -1,5 +1,6 @@
 package com.example.satelite.services.etl;
 
+import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
@@ -25,6 +26,7 @@ import com.example.satelite.services.vedacit.VedacitIntegrationService;
 public class EtlRepescagemService {
 
     private static final Logger log = LoggerFactory.getLogger(EtlRepescagemService.class);
+    private static final Logger logDetalheSftpVedacit = LoggerFactory.getLogger("satelite.vedacit.sftp.detail");
 
     private static final String DESTINO_PPG = "PPG";
     private static final String DESTINO_SELIA = "SELIA";
@@ -123,7 +125,7 @@ public class EtlRepescagemService {
         );
         if (registros == null || registros.isEmpty()) {
             log.info("🎯 [VEDACIT] Nenhum canhoto com erro pendente para reprocessamento cirúrgico.");
-            return new ResultadoReprocessamentoCanhotoVedacit(0, 0, 0, 0);
+            return new ResultadoReprocessamentoCanhotoVedacit(0, 0, 0, 0, 0);
         }
 
         int enviados = 0;
@@ -146,7 +148,7 @@ public class EtlRepescagemService {
             );
         }
 
-        return new ResultadoReprocessamentoCanhotoVedacit(registros.size(), enviados, pendentes, erros);
+        return new ResultadoReprocessamentoCanhotoVedacit(registros.size(), enviados, pendentes, erros, 0);
     }
 
     private void registrarOrigemSftpDoCanhoto(LogIntegracaoModel registro) {
@@ -181,25 +183,35 @@ public class EtlRepescagemService {
                         );
         if (registros == null || registros.isEmpty()) {
             log.info("🎯 [VEDACIT] Nenhum canhoto PENDENTE_FOTO com CT-e elegível no lote SFTP.");
-            return new ResultadoReprocessamentoCanhotoVedacit(0, 0, 0, 0);
+            return new ResultadoReprocessamentoCanhotoVedacit(0, 0, 0, 0, 0);
         }
 
         int enviados = 0;
         int pendentes = 0;
         int erros = 0;
-        log.warn("🎯 [VEDACIT] Iniciando lote SFTP exclusivo de {} canhoto(s) pendente(s).", registros.size());
+        int ignorados = 0;
+        int processados = 0;
+        log.info("🚀 [VEDACIT][SFTP] Lote iniciado | itens={} | origem=SFTP | fallback_ESL=desligado", registros.size());
         for (int indice = 0; indice < registros.size(); indice++) {
             LogIntegracaoModel registro = registros.get(indice);
+            long inicioItem = System.nanoTime();
+            registrarOrigemSftpDoCanhoto(registro);
             ResultadoRegistro resultado = etlRegistroService.reprocessarCanhotoVedacitPorCte(registro);
             if (resultado == ResultadoRegistro.ENVIADO) {
                 enviados++;
-                registrarOrigemSftpDoCanhoto(registro);
             } else if (resultado == ResultadoRegistro.PENDENTE_FOTO) {
                 pendentes++;
             } else if (resultado.erro()) {
                 erros++;
+            } else {
+                ignorados++;
             }
-            log.info("🎯 [VEDACIT] NF {}: resultado do lote SFTP={}", registro.getChaveNfe(), resultado);
+            processados++;
+            logarProgressoSftp(
+                    indice + 1, registros.size(), registro, resultado,
+                    Duration.ofNanos(System.nanoTime() - inicioItem),
+                    enviados, pendentes, erros, ignorados
+            );
 
             if (indice < registros.size() - 1 && !pausarEntreRegistros(intervaloEntreItensMs)) {
                 log.warn("⏹️ [VEDACIT] Lote SFTP interrompido antes de concluir os candidatos.");
@@ -207,7 +219,123 @@ public class EtlRepescagemService {
             }
         }
 
-        return new ResultadoReprocessamentoCanhotoVedacit(registros.size(), enviados, pendentes, erros);
+        return new ResultadoReprocessamentoCanhotoVedacit(processados, enviados, pendentes, erros, ignorados);
+    }
+
+    public ResultadoReprocessamentoCanhotoVedacit reprocessarTimeoutsAmbiguosSftpVedacit(
+            int limite,
+            int limiteTentativas,
+            long intervaloEntreItensMs
+    ) {
+        int limiteSeguro = Math.max(1, Math.min(limite, 10));
+        int tentativasSeguras = Math.max(1, limiteTentativas);
+        List<LogIntegracaoModel> registros = logIntegracaoRepository.findTimeoutsAmbiguosCanhotoSftpVedacit(
+                tentativasSeguras,
+                PageRequest.of(0, limiteSeguro)
+        );
+        if (registros == null || registros.isEmpty()) {
+            log.info("⏱️ [VEDACIT][SFTP] Nenhum timeout ambíguo elegível para retentativa controlada.");
+            return new ResultadoReprocessamentoCanhotoVedacit(0, 0, 0, 0, 0);
+        }
+
+        int enviados = 0;
+        int pendentes = 0;
+        int erros = 0;
+        int ignorados = 0;
+        log.info(
+                "⏱️ [VEDACIT][SFTP] Retentativa controlada | itens={} | pausa={}s | somente timeout de leitura",
+                registros.size(),
+                intervaloEntreItensMs / 1000
+        );
+        for (int indice = 0; indice < registros.size(); indice++) {
+            LogIntegracaoModel registro = registros.get(indice);
+            long inicioItem = System.nanoTime();
+            registrarOrigemSftpDoCanhoto(registro);
+            ResultadoRegistro resultado = etlRegistroService.reprocessarCanhotoVedacitPorCte(registro);
+            if (resultado == ResultadoRegistro.ENVIADO) {
+                enviados++;
+            } else if (resultado == ResultadoRegistro.PENDENTE_FOTO) {
+                pendentes++;
+            } else if (resultado.erro()) {
+                erros++;
+            } else {
+                ignorados++;
+            }
+            logarProgressoSftp(
+                    indice + 1, registros.size(), registro, resultado,
+                    Duration.ofNanos(System.nanoTime() - inicioItem),
+                    enviados, pendentes, erros, ignorados
+            );
+            if (indice < registros.size() - 1 && !pausarEntreRegistros(intervaloEntreItensMs)) {
+                log.warn("⏹️ [VEDACIT][SFTP] Retentativa controlada interrompida antes do próximo timeout.");
+                break;
+            }
+        }
+        return new ResultadoReprocessamentoCanhotoVedacit(
+                enviados + pendentes + erros + ignorados,
+                enviados,
+                pendentes,
+                erros,
+                ignorados
+        );
+    }
+
+    public long contarNfesCandidatasCanhotoVedacitSftp(List<String> chavesNfeComArquivoSftp) {
+        if (chavesNfeComArquivoSftp == null || chavesNfeComArquivoSftp.isEmpty()) {
+            return 0;
+        }
+        return logIntegracaoRepository.countNfesCandidatasCanhotoVedacitPorNfes(chavesNfeComArquivoSftp);
+    }
+
+    private void logarProgressoSftp(
+            int itemAtual,
+            int totalItens,
+            LogIntegracaoModel registro,
+            ResultadoRegistro resultado,
+            Duration duracao,
+            int enviados,
+            int pendentes,
+            int erros,
+            int ignorados
+    ) {
+        String motivo = resultado.erro()
+                ? " | motivo=" + resumirMensagem(registro.getMensagemErroCanhoto())
+                : "";
+        log.info(
+                "{} [VEDACIT][SFTP] {}/{} | {} | NF={} | duracao={} | acumulado enviados={} erros={} pendentes={} ignorados={}{}",
+                simboloResultado(resultado), itemAtual, totalItens, resultado.name(), chaveResumida(registro.getChaveNfe()),
+                formatarDuracao(duracao), enviados, erros, pendentes, ignorados, motivo
+        );
+        logDetalheSftpVedacit.info(
+                "[VEDACIT][SFTP][DETALHE] item={}/{} resultado={} nfe={} cte_original={} cte_efetivo={} duracao_ms={}",
+                itemAtual, totalItens, resultado.name(), registro.getChaveNfe(), registro.getChaveCte(),
+                registro.getCanhotoChaveCteEfetiva(), duracao.toMillis()
+        );
+    }
+
+    private String simboloResultado(ResultadoRegistro resultado) {
+        if (resultado == ResultadoRegistro.ENVIADO) return "✅";
+        if (resultado.erro()) return "❌";
+        if (resultado == ResultadoRegistro.IGNORADO || resultado == ResultadoRegistro.JA_PROCESSADO) return "⏭️";
+        return "⏳";
+    }
+
+    private String chaveResumida(String chave) {
+        if (chave == null || chave.length() <= 12) return String.valueOf(chave);
+        return chave.substring(0, 6) + "..." + chave.substring(chave.length() - 6);
+    }
+
+    private String resumirMensagem(String mensagem) {
+        if (mensagem == null || mensagem.isBlank()) return "erro sem detalhe";
+        String resumo = mensagem.replaceAll("\\s+", " ").trim();
+        return resumo.length() <= 120 ? resumo : resumo.substring(0, 117) + "...";
+    }
+
+    private String formatarDuracao(Duration duracao) {
+        long totalSegundos = Math.max(0, duracao.toSeconds());
+        return totalSegundos >= 60
+                ? "%dm%02ds".formatted(totalSegundos / 60, totalSegundos % 60)
+                : "%ds".formatted(totalSegundos);
     }
 
     /**
@@ -291,7 +419,8 @@ public class EtlRepescagemService {
             int selecionados,
             int enviados,
             int pendentes,
-            int erros
+            int erros,
+            int ignorados
     ) {
         public boolean concluidoSemErro() {
             return erros == 0;

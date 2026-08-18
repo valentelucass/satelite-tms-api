@@ -29,7 +29,7 @@ import java.util.Iterator;
 @Component
 public class ImageUtils {
 
-    private static final Logger log = LoggerFactory.getLogger(ImageUtils.class);
+    private static final Logger logDetalheSftpVedacit = LoggerFactory.getLogger("satelite.vedacit.sftp.detail");
 
     private static final String PREFIXO_BASE64_PPG = "data:image/jpeg;base64,";
     private static final double CROP_INICIO_RATIO_PADRAO = 0.60;
@@ -120,7 +120,7 @@ public class ImageUtils {
     }
 
     private static BufferedImage renderizarPrimeiraPaginaPdf(byte[] arquivoPdf) throws IOException {
-        log.info(
+        logDetalheSftpVedacit.info(
                 "Compressao Vedacit: PDF detectado por magic bytes. Renderizando primeira pagina para JPEG. tamanhoBytes={}",
                 arquivoPdf.length
         );

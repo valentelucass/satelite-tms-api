@@ -33,6 +33,7 @@ import com.example.satelite.services.vedacit.VedacitCteCanhotoReconciliationServ
 public class EtlRegistroService {
 
     private static final Logger log = LoggerFactory.getLogger(EtlRegistroService.class);
+    private static final Logger logDetalheSftpVedacit = LoggerFactory.getLogger("satelite.vedacit.sftp.detail");
 
     private static final int CODIGO_ENTREGA_REALIZADA = 1;
     private static final String DESTINO_PPG = "PPG";
@@ -266,7 +267,7 @@ public class EtlRegistroService {
         try {
             if (reconciliacaoSftpVedacitHabilitada
                     && etlEstadoIntegracaoService.jaExisteCanhotoVedacitEnviado(chaveNfe)) {
-                log.info("⏭️ [VEDACIT] NF {}: canhoto já conciliado em CT-e relacionado; evitando reenvio.", chaveNfe);
+                logDetalheSftpVedacit.info("⏭️ [VEDACIT] NF {}: canhoto já conciliado em CT-e relacionado; evitando reenvio.", chaveNfe);
                 return ResultadoRegistro.IGNORADO;
             }
             VedacitCteCanhotoReconciliationService.Decisao decisao = null;
@@ -288,7 +289,7 @@ public class EtlRegistroService {
                 logIntegracao.setCanhotoReconciliacaoMotivo(decisao.motivo());
                 ocorrencia = comChaveCte(ocorrencia, decisao.chaveCteEfetiva());
             }
-            log.info(
+            logDetalheSftpVedacit.info(
                     "🎯 [VEDACIT] NF {}: reprocessamento cirúrgico do canhoto. CTe={}",
                     chaveNfe,
                     logIntegracao.getChaveCte()
@@ -315,7 +316,7 @@ public class EtlRegistroService {
             ResultadoIntegracao erro = ResultadoIntegracao.erroCanhoto(STATUS_SUCESSO, e.getMessage());
             etlEstadoIntegracaoService.aplicarResultadoIntegracao(logIntegracao, erro);
             etlEstadoIntegracaoService.salvar(logIntegracao);
-            log.error(
+            logDetalheSftpVedacit.error(
                     "❌ [VEDACIT] NF {}: erro no reprocessamento cirúrgico do canhoto - {}",
                     chaveNfe,
                     e.getMessage()

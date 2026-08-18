@@ -67,6 +67,8 @@ import java.util.stream.Collectors;
 @Service
 public class VedacitIntegrationService {
 
+    private static final Logger logDetalheSftpVedacit = LoggerFactory.getLogger("satelite.vedacit.sftp.detail");
+
     private static final Logger log = LoggerFactory.getLogger(VedacitIntegrationService.class);
     private static final String OBSERVACAO_ENTREGA = "Entrega Realizada";
     private static final String OBSERVACAO_CANHOTO = "Canhoto integrado pelo Satelite TMS";
@@ -464,7 +466,7 @@ public class VedacitIntegrationService {
         byte[] imagemOriginal;
         if (canhotoSftp.isPresent()) {
             imagemOriginal = canhotoSftp.get();
-            log.info("⬇️ [VEDACIT] NF {}: Canhoto obtido via SFTP. CTe={}", chaveNfe, cteKey);
+            logDetalheSftpVedacit.info("⬇️ [VEDACIT] NF {}: Canhoto obtido via SFTP. CTe={}", chaveNfe, cteKey);
         } else {
             if (canhotoExclusivamenteSftp) {
                 throw new CanhotoIndisponivelNaOrigemException(
@@ -475,13 +477,13 @@ public class VedacitIntegrationService {
             log.info("⬇️ [VEDACIT] NF {}: Baixando imagem do canhoto via ESL... CTe={}", chaveNfe, cteKey);
             imagemOriginal = imageDownloader.baixarImagemDaUrl(urlImagem, cteKey);
         }
-        log.info("🖼️ [VEDACIT] NF {}: Imagem baixada com sucesso ({} bytes).", chaveNfe, imagemOriginal.length);
+        logDetalheSftpVedacit.info("🖼️ [VEDACIT] NF {}: Imagem baixada com sucesso ({} bytes).", chaveNfe, imagemOriginal.length);
 
         byte[] imagemComprimida = comprimirImagemParaVedacit(chaveNfe, cteKey, imagemOriginal);
-        log.info("🖼️ [VEDACIT] NF {}: Imagem comprimida para {} bytes antes do Base64.", chaveNfe, imagemComprimida.length);
+        logDetalheSftpVedacit.info("🖼️ [VEDACIT] NF {}: Imagem comprimida para {} bytes antes do Base64.", chaveNfe, imagemComprimida.length);
 
         String imagemBase64Bruta = Base64.getEncoder().encodeToString(imagemComprimida);
-        log.info("🛠️ [VEDACIT] NF {}: Imagem preparada para digitalização SOAP. tamanho_base64={}", chaveNfe, imagemBase64Bruta.length());
+        logDetalheSftpVedacit.info("🛠️ [VEDACIT] NF {}: Imagem preparada para digitalização SOAP. tamanho_base64={}", chaveNfe, imagemBase64Bruta.length());
 
         com.example.satelite.vedacit.nfe.ObjectFactory factory = new com.example.satelite.vedacit.nfe.ObjectFactory();
         Canhoto canhoto = new Canhoto();
@@ -518,7 +520,7 @@ public class VedacitIntegrationService {
     private void enviarCanhoto(Canhoto canhoto, String chaveNfe, String cteKey) throws Exception {
         INFe porta = criarPortaNFe();
 
-        log.info("📤 [VEDACIT] NF {}: Enviando digitalização do canhoto...", chaveNfe);
+        logDetalheSftpVedacit.info("📤 [VEDACIT] NF {}: Enviando digitalização do canhoto...", chaveNfe);
         RetornoOfboolean retorno;
         try {
             retorno = executarSoapComPrazo(
@@ -544,7 +546,7 @@ public class VedacitIntegrationService {
             throw new IllegalStateException("Vedacit recusou o canhoto: " + mensagem);
         }
 
-        log.info("✅ [VEDACIT] NF {}: Canhoto enviado com sucesso! CTe={}", chaveNfe, cteKey);
+        logDetalheSftpVedacit.info("✅ [VEDACIT] NF {}: Canhoto enviado com sucesso! CTe={}", chaveNfe, cteKey);
     }
 
     private byte[] baixarXmlCte(EslOcorrenciaDTO ocorrencia, String chaveNfe) {
