@@ -33,6 +33,7 @@ import org.springframework.stereotype.Service;
 public class LogFileRetentionService {
 
     private static final Logger log = LoggerFactory.getLogger(LogFileRetentionService.class);
+    private static final Logger logDetalheInterno = LoggerFactory.getLogger("satelite.internal.detail");
 
     private static final Set<String> EXTENSOES_PERMITIDAS = Set.of(".log", ".out", ".err");
     private static final Comparator<Path> MAIS_ANTIGO_PRIMEIRO = Comparator
@@ -110,7 +111,7 @@ public class LogFileRetentionService {
                 .sum();
 
         if (removed > 0 || emptyDirectoriesRemoved > 0) {
-            log.info("Retencao de logs concluida: arquivosRemovidos={}, diretoriosVaziosRemovidos={}, restantes={}, tamanhoRestanteMb={}",
+            logDetalheInterno.info("Retencao de logs concluida: arquivosRemovidos={}, diretoriosVaziosRemovidos={}, restantes={}, tamanhoRestanteMb={}",
                     removed,
                     emptyDirectoriesRemoved,
                     files.size() - removed,

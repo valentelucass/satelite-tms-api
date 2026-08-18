@@ -40,7 +40,12 @@
         <appender-ref ref="FILE"/>
     </logger>
 
-    <logger name="com.sun.xml.ws.policy.EffectiveAlternativeSelector" level="ERROR"/>
+    <logger name="satelite.internal.detail" level="INFO" additivity="false">
+        <appender-ref ref="FILE"/>
+    </logger>
+
+    <logger name="com.sun.xml.ws" level="ERROR"/>
+    <logger name="org.hibernate.orm.deprecation" level="ERROR"/>
 
     <root level="WARN">
         <appender-ref ref="CONSOLE"/>

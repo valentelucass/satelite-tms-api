@@ -80,7 +80,7 @@ public class ReprocessamentoCanhotoSftpVedacitRunner implements CommandLineRunne
             long nfesCandidatas = etlRepescagemService.contarNfesCandidatasCanhotoVedacitSftp(nfesComArquivoSftp);
             long lotesEstimados = (nfesCandidatas + limite - 1L) / limite;
             log.info(
-                    "📊 [VEDACIT][SFTP] Inventário | comprovantes={} | NF-e elegíveis={} | plano={} lote(s) de até {}",
+                    "[INVENTARIO] [VEDACIT][SFTP] comprovantes={} | NF-e elegíveis={} | plano={} lote(s) de até {}",
                     nfesComArquivoSftp.size(),
                     nfesCandidatas,
                     lotesEstimados,
@@ -97,13 +97,13 @@ public class ReprocessamentoCanhotoSftpVedacitRunner implements CommandLineRunne
             );
             exitCode = resultado.concluidoSemErro() ? 0 : 1;
             log.info(
-                    "🏁 [VEDACIT][SFTP] Finalizado | selecionados={} enviados={} pendentes={} erros={} ignorados={}",
+                    "[FIM] [VEDACIT][SFTP] selecionados={} enviados={} pendentes={} erros={} ignorados={}",
                     resultado.selecionados(), resultado.enviados(), resultado.pendentes(), resultado.erros(),
                     resultado.ignorados()
             );
         } catch (Exception e) {
             exitCode = 2;
-            log.error("💥 [VEDACIT] Falha crítica no lote SFTP de canhotos.", e);
+            log.error("[FALHA_CRITICA] [VEDACIT] Lote SFTP de canhotos.", e);
         } finally {
             int codigoSpring = SpringApplication.exit(context, () -> exitCode);
             System.exit(codigoSpring);
@@ -140,7 +140,7 @@ public class ReprocessamentoCanhotoSftpVedacitRunner implements CommandLineRunne
             ignorados += rodadaResultado.ignorados();
 
             log.info(
-                    "🏁 [VEDACIT][SFTP] Rodada {}/{} | selecionados={} enviados={} pendentes={} erros={} ignorados={}",
+                    "[RODADA] [VEDACIT][SFTP] {}/{} | selecionados={} enviados={} pendentes={} erros={} ignorados={}",
                     rodada,
                     drenarAteOcioso ? maximoRodadas : 1,
                     rodadaResultado.selecionados(),
@@ -158,14 +158,14 @@ public class ReprocessamentoCanhotoSftpVedacitRunner implements CommandLineRunne
             if (!deveContinuar) {
                 if (drenarAteOcioso && rodadaResultado.erros() >= limiteErrosPorRodada) {
                     log.warn(
-                            "⚠️ [VEDACIT][SFTP] Dreno pausado: rodada teve {} erro(s), limite seguro={}. Os demais registros não foram tentados.",
+                            "[ATENCAO] [VEDACIT][SFTP] Dreno pausado: rodada teve {} erro(s), limite seguro={}. Os demais registros não foram tentados.",
                             rodadaResultado.erros(),
                             limiteErrosPorRodada
                     );
                 }
                 if (drenarAteOcioso && rodada == maximoRodadas) {
                     log.warn(
-                            "⚠️ [VEDACIT] Dreno SFTP atingiu o limite de {} rodadas; o monitor retomará na próxima consulta.",
+                            "[ATENCAO] [VEDACIT] Dreno SFTP atingiu o limite de {} rodadas; o monitor retomará na próxima consulta.",
                             maximoRodadas
                     );
                 }
@@ -173,7 +173,7 @@ public class ReprocessamentoCanhotoSftpVedacitRunner implements CommandLineRunne
             }
 
             log.info(
-                    "⏳ [VEDACIT][SFTP] Próxima rodada em {} segundo(s) | erros da rodada {}/{} | continuando com os próximos candidatos.",
+                    "[PROXIMA_RODADA] [VEDACIT][SFTP] em {} segundo(s) | erros da rodada {}/{} | continuando com os próximos candidatos.",
                     pausaEntreRodadasMs / 1000,
                     rodadaResultado.erros(),
                     limiteErrosPorRodada
@@ -182,7 +182,7 @@ public class ReprocessamentoCanhotoSftpVedacitRunner implements CommandLineRunne
                 Thread.sleep(pausaEntreRodadasMs);
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
-                log.warn("⚠️ [VEDACIT] Dreno SFTP interrompido antes da próxima rodada.");
+                log.warn("[ATENCAO] [VEDACIT] Dreno SFTP interrompido antes da próxima rodada.");
                 break;
             }
         }

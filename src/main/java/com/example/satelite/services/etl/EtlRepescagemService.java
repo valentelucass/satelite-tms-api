@@ -191,7 +191,7 @@ public class EtlRepescagemService {
         int erros = 0;
         int ignorados = 0;
         int processados = 0;
-        log.info("🚀 [VEDACIT][SFTP] Lote iniciado | itens={} | origem=SFTP | fallback_ESL=desligado", registros.size());
+        log.info("[INICIO] [VEDACIT][SFTP] Lote | itens={} | origem=SFTP | fallback_ESL=desligado", registros.size());
         for (int indice = 0; indice < registros.size(); indice++) {
             LogIntegracaoModel registro = registros.get(indice);
             long inicioItem = System.nanoTime();
@@ -234,7 +234,7 @@ public class EtlRepescagemService {
                 PageRequest.of(0, limiteSeguro)
         );
         if (registros == null || registros.isEmpty()) {
-            log.info("⏱️ [VEDACIT][SFTP] Nenhum timeout ambíguo elegível para retentativa controlada.");
+            log.info("[INFO] [VEDACIT][SFTP] Nenhum timeout ambíguo elegível para retentativa controlada.");
             return new ResultadoReprocessamentoCanhotoVedacit(0, 0, 0, 0, 0);
         }
 
@@ -243,7 +243,7 @@ public class EtlRepescagemService {
         int erros = 0;
         int ignorados = 0;
         log.info(
-                "⏱️ [VEDACIT][SFTP] Retentativa controlada | itens={} | pausa={}s | somente timeout de leitura",
+                "[RETENTATIVA] [VEDACIT][SFTP] itens={} | pausa={}s | somente timeout de leitura",
                 registros.size(),
                 intervaloEntreItensMs / 1000
         );
@@ -267,7 +267,7 @@ public class EtlRepescagemService {
                     enviados, pendentes, erros, ignorados
             );
             if (indice < registros.size() - 1 && !pausarEntreRegistros(intervaloEntreItensMs)) {
-                log.warn("⏹️ [VEDACIT][SFTP] Retentativa controlada interrompida antes do próximo timeout.");
+                log.warn("[ATENCAO] [VEDACIT][SFTP] Retentativa controlada interrompida antes do próximo timeout.");
                 break;
             }
         }
@@ -314,10 +314,10 @@ public class EtlRepescagemService {
     }
 
     private String simboloResultado(ResultadoRegistro resultado) {
-        if (resultado == ResultadoRegistro.ENVIADO) return "✅";
-        if (resultado.erro()) return "❌";
-        if (resultado == ResultadoRegistro.IGNORADO || resultado == ResultadoRegistro.JA_PROCESSADO) return "⏭️";
-        return "⏳";
+        if (resultado == ResultadoRegistro.ENVIADO) return "[OK]";
+        if (resultado.erro()) return "[ERRO]";
+        if (resultado == ResultadoRegistro.IGNORADO || resultado == ResultadoRegistro.JA_PROCESSADO) return "[PULAR]";
+        return "[PENDENTE]";
     }
 
     private String chaveResumida(String chave) {

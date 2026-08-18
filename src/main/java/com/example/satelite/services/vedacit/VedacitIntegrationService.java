@@ -269,7 +269,7 @@ public class VedacitIntegrationService {
 
         try {
             if (dadosJaEnviados) {
-                log.info("⏭️ [VEDACIT] NF {}: Dados/XML já enviados anteriormente. Pulando etapa.", chaveNfe);
+                logDetalheSftpVedacit.info("⏭️ [VEDACIT] NF {}: Dados/XML já enviados anteriormente. Pulando etapa.", chaveNfe);
             } else {
                 boolean fluxoDadosHabilitado = false;
 
