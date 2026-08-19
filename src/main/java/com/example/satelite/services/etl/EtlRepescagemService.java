@@ -27,6 +27,7 @@ import com.example.satelite.services.ResultadoIntegracao;
 import com.example.satelite.services.selia.SeliaIntegrationService;
 import com.example.satelite.services.vedacit.VedacitIntegrationService;
 import com.example.satelite.services.origem.sftp.vedacit.VedacitSftpDocument;
+import com.example.satelite.services.origem.sftp.vedacit.VedacitSftpInventory;
 
 @Service
 public class EtlRepescagemService {
@@ -157,6 +158,22 @@ public class EtlRepescagemService {
         return new ResultadoReprocessamentoCanhotoVedacit(registros.size(), enviados, pendentes, erros, 0);
     }
 
+    /** Reprocessa o legado somente pelo CT-e/SFTP; não reconsulta ocorrência ESL nem XML. */
+    public ResultadoReprocessamentoCanhotoVedacit reprocessarErrosLegadosSftpVedacit(int limite) {
+        List<LogIntegracaoModel> registros = limitarUmaTentativaPorNfe(
+                logIntegracaoRepository.findErrosLegadosSftpVedacit(PageRequest.of(0, Math.max(1, limite))), Math.max(1, limite));
+        int enviados = 0, pendentes = 0, erros = 0, ignorados = 0;
+        for (LogIntegracaoModel registro : registros) {
+            registrarOrigemSftpDoCanhoto(registro);
+            ResultadoRegistro resultado = etlRegistroService.reprocessarCanhotoVedacitPorCte(registro);
+            if (resultado == ResultadoRegistro.ENVIADO) enviados++;
+            else if (resultado == ResultadoRegistro.PENDENTE_FOTO) pendentes++;
+            else if (resultado.erro()) erros++;
+            else ignorados++;
+        }
+        return new ResultadoReprocessamentoCanhotoVedacit(registros.size(), enviados, pendentes, erros, ignorados);
+    }
+
     private void registrarOrigemSftpDoCanhoto(LogIntegracaoModel registro) {
         registro.setCanhotoOrigem("SFTP");
         etlEstadoIntegracaoService.salvar(registro);
@@ -194,7 +211,9 @@ public class EtlRepescagemService {
                     .chaveNfe(documento.chaveNfe())
                     .chaveCte(documento.chaveCte())
                     .status(ResultadoIntegracao.STATUS_PARCIAL)
-                    .statusDados(ResultadoIntegracao.STATUS_SUCESSO)
+                    // O arquivo SFTP não comprova que o XML/CT-e já foi aceito.
+                    // Sem log anterior, a auditoria é somente técnica e fica fora da fila.
+                    .statusDados("PENDENTE_ORIGEM")
                     .statusCanhoto(ResultadoIntegracao.STATUS_PENDENTE_FOTO)
                     .canhotoOrigem("SFTP")
                     .canhotoReferencia(documento.caminhoRelativo())
@@ -203,12 +222,37 @@ public class EtlRepescagemService {
                     .dataProcessamento(etlEstadoIntegracaoService.agoraAuditoria())
                     .build();
             etlEstadoIntegracaoService.classificarCanhotoVedacit(
-                    pendencia, ClassificacaoOperacionalCanhotoVedacit.PENDENTE_ENVIO
+                    pendencia, ClassificacaoOperacionalCanhotoVedacit.PENDENTE_TECNICO
             );
             etlEstadoIntegracaoService.salvar(pendencia);
             novos++;
         }
         return new ResultadoInventarioSftpVedacit(documentos.size(), novos, jaEnviados, existentes);
+    }
+
+    /** Persiste rejeições do inventário sem colocá-las na fila de envio. */
+    public ResultadoInventarioSftpVedacit sincronizarInventarioSftpVedacit(VedacitSftpInventory inventario) {
+        VedacitSftpInventory seguro = inventario == null ? new VedacitSftpInventory(List.of(), List.of()) : inventario;
+        ResultadoInventarioSftpVedacit resultado = sincronizarInventarioSftpVedacit(seguro.documentosValidos());
+        for (VedacitSftpInventory.DocumentoRejeitado rejeitado : seguro.rejeitados()) {
+            if (rejeitado == null || rejeitado.caminhoRelativo() == null || rejeitado.caminhoRelativo().isBlank()) continue;
+            Optional<LogIntegracaoModel> existente = logIntegracaoRepository
+                    .findTopBySistemaDestinoAndCanhotoReferenciaOrderByDataProcessamentoDescIdDesc(DESTINO_VEDACIT, rejeitado.caminhoRelativo());
+            LogIntegracaoModel registro = existente.orElseGet(() -> LogIntegracaoModel.builder()
+                    .sistemaDestino(DESTINO_VEDACIT).canhotoReferencia(rejeitado.caminhoRelativo())
+                    .chaveNfe(rejeitado.chaveNfe()).chaveCte(rejeitado.chaveCte())
+                    .tentativasDados(0).tentativasCanhoto(0).build());
+            registro.setStatus(ResultadoIntegracao.STATUS_PARCIAL);
+            registro.setStatusDados(ResultadoIntegracao.STATUS_SUCESSO);
+            registro.setStatusCanhoto(ResultadoIntegracao.STATUS_ERRO_DESTINO);
+            registro.setCanhotoOrigem("SFTP");
+            registro.setMensagemErroCanhoto(rejeitado.motivo());
+            registro.setErro(rejeitado.motivo());
+            registro.setDataProcessamento(etlEstadoIntegracaoService.agoraAuditoria());
+            etlEstadoIntegracaoService.classificarCanhotoVedacit(registro, ClassificacaoOperacionalCanhotoVedacit.PENDENTE_TECNICO);
+            etlEstadoIntegracaoService.salvar(registro);
+        }
+        return resultado;
     }
 
     /**
@@ -264,7 +308,7 @@ public class EtlRepescagemService {
         int erros = 0;
         int ignorados = 0;
         int processados = 0;
-        log.info("[INICIO] [VEDACIT][SFTP] Lote | itens={} | origem=SFTP | fallback_ESL=desligado", registros.size());
+        log.info("[INICIO] [VEDACIT][SFTP] Lote | itens={}", registros.size());
         for (int indice = 0; indice < registros.size(); indice++) {
             LogIntegracaoModel registro = registros.get(indice);
             tentadas.add(registro.getChaveNfe());

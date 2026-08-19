@@ -16,6 +16,7 @@ import java.util.HashSet;
 import java.util.Set;
 
 import com.example.satelite.services.origem.sftp.vedacit.VedacitSftpClient;
+import com.example.satelite.services.origem.sftp.vedacit.VedacitSftpInventory;
 
 /** Lote foreground, limitado e exclusivamente SFTP para canhotos Vedacit pendentes. */
 @Component
@@ -84,11 +85,12 @@ public class ReprocessamentoCanhotoSftpVedacitRunner implements CommandLineRunne
                     "vedacit.sftp-receipt-batch.technical-interval-ms", 300000, 600000
             );
             int limiteErrosTecnicos = obterInteiro(
-                    "vedacit.sftp-receipt-batch.technical-max-errors", 1, limiteTecnico
+                    "vedacit.sftp-receipt-batch.technical-max-errors", 3, limiteTecnico
             );
-            var comprovantesSftp = vedacitSftpClient.listarComprovantes();
+            VedacitSftpInventory inventarioSftp = vedacitSftpClient.listarInventarioComprovantes();
+            var comprovantesSftp = inventarioSftp.documentosValidos();
             EtlRepescagemService.ResultadoInventarioSftpVedacit inventario =
-                    etlRepescagemService.sincronizarInventarioSftpVedacit(comprovantesSftp);
+                    etlRepescagemService.sincronizarInventarioSftpVedacit(inventarioSftp);
             List<String> nfesComArquivoSftp = comprovantesSftp.stream()
                     .map(documento -> documento.chaveNfe()).distinct().toList();
             long nfesCandidatas = etlRepescagemService.contarNfesCandidatasCanhotoVedacitSftp(nfesComArquivoSftp);
@@ -123,11 +125,12 @@ public class ReprocessamentoCanhotoSftpVedacitRunner implements CommandLineRunne
                     resultado.ignorados()
             );
             log.info(
-                    "[RESUMO] [VEDACIT][SFTP] tecnicos={} | timeouts_ambiguos={} | bloqueados_origem={} | bloqueados_destino={} | proximo_passo={}",
+                    "[RESUMO] [VEDACIT][SFTP] tecnicos={} | timeouts_ambiguos={} | bloqueados_origem={} | bloqueados_destino={} | saldo={} | proximo_passo={}",
                     etlRepescagemService.contarClassificacaoCanhotoVedacit("PENDENTE_TECNICO"),
                     etlRepescagemService.contarClassificacaoCanhotoVedacit("TIMEOUT_AMBIGUO"),
                     etlRepescagemService.contarClassificacaoCanhotoVedacit("BLOQUEADO_ORIGEM"),
                     etlRepescagemService.contarClassificacaoCanhotoVedacit("BLOQUEADO_DESTINO"),
+                    Math.max(0L, etlRepescagemService.contarNfesCandidatasCanhotoVedacitSftp(nfesComArquivoSftp)),
                     existemTimeoutsPendentes ? "RETENTAR_TIMEOUT" : "ANALISAR_BLOQUEIOS"
             );
             if (existemTimeoutsPendentes) {

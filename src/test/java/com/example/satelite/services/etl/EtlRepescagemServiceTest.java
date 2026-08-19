@@ -23,6 +23,7 @@ import com.example.satelite.services.ResultadoIntegracao;
 import com.example.satelite.services.ppg.PpgIntegrationService;
 import com.example.satelite.services.vedacit.VedacitIntegrationService;
 import com.example.satelite.services.origem.sftp.vedacit.VedacitSftpDocument;
+import com.example.satelite.services.origem.sftp.vedacit.VedacitSftpInventory;
 
 class EtlRepescagemServiceTest {
 
@@ -265,7 +266,35 @@ class EtlRepescagemServiceTest {
         assertEquals(nfe, captor.getValue().getChaveNfe());
         assertEquals(cte, captor.getValue().getChaveCte());
         assertEquals(ResultadoIntegracao.STATUS_PENDENTE_FOTO, captor.getValue().getStatusCanhoto());
+        assertEquals("PENDENTE_ORIGEM", captor.getValue().getStatusDados());
+        assertEquals("PENDENTE_TECNICO", captor.getValue().getCanhotoClassificacaoOperacional());
         assertEquals("SFTP", captor.getValue().getCanhotoOrigem());
+    }
+
+    @Test
+    void deveAuditarArquivoSftpInstavelSemIncluiLoNaFila() {
+        LogIntegracaoRepository repository = mock(LogIntegracaoRepository.class);
+        EtlEstadoIntegracaoService estado = new EtlEstadoIntegracaoService(repository);
+        EtlRepescagemService service = new EtlRepescagemService(
+                repository, mock(EtlRegistroService.class), estado,
+                mock(PpgIntegrationService.class), mock(VedacitIntegrationService.class)
+        );
+        String caminho = "comprovantes/upload-em-andamento.jpg";
+        when(repository.findTopBySistemaDestinoAndCanhotoReferenciaOrderByDataProcessamentoDescIdDesc("VEDACIT", caminho))
+                .thenReturn(java.util.Optional.empty());
+        when(repository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+
+        var resultado = service.sincronizarInventarioSftpVedacit(new VedacitSftpInventory(
+                List.of(), List.of(new VedacitSftpInventory.DocumentoRejeitado(
+                caminho, null, null, "Upload instável: arquivo ainda está na janela mínima de estabilidade"))
+        ));
+
+        assertEquals(0, resultado.novos());
+        ArgumentCaptor<LogIntegracaoModel> captor = ArgumentCaptor.forClass(LogIntegracaoModel.class);
+        verify(repository).save(captor.capture());
+        assertEquals(ResultadoIntegracao.STATUS_ERRO_DESTINO, captor.getValue().getStatusCanhoto());
+        assertEquals("PENDENTE_TECNICO", captor.getValue().getCanhotoClassificacaoOperacional());
+        assertEquals(caminho, captor.getValue().getCanhotoReferencia());
     }
 
     @Test
@@ -312,6 +341,31 @@ class EtlRepescagemServiceTest {
         assertEquals(1, resultado.selecionados());
         assertEquals(1, resultado.erros());
         verify(registroService, never()).reprocessarCanhotoVedacitPorCte(segundo);
+    }
+
+    @Test
+    void deveContinuarQuarentenaAteOLimiteSeguroDeErros() {
+        LogIntegracaoRepository repository = mock(LogIntegracaoRepository.class);
+        EtlRegistroService registroService = mock(EtlRegistroService.class);
+        EtlRepescagemService service = new EtlRepescagemService(
+                repository, registroService, mock(EtlEstadoIntegracaoService.class),
+                mock(PpgIntegrationService.class), mock(VedacitIntegrationService.class)
+        );
+        LogIntegracaoModel primeiro = pendenciaTecnicaSftp(73L, "35260860642774001209550010002365771266072428");
+        LogIntegracaoModel segundo = pendenciaTecnicaSftp(74L, "35260760642774001209550010002329831546555019");
+        when(repository.findCanhotosTecnicosSftpVedacitPorNfes(any(), any()))
+                .thenReturn(List.of(primeiro, segundo));
+        when(registroService.reprocessarCanhotoVedacitPorCte(primeiro)).thenReturn(ResultadoRegistro.ERRO);
+        when(registroService.reprocessarCanhotoVedacitPorCte(segundo)).thenReturn(ResultadoRegistro.ENVIADO);
+
+        var resultado = service.reprocessarCanhotosTecnicosSftpVedacit(
+                10, 0, 2, List.of(primeiro.getChaveNfe(), segundo.getChaveNfe())
+        );
+
+        assertEquals(2, resultado.selecionados());
+        assertEquals(1, resultado.enviados());
+        assertEquals(1, resultado.erros());
+        verify(registroService).reprocessarCanhotoVedacitPorCte(segundo);
     }
 
     private LogIntegracaoModel pendenciaTecnicaSftp(Long id, String chaveNfe) {

@@ -34,7 +34,9 @@ public class ReprocessamentoTimeoutCnhotoSftpVedacitRunner implements CommandLin
     public void run(String... args) {
         try {
             exigirSftpExclusivo();
-            int limite = inteiro("vedacit.sftp-timeout-retry.max-items", 1, 10);
+            // Uma autorização RETENTAR corresponde sempre a uma única NF-e.
+            // O script pode informar a propriedade, mas nunca amplia este limite.
+            int limite = 1;
             int tentativas = inteiro("vedacit.sftp-timeout-retry.max-attempts", 2, 5);
             long pausaMs = inteiro("vedacit.sftp-timeout-retry.interval-ms", 300000, 900000);
             EtlRepescagemService.ResultadoReprocessamentoCanhotoVedacit resultado =

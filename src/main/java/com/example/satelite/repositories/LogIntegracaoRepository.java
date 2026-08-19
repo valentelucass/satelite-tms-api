@@ -32,6 +32,11 @@ public interface LogIntegracaoRepository extends JpaRepository<LogIntegracaoMode
             String chaveCte
     );
 
+    Optional<LogIntegracaoModel> findTopBySistemaDestinoAndCanhotoReferenciaOrderByDataProcessamentoDescIdDesc(
+            String sistemaDestino,
+            String canhotoReferencia
+    );
+
     Optional<LogIntegracaoModel> findTopBySistemaDestinoAndIntelipostPreShipmentListOrderByDataProcessamentoAscIdAsc(
             String sistemaDestino,
             Long intelipostPreShipmentList
@@ -82,6 +87,16 @@ public interface LogIntegracaoRepository extends JpaRepository<LogIntegracaoMode
             ORDER BY l.dataProcessamento ASC, l.id ASC
             """)
     List<LogIntegracaoModel> findErrosParciaisCanhotoVedacit(Pageable pageable);
+
+    @Query("""
+            SELECT l FROM LogIntegracaoModel l
+            WHERE l.sistemaDestino = 'VEDACIT' AND l.statusDados = 'SUCESSO'
+              AND l.statusCanhoto = 'ERRO_DESTINO'
+              AND l.chaveCte IS NOT NULL AND TRIM(l.chaveCte) <> ''
+              AND LOWER(COALESCE(l.mensagemErroCanhoto, l.erro, '')) LIKE '%ocorrência não encontrada na esl%'
+            ORDER BY l.dataProcessamento ASC, l.id ASC
+            """)
+    List<LogIntegracaoModel> findErrosLegadosSftpVedacit(Pageable pageable);
 
     @Query("""
             SELECT l

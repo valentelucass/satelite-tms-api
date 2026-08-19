@@ -474,7 +474,7 @@ public class VedacitIntegrationService {
                 );
             }
             String urlImagem = obterUrlImagem(obterComprovanteEslFallback(comprovante, cteKey));
-            log.info("⬇️ [VEDACIT] NF {}: Baixando imagem do canhoto via ESL... CTe={}", chaveNfe, cteKey);
+            logDetalheSftpVedacit.info("[VEDACIT][DETALHE] NF {}: baixando canhoto via ESL. CTe={}", chaveNfe, cteKey);
             imagemOriginal = imageDownloader.baixarImagemDaUrl(urlImagem, cteKey);
         }
         logDetalheSftpVedacit.info("🖼️ [VEDACIT] NF {}: Imagem baixada com sucesso ({} bytes).", chaveNfe, imagemOriginal.length);
@@ -558,7 +558,7 @@ public class VedacitIntegrationService {
     private byte[] baixarXmlCte(String chaveCte, String chaveNfe) {
         Optional<byte[]> xmlSftp = buscarXmlCteSftp(chaveCte, chaveNfe);
         if (xmlSftp.isPresent()) {
-            log.info("📄 [VEDACIT] NF {}: XML CT-e obtido via SFTP. CTe={}", chaveNfe, chaveCte);
+        logDetalheSftpVedacit.info("[VEDACIT][DETALHE] NF {}: XML CT-e obtido via SFTP. CTe={}", chaveNfe, chaveCte);
             return xmlSftp.get();
         }
 
@@ -578,7 +578,7 @@ public class VedacitIntegrationService {
                         return texto.contains(chaveCte) && texto.contains(chaveNfe);
                     });
         } catch (RuntimeException e) {
-            log.warn("⚠️ [VEDACIT] SFTP indisponível para XML CT-e; usando fallback ESL. CTe={} motivo={}", chaveCte, e.getMessage());
+            logDetalheSftpVedacit.warn("[VEDACIT][DETALHE] SFTP indisponível para XML CT-e; usando fallback ESL. CTe={} motivo={}", chaveCte, e.getMessage());
             return Optional.empty();
         }
     }
@@ -592,7 +592,7 @@ public class VedacitIntegrationService {
                     .map(documento -> documento.conteudo())
                     .filter(conteudo -> conteudo.length > 0);
         } catch (RuntimeException e) {
-            log.warn("⚠️ [VEDACIT] SFTP indisponível para canhoto; usando fallback ESL. CTe={} motivo={}",
+            logDetalheSftpVedacit.warn("[VEDACIT][DETALHE] SFTP indisponível para canhoto; usando fallback ESL. CTe={} motivo={}",
                     chaveCte, e.getMessage());
             return Optional.empty();
         }

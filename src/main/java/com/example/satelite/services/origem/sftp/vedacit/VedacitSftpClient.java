@@ -8,6 +8,7 @@ import java.util.EnumSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.ArrayList;
 import java.util.stream.Stream;
 
 import org.springframework.beans.factory.annotation.Value;
@@ -32,6 +33,7 @@ public class VedacitSftpClient implements VedacitSftpDocumentSource {
     private final String clientPath;
     private final String hostKeySha256;
     private final long maxFileSizeBytes;
+    private final long stableForMs;
 
     public VedacitSftpClient(
             @Value("${SFTP_RODOGARCIA_ENABLED:false}") boolean enabled,
@@ -42,11 +44,13 @@ public class VedacitSftpClient implements VedacitSftpDocumentSource {
             @Value("${SFTP_RODOGARCIA_BASE_PATH:}") String basePath,
             @Value("${SFTP_RODOGARCIA_CLIENT_PATH:}") String clientPath,
             @Value("${SFTP_RODOGARCIA_HOST_KEY_SHA256:}") String hostKeySha256,
-            @Value("${SFTP_RODOGARCIA_MAX_FILE_SIZE_BYTES:26214400}") long maxFileSizeBytes
+            @Value("${SFTP_RODOGARCIA_MAX_FILE_SIZE_BYTES:26214400}") long maxFileSizeBytes,
+            @Value("${SFTP_RODOGARCIA_STABLE_FOR_MS:120000}") long stableForMs
     ) {
         this.enabled = enabled; this.host = host; this.port = port; this.username = username; this.password = password;
         this.basePath = basePath; this.clientPath = VedacitSftpPathPolicy.validarDiretorioCliente(basePath, clientPath);
         this.hostKeySha256 = hostKeySha256; this.maxFileSizeBytes = maxFileSizeBytes;
+        this.stableForMs = stableForMs;
     }
 
     @Override public Optional<VedacitSftpDocument> buscarXmlCte(String cte, String nfe) {
@@ -77,23 +81,41 @@ public class VedacitSftpClient implements VedacitSftpDocumentSource {
     }
 
     @Override public List<VedacitSftpDocument> listarComprovantes() {
-        if (!enabled) return List.of();
+        return listarInventarioComprovantes().documentosValidos();
+    }
+
+    /**
+     * Lista metadados e expõe os arquivos que não podem integrar a fila ainda.
+     * Nenhum conteúdo é baixado nesta etapa.
+     */
+    public VedacitSftpInventory listarInventarioComprovantes() {
+        if (!enabled) return new VedacitSftpInventory(List.of(), List.of());
         validarConfiguracao();
         String directory = VedacitSftpPathPolicy.caminhoComprovantes(basePath, clientPath);
         try (SSHClient ssh = new SSHClient()) {
             ssh.addHostKeyVerifier(FingerprintVerifier.getInstance(hostKeySha256));
             ssh.connect(host, port); ssh.authPassword(username, password);
             try (SFTPClient sftp = ssh.newSFTPClient()) {
-                return sftp.ls(directory).stream()
-                        .map(file -> Map.entry(file, VedacitSftpPathPolicy.extrairChavesComprovante(file.getName())))
-                        .filter(entry -> entry.getValue().isPresent())
-                        .filter(entry -> entry.getKey().getAttributes().getSize() > 0 && entry.getKey().getAttributes().getSize() <= maxFileSizeBytes)
-                        .map(entry -> new VedacitSftpDocument(
-                                VedacitSftpDocument.Tipo.COMPROVANTE,
-                                "comprovantes/" + entry.getKey().getName(), entry.getValue().get().chaveCte(),
-                                entry.getValue().get().chaveNfe(), entry.getKey().getAttributes().getSize(),
-                                Instant.ofEpochSecond(entry.getKey().getAttributes().getMtime()), null
-                        )).toList();
+                List<VedacitSftpDocument> validos = new ArrayList<>();
+                List<VedacitSftpInventory.DocumentoRejeitado> rejeitados = new ArrayList<>();
+                Instant limiteEstabilidade = Instant.now().minusMillis(Math.max(0L, stableForMs));
+                for (RemoteResourceInfo file : sftp.ls(directory)) {
+                    String caminho = "comprovantes/" + file.getName();
+                    var chaves = VedacitSftpPathPolicy.extrairChavesComprovante(file.getName());
+                    long tamanho = file.getAttributes().getSize();
+                    long mtime = file.getAttributes().getMtime();
+                    if (chaves.isEmpty()) {
+                        rejeitados.add(new VedacitSftpInventory.DocumentoRejeitado(caminho, null, null, "Arquivo inválido: nome sem NF-e/CT-e válidos"));
+                    } else if (tamanho <= 0 || tamanho > maxFileSizeBytes) {
+                        rejeitados.add(new VedacitSftpInventory.DocumentoRejeitado(caminho, chaves.get().chaveCte(), chaves.get().chaveNfe(), "Arquivo inválido: tamanho fora do limite configurado"));
+                    } else if (Instant.ofEpochSecond(mtime).isAfter(limiteEstabilidade)) {
+                        rejeitados.add(new VedacitSftpInventory.DocumentoRejeitado(caminho, chaves.get().chaveCte(), chaves.get().chaveNfe(), "Upload instável: arquivo ainda está na janela mínima de estabilidade"));
+                    } else {
+                        validos.add(new VedacitSftpDocument(VedacitSftpDocument.Tipo.COMPROVANTE, caminho,
+                                chaves.get().chaveCte(), chaves.get().chaveNfe(), tamanho, Instant.ofEpochSecond(mtime), null));
+                    }
+                }
+                return new VedacitSftpInventory(validos, rejeitados);
             }
         } catch (IOException e) { throw new IllegalStateException("Falha controlada ao listar SFTP Vedacit", e); }
     }
