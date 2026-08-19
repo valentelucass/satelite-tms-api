@@ -361,7 +361,7 @@
 							<execution>
 								<id>repackage</id>
 								<configuration>
-									<classifier>vedacit</classifier>
+									<classifier>vedacit-fix</classifier>
 								</configuration>
 							</execution>
 						</executions>

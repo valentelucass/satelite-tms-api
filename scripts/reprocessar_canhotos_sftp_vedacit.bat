@@ -9,6 +9,8 @@ if errorlevel 1 exit /b 1
 
 set "EXECUTABLE_JAR_PATH=%JAR_PATH%"
 if exist "%PROJECT_ROOT%\target\satelite-sftp-monitor.jar" set "EXECUTABLE_JAR_PATH=%PROJECT_ROOT%\target\satelite-sftp-monitor.jar"
+if exist "%PROJECT_ROOT%\target\satelite-0.0.1-SNAPSHOT-vedacit.jar" set "EXECUTABLE_JAR_PATH=%PROJECT_ROOT%\target\satelite-0.0.1-SNAPSHOT-vedacit.jar"
+if exist "%PROJECT_ROOT%\target\satelite-0.0.1-SNAPSHOT-vedacit-fix.jar" set "EXECUTABLE_JAR_PATH=%PROJECT_ROOT%\target\satelite-0.0.1-SNAPSHOT-vedacit-fix.jar"
 
 echo.
 echo =========================================================

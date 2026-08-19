@@ -53,7 +53,7 @@ echo.
 echo Regra operacional: lotes de %BATCH_LIMIT%, pausa curta de 30 segundos entre lotes ativos;
 echo nova consulta a cada %WAIT_MINUTES% minuto(s) somente apos esgotar os candidatos.
 echo Ate 24 erros isolados por rodada ficam registrados e o dreno segue para os proximos itens.
-echo Ao terminar com erros individuais, oferece automaticamente a retentativa P de um timeout.
+echo Ao esgotar a fila normal com timeouts antigos, abre automaticamente a retentativa P.
 echo.
 
 :nova_rodada
@@ -64,12 +64,19 @@ if "%BATCH_EXIT%"=="2" (
     echo [ERRO] Falha critica no lote. Monitor interrompido sem retentativa automatica.
     exit /b 2
 )
+if "%BATCH_EXIT%"=="3" (
+    echo.
+    echo [ATENCAO] Fila normal esgotada; ha timeout^(s^) ambiguo^(s^) pendente^(s^).
+    echo A opcao P sera aberta agora para uma retentativa controlada.
+    call "%~dp0reprocessar_timeouts_sftp_vedacit.bat"
+    echo Monitor encerrado apos a retentativa controlada. Inicie K novamente para conferir a proxima fila.
+    exit /b 0
+)
 if not "%BATCH_EXIT%"=="0" (
     echo.
     echo [ATENCAO] Lote concluido com erros individuais registrados.
-    echo A opcao P sera aberta para retentar com seguranca apenas um timeout de leitura.
-    call "%~dp0reprocessar_timeouts_sftp_vedacit.bat"
-    echo Monitor encerrado apos a analise de timeout. Inicie K novamente para continuar a fila.
+    echo Monitor interrompido para preservar os erros para analise e reconciliacao.
+    echo Timeouts ambiguos so sao tratados pela opcao P quando o lote retornar codigo 3.
     exit /b %BATCH_EXIT%
 )
 

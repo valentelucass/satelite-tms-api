@@ -175,6 +175,17 @@ public class EtlEstadoIntegracaoService {
         return ResultadoRegistro.ENVIADO;
     }
 
+    public void classificarCanhotoVedacit(
+            LogIntegracaoModel logIntegracao,
+            ClassificacaoOperacionalCanhotoVedacit classificacao
+    ) {
+        if (logIntegracao == null || classificacao == null) {
+            return;
+        }
+        logIntegracao.setCanhotoClassificacaoOperacional(classificacao.name());
+        logIntegracao.setCanhotoClassificadoEm(agoraAuditoria());
+    }
+
     public boolean jaExisteCanhotoVedacitEnviado(String chaveNfe) {
         return logIntegracaoRepository.existsBySistemaDestinoAndChaveNfeAndStatusCanhoto(
                 "VEDACIT", chaveNfe, ResultadoIntegracao.STATUS_SUCESSO
@@ -292,10 +303,14 @@ public class EtlEstadoIntegracaoService {
     }
 
     private boolean estaEmQuarentena(LogIntegracaoModel logIntegracao) {
-        return logIntegracao != null
-                && STATUS_ERRO_DESTINO.equals(logIntegracao.getStatus())
-                && (valorTentativas(logIntegracao.getTentativasDados()) >= 3
-                || valorTentativas(logIntegracao.getTentativasCanhoto()) >= 3);
+        if (logIntegracao == null || !STATUS_ERRO_DESTINO.equals(logIntegracao.getStatus())
+                || (valorTentativas(logIntegracao.getTentativasDados()) < 3
+                && valorTentativas(logIntegracao.getTentativasCanhoto()) < 3)) {
+            return false;
+        }
+        String classificacao = logIntegracao.getCanhotoClassificacaoOperacional();
+        return classificacao == null || classificacao.isBlank()
+                || ClassificacaoOperacionalCanhotoVedacit.PENDENTE_TECNICO.name().equals(classificacao);
     }
 
     private String resultadoRepescagem(String status) {

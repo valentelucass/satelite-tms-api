@@ -7,6 +7,11 @@ cd /d "%~dp0.."
 call "%~dp0_common.bat" require-jar validate-db
 if errorlevel 1 exit /b 1
 
+set "EXECUTABLE_JAR_PATH=%JAR_PATH%"
+if exist "%PROJECT_ROOT%\target\satelite-sftp-monitor.jar" set "EXECUTABLE_JAR_PATH=%PROJECT_ROOT%\target\satelite-sftp-monitor.jar"
+if exist "%PROJECT_ROOT%\target\satelite-0.0.1-SNAPSHOT-vedacit.jar" set "EXECUTABLE_JAR_PATH=%PROJECT_ROOT%\target\satelite-0.0.1-SNAPSHOT-vedacit.jar"
+if exist "%PROJECT_ROOT%\target\satelite-0.0.1-SNAPSHOT-vedacit-fix.jar" set "EXECUTABLE_JAR_PATH=%PROJECT_ROOT%\target\satelite-0.0.1-SNAPSHOT-vedacit-fix.jar"
+
 echo.
 echo =========================================================
 echo  Retentativa Controlada - Timeouts Vedacit/SFTP
@@ -21,7 +26,7 @@ if /I not "%CONFIRMACAO%"=="RETENTAR" (
     exit /b 0
 )
 
-java -jar "%JAR_PATH%" "--debug=false" "--APP_SCHEDULER_ENABLED=false" "--APP_NIGHTLY_RETRY_ENABLED=false" "--APP_CICLO_UNICO=false" "--APP_ETL_REPESCAGEM_ENABLED=false" "--APP_PPG_ENABLED=false" "--APP_VEDACIT_ENABLED=false" "--APP_SELIA_ENABLED=false" "--APP_SUPPORTE_ENABLED=false" "--server.port=0" "--spring.main.web-application-type=none" "--SFTP_RODOGARCIA_ENABLED=true" "--VEDACIT_SFTP_RECEIPT_ONLY=true" "--VEDACIT_SFTP_RECONCILIATION_ENABLED=true" "--VEDACIT_SOAP_READ_TIMEOUT_MS=300000" "--VEDACIT_SOAP_INVOCATION_TIMEOUT_MS=330000" "--vedacit.sftp-timeout-retry.enabled=true" "--vedacit.sftp-timeout-retry.max-items=1" "--vedacit.sftp-timeout-retry.max-attempts=2" "--vedacit.sftp-timeout-retry.interval-ms=300000"
+"%JAVA_EXECUTABLE%" -jar "%EXECUTABLE_JAR_PATH%" "--debug=false" "--APP_SCHEDULER_ENABLED=false" "--APP_NIGHTLY_RETRY_ENABLED=false" "--APP_CICLO_UNICO=false" "--APP_ETL_REPESCAGEM_ENABLED=false" "--APP_PPG_ENABLED=false" "--APP_VEDACIT_ENABLED=false" "--APP_SELIA_ENABLED=false" "--APP_SUPPORTE_ENABLED=false" "--server.port=0" "--spring.main.web-application-type=none" "--SFTP_RODOGARCIA_ENABLED=true" "--VEDACIT_SFTP_RECEIPT_ONLY=true" "--VEDACIT_SFTP_RECONCILIATION_ENABLED=true" "--VEDACIT_SOAP_READ_TIMEOUT_MS=300000" "--VEDACIT_SOAP_INVOCATION_TIMEOUT_MS=330000" "--vedacit.sftp-timeout-retry.enabled=true" "--vedacit.sftp-timeout-retry.max-items=1" "--vedacit.sftp-timeout-retry.max-attempts=2" "--vedacit.sftp-timeout-retry.interval-ms=300000"
 set "JAVA_EXIT=%ERRORLEVEL%"
 
 if "%JAVA_EXIT%"=="0" echo [SUCESSO] Retentativa controlada finalizada.

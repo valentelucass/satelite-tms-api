@@ -72,6 +72,10 @@ public class LogIntegracaoModel {
     private String canhotoReconciliacaoTipo;
     @Column(name = "canhoto_reconciliacao_motivo", length = 500)
     private String canhotoReconciliacaoMotivo;
+    @Column(name = "canhoto_classificacao_operacional", length = 40)
+    private String canhotoClassificacaoOperacional;
+    @Column(name = "canhoto_classificado_em")
+    private LocalDateTime canhotoClassificadoEm;
     @Column(name = "data_processamento_dados")
     private LocalDateTime dataProcessamentoDados;
     @Column(name = "data_processamento_canhoto")

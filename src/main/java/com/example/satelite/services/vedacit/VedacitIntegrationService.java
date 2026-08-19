@@ -518,13 +518,14 @@ public class VedacitIntegrationService {
     }
 
     private void enviarCanhoto(Canhoto canhoto, String chaveNfe, String cteKey) throws Exception {
-        INFe porta = criarPortaNFe();
-
         logDetalheSftpVedacit.info("📤 [VEDACIT] NF {}: Enviando digitalização do canhoto...", chaveNfe);
         RetornoOfboolean retorno;
         try {
             retorno = executarSoapComPrazo(
-                    () -> porta.enviarDigitalizacaoCanhoto(canhoto),
+                    () -> {
+                        INFe porta = criarPortaNFe();
+                        return porta.enviarDigitalizacaoCanhoto(canhoto);
+                    },
                     "digitalização do canhoto"
             );
         } catch (Exception e) {

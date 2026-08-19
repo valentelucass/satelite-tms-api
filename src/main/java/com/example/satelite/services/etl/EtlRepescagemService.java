@@ -3,9 +3,13 @@ package com.example.satelite.services.etl;
 import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -19,8 +23,10 @@ import org.springframework.stereotype.Service;
 import com.example.satelite.models.LogIntegracaoModel;
 import com.example.satelite.repositories.LogIntegracaoRepository;
 import com.example.satelite.services.ppg.PpgIntegrationService;
+import com.example.satelite.services.ResultadoIntegracao;
 import com.example.satelite.services.selia.SeliaIntegrationService;
 import com.example.satelite.services.vedacit.VedacitIntegrationService;
+import com.example.satelite.services.origem.sftp.vedacit.VedacitSftpDocument;
 
 @Service
 public class EtlRepescagemService {
@@ -157,6 +163,55 @@ public class EtlRepescagemService {
     }
 
     /**
+     * Materializa a fila de canhotos a partir do inventário SFTP, sem consultar
+     * ESL e sem armazenar bytes do documento. Um CT-e já auditado é preservado;
+     * somente documentos ainda desconhecidos recebem uma pendência técnica.
+     */
+    public ResultadoInventarioSftpVedacit sincronizarInventarioSftpVedacit(List<VedacitSftpDocument> documentos) {
+        if (documentos == null || documentos.isEmpty()) {
+            return new ResultadoInventarioSftpVedacit(0, 0, 0, 0);
+        }
+        int novos = 0;
+        int jaEnviados = 0;
+        int existentes = 0;
+        for (VedacitSftpDocument documento : documentos) {
+            if (documento == null || documento.chaveNfe() == null || documento.chaveCte() == null
+                    || !documento.chaveNfe().matches("\\d{44}") || !documento.chaveCte().matches("\\d{44}")) {
+                continue;
+            }
+            Optional<LogIntegracaoModel> existente = logIntegracaoRepository
+                    .findTopBySistemaDestinoAndChaveCteOrderByDataProcessamentoDescIdDesc(DESTINO_VEDACIT, documento.chaveCte());
+            if (existente.isPresent()) {
+                if (ResultadoIntegracao.STATUS_SUCESSO.equals(existente.get().getStatusCanhoto())) {
+                    jaEnviados++;
+                } else {
+                    existentes++;
+                }
+                continue;
+            }
+            LogIntegracaoModel pendencia = LogIntegracaoModel.builder()
+                    .sistemaDestino(DESTINO_VEDACIT)
+                    .chaveNfe(documento.chaveNfe())
+                    .chaveCte(documento.chaveCte())
+                    .status(ResultadoIntegracao.STATUS_PARCIAL)
+                    .statusDados(ResultadoIntegracao.STATUS_SUCESSO)
+                    .statusCanhoto(ResultadoIntegracao.STATUS_PENDENTE_FOTO)
+                    .canhotoOrigem("SFTP")
+                    .canhotoReferencia(documento.caminhoRelativo())
+                    .tentativasDados(0)
+                    .tentativasCanhoto(0)
+                    .dataProcessamento(etlEstadoIntegracaoService.agoraAuditoria())
+                    .build();
+            etlEstadoIntegracaoService.classificarCanhotoVedacit(
+                    pendencia, ClassificacaoOperacionalCanhotoVedacit.PENDENTE_ENVIO
+            );
+            etlEstadoIntegracaoService.salvar(pendencia);
+            novos++;
+        }
+        return new ResultadoInventarioSftpVedacit(documentos.size(), novos, jaEnviados, existentes);
+    }
+
+    /**
      * Processa somente pendências de foto cujo XML já foi integrado e cujo CT-e
      * está auditado. O runner correspondente exige fonte SFTP exclusiva, sem
      * fallback para ESL, para evitar carga acidental na origem durante lote.
@@ -173,14 +228,32 @@ public class EtlRepescagemService {
             long intervaloEntreItensMs,
             List<String> chavesNfeComArquivoSftp
     ) {
+        return reprocessarCanhotosPendentesFotoSftpVedacit(
+                limite, intervaloEntreItensMs, chavesNfeComArquivoSftp, new HashSet<>()
+        );
+    }
+
+    public ResultadoReprocessamentoCanhotoVedacit reprocessarCanhotosPendentesFotoSftpVedacit(
+            int limite,
+            long intervaloEntreItensMs,
+            List<String> chavesNfeComArquivoSftp,
+            Set<String> chavesNfeJaTentadas
+    ) {
         int limiteSeguro = Math.max(1, limite);
+        Set<String> tentadas = chavesNfeJaTentadas == null ? new HashSet<>() : chavesNfeJaTentadas;
+        List<String> excluidas = List.copyOf(tentadas);
         List<LogIntegracaoModel> registros = chavesNfeComArquivoSftp == null
                 ? logIntegracaoRepository.findCanhotosPendentesFotoVedacit(PageRequest.of(0, limiteSeguro))
                 : chavesNfeComArquivoSftp.isEmpty()
                         ? List.of()
-                        : logIntegracaoRepository.findCanhotosPendentesFotoVedacitPorNfes(
-                        chavesNfeComArquivoSftp, PageRequest.of(0, limiteSeguro)
-                        );
+                        : excluidas.isEmpty()
+                                ? logIntegracaoRepository.findCanhotosPendentesFotoVedacitPorNfes(
+                                chavesNfeComArquivoSftp, PageRequest.of(0, limiteSeguro)
+                                )
+                                : logIntegracaoRepository.findCanhotosPendentesFotoVedacitPorNfesExcluindoJaTentadas(
+                                chavesNfeComArquivoSftp, excluidas, PageRequest.of(0, limiteSeguro)
+                                );
+        registros = limitarUmaTentativaPorNfe(registros, limiteSeguro);
         if (registros == null || registros.isEmpty()) {
             log.info("🎯 [VEDACIT] Nenhum canhoto PENDENTE_FOTO com CT-e elegível no lote SFTP.");
             return new ResultadoReprocessamentoCanhotoVedacit(0, 0, 0, 0, 0);
@@ -194,6 +267,7 @@ public class EtlRepescagemService {
         log.info("[INICIO] [VEDACIT][SFTP] Lote | itens={} | origem=SFTP | fallback_ESL=desligado", registros.size());
         for (int indice = 0; indice < registros.size(); indice++) {
             LogIntegracaoModel registro = registros.get(indice);
+            tentadas.add(registro.getChaveNfe());
             long inicioItem = System.nanoTime();
             registrarOrigemSftpDoCanhoto(registro);
             ResultadoRegistro resultado = etlRegistroService.reprocessarCanhotoVedacitPorCte(registro);
@@ -280,11 +354,96 @@ public class EtlRepescagemService {
         );
     }
 
+    /** Executa somente falhas já classificadas como técnicas, após o dreno normal. */
+    public ResultadoReprocessamentoCanhotoVedacit reprocessarCanhotosTecnicosSftpVedacit(
+            int limite,
+            long intervaloEntreItensMs,
+            int limiteErros,
+            List<String> chavesNfeComArquivoSftp
+    ) {
+        if (chavesNfeComArquivoSftp == null || chavesNfeComArquivoSftp.isEmpty()) {
+            return new ResultadoReprocessamentoCanhotoVedacit(0, 0, 0, 0, 0);
+        }
+        List<LogIntegracaoModel> registros = limitarUmaTentativaPorNfe(
+                logIntegracaoRepository.findCanhotosTecnicosSftpVedacitPorNfes(
+                        chavesNfeComArquivoSftp, PageRequest.of(0, Math.max(1, limite))
+                ), Math.max(1, limite)
+        );
+        if (registros.isEmpty()) {
+            return new ResultadoReprocessamentoCanhotoVedacit(0, 0, 0, 0, 0);
+        }
+        int enviados = 0, pendentes = 0, erros = 0, ignorados = 0, processados = 0;
+        int limiteErrosSeguro = Math.max(1, limiteErros);
+        log.info(
+                "[QUARENTENA] [VEDACIT][SFTP] Retentativa técnica pós-fila | itens={} | pausa={}s | limite_erros={}",
+                registros.size(), intervaloEntreItensMs / 1000, limiteErrosSeguro
+        );
+        for (int indice = 0; indice < registros.size(); indice++) {
+            LogIntegracaoModel registro = registros.get(indice);
+            long inicio = System.nanoTime();
+            registrarOrigemSftpDoCanhoto(registro);
+            ResultadoRegistro resultado = etlRegistroService.reprocessarCanhotoVedacitPorCte(registro);
+            if (resultado == ResultadoRegistro.ENVIADO) enviados++;
+            else if (resultado == ResultadoRegistro.PENDENTE_FOTO) pendentes++;
+            else if (resultado.erro()) erros++;
+            else ignorados++;
+            processados++;
+            logarProgressoSftp(indice + 1, registros.size(), registro, resultado,
+                    Duration.ofNanos(System.nanoTime() - inicio), enviados, pendentes, erros, ignorados);
+            if (erros >= limiteErrosSeguro) {
+                log.warn(
+                        "[ATENCAO] [VEDACIT][SFTP] Quarentena pausada: {} erro(s), limite seguro={}.",
+                        erros, limiteErrosSeguro
+                );
+                break;
+            }
+            if (indice < registros.size() - 1 && !pausarEntreRegistros(intervaloEntreItensMs)) break;
+        }
+        return new ResultadoReprocessamentoCanhotoVedacit(processados, enviados, pendentes, erros, ignorados);
+    }
+
+    public boolean possuiTimeoutAmbiguoSftpVedacitPendente() {
+        return !logIntegracaoRepository.findTimeoutsAmbiguosCanhotoSftpVedacit(
+                2,
+                PageRequest.of(0, 1)
+        ).isEmpty();
+    }
+
     public long contarNfesCandidatasCanhotoVedacitSftp(List<String> chavesNfeComArquivoSftp) {
         if (chavesNfeComArquivoSftp == null || chavesNfeComArquivoSftp.isEmpty()) {
             return 0;
         }
         return logIntegracaoRepository.countNfesCandidatasCanhotoVedacitPorNfes(chavesNfeComArquivoSftp);
+    }
+
+    public long contarLogsCandidatosCanhotoVedacitSftp(List<String> chavesNfeComArquivoSftp) {
+        if (chavesNfeComArquivoSftp == null || chavesNfeComArquivoSftp.isEmpty()) {
+            return 0;
+        }
+        return logIntegracaoRepository.countLogsCandidatosCanhotoVedacitPorNfes(chavesNfeComArquivoSftp);
+    }
+
+    public long contarClassificacaoCanhotoVedacit(String classificacao) {
+        return logIntegracaoRepository.countBySistemaDestinoAndCanhotoClassificacaoOperacional(
+                DESTINO_VEDACIT, classificacao
+        );
+    }
+
+    private List<LogIntegracaoModel> limitarUmaTentativaPorNfe(List<LogIntegracaoModel> registros, int limite) {
+        if (registros == null || registros.isEmpty()) {
+            return List.of();
+        }
+        Map<String, LogIntegracaoModel> primeiroPorNfe = new LinkedHashMap<>();
+        for (LogIntegracaoModel registro : registros) {
+            if (registro == null || registro.getChaveNfe() == null || registro.getChaveNfe().isBlank()) {
+                continue;
+            }
+            primeiroPorNfe.putIfAbsent(registro.getChaveNfe(), registro);
+            if (primeiroPorNfe.size() == limite) {
+                break;
+            }
+        }
+        return List.copyOf(primeiroPorNfe.values());
     }
 
     private void logarProgressoSftp(
@@ -426,6 +585,8 @@ public class EtlRepescagemService {
             return erros == 0;
         }
     }
+
+    public record ResultadoInventarioSftpVedacit(int arquivos, int novos, int jaEnviados, int existentes) { }
 
     public record ResultadoRepescagemNoturnaVedacit(
             int selecionadosXml,

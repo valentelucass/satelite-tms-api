@@ -281,6 +281,9 @@ public class EtlRegistroService {
                             STATUS_SUCESSO, decisao.motivo()
                     );
                     etlEstadoIntegracaoService.aplicarResultadoIntegracao(logIntegracao, pendente);
+                    etlEstadoIntegracaoService.classificarCanhotoVedacit(
+                            logIntegracao, ClassificacaoOperacionalCanhotoVedacit.paraPendente(decisao.motivo())
+                    );
                     etlEstadoIntegracaoService.salvar(logIntegracao);
                     return ResultadoRegistro.PENDENTE_FOTO;
                 }
@@ -301,6 +304,10 @@ public class EtlRegistroService {
                     false
             );
             etlEstadoIntegracaoService.aplicarResultadoIntegracao(logIntegracao, resultado);
+            etlEstadoIntegracaoService.classificarCanhotoVedacit(
+                    logIntegracao,
+                    classificarResultadoCanhotoVedacit(resultado)
+            );
             etlEstadoIntegracaoService.salvar(logIntegracao);
             if (decisao != null && resultado.statusCanhoto().equals(STATUS_SUCESSO)) {
                 etlEstadoIntegracaoService.marcarCanhotosVedacitRelacionadosComoSucesso(
@@ -315,6 +322,9 @@ public class EtlRegistroService {
 
             ResultadoIntegracao erro = ResultadoIntegracao.erroCanhoto(STATUS_SUCESSO, e.getMessage());
             etlEstadoIntegracaoService.aplicarResultadoIntegracao(logIntegracao, erro);
+            etlEstadoIntegracaoService.classificarCanhotoVedacit(
+                    logIntegracao, ClassificacaoOperacionalCanhotoVedacit.paraErro(e.getMessage())
+            );
             etlEstadoIntegracaoService.salvar(logIntegracao);
             logDetalheSftpVedacit.error(
                     "❌ [VEDACIT] NF {}: erro no reprocessamento cirúrgico do canhoto - {}",
@@ -334,6 +344,21 @@ public class EtlRegistroService {
                 ocorrencia.id(), ocorrencia.orderNumber(), ocorrencia.volumeNumber(), ocorrencia.occurrenceAt(),
                 ocorrencia.createdAt(), ocorrencia.invoice(), freightEfetivo, ocorrencia.occurrence()
         );
+    }
+
+    static ClassificacaoOperacionalCanhotoVedacit classificarResultadoCanhotoVedacit(
+            ResultadoIntegracao resultado
+    ) {
+        if (resultado == null) {
+            return ClassificacaoOperacionalCanhotoVedacit.PENDENTE_TECNICO;
+        }
+        if (STATUS_SUCESSO.equals(resultado.statusCanhoto())) {
+            return ClassificacaoOperacionalCanhotoVedacit.paraSucesso();
+        }
+        if (STATUS_ERRO_DESTINO.equals(resultado.statusCanhoto())) {
+            return ClassificacaoOperacionalCanhotoVedacit.paraErro(resultado.mensagemErroCanhoto());
+        }
+        return ClassificacaoOperacionalCanhotoVedacit.paraPendente(resultado.mensagemErroCanhoto());
     }
 
     /**
