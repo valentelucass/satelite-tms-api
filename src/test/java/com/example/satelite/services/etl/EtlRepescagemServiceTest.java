@@ -28,8 +28,35 @@ import com.example.satelite.services.ppg.PpgIntegrationService;
 import com.example.satelite.services.vedacit.VedacitIntegrationService;
 import com.example.satelite.services.origem.sftp.vedacit.VedacitSftpDocument;
 import com.example.satelite.services.origem.sftp.vedacit.VedacitSftpInventory;
+import com.example.satelite.services.origem.sftp.vedacit.VedacitSftpDocumentSource;
 
 class EtlRepescagemServiceTest {
+
+    @Test
+    void deveMaterializarInventarioDoClienteSemCruzarAuditoriaDeOutroPerfil() {
+        LogIntegracaoRepository repository = mock(LogIntegracaoRepository.class);
+        EtlEstadoIntegracaoService estado = new EtlEstadoIntegracaoService(repository);
+        EtlRepescagemService service = new EtlRepescagemService(repository, mock(EtlRegistroService.class), estado,
+                mock(PpgIntegrationService.class), mock(VedacitIntegrationService.class), null, mock(SftpDocumentoLockService.class));
+        String nfe = "35260860642774001209550010002365771266072428";
+        String cte = "35260860960473000758570030000541141709521720";
+        VedacitSftpDocument documento = new VedacitSftpDocument(VedacitSftpDocument.Tipo.COMPROVANTE,
+                "comprovantes/a.jpg", cte, nfe, 10L, java.time.Instant.now(), null);
+        when(repository.findTopBySistemaDestinoAndSftpClienteAndChaveCteOrderByDataProcessamentoDescIdDesc("VEDACIT", "CLIENTE_B", cte))
+                .thenReturn(java.util.Optional.empty());
+        when(repository.findCandidatosSftpPorClienteENfes(eq("CLIENTE_B"), eq(List.of(nfe)), any())).thenReturn(List.of());
+        when(repository.findTecnicosSftpPorClienteENfes(eq("CLIENTE_B"), eq(List.of(nfe)), any())).thenReturn(List.of());
+        when(repository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+
+        service.processarClienteSftpVedacit("CLIENTE_B", new VedacitSftpInventory(List.of(documento), List.of()),
+                mock(VedacitSftpDocumentSource.class), 10, 0);
+
+        ArgumentCaptor<LogIntegracaoModel> captor = ArgumentCaptor.forClass(LogIntegracaoModel.class);
+        verify(repository).save(captor.capture());
+        assertEquals("CLIENTE_B", captor.getValue().getSftpCliente());
+        assertEquals("BLOQUEADO_ORIGEM", captor.getValue().getCanhotoClassificacaoOperacional());
+        verify(repository, never()).findTopBySistemaDestinoAndChaveCteOrderByDataProcessamentoDescIdDesc(any(), any());
+    }
 
     @Test
     void deveManterRecusasDefinitivasETimeoutsForaDasFilasTecnicas() throws NoSuchMethodException {
@@ -289,7 +316,7 @@ class EtlRepescagemServiceTest {
         assertEquals(cte, captor.getValue().getChaveCte());
         assertEquals(ResultadoIntegracao.STATUS_PENDENTE_FOTO, captor.getValue().getStatusCanhoto());
         assertEquals("PENDENTE_ORIGEM", captor.getValue().getStatusDados());
-        assertEquals("PENDENTE_TECNICO", captor.getValue().getCanhotoClassificacaoOperacional());
+        assertEquals("BLOQUEADO_ORIGEM", captor.getValue().getCanhotoClassificacaoOperacional());
         assertEquals("SFTP", captor.getValue().getCanhotoOrigem());
     }
 
@@ -351,6 +378,29 @@ class EtlRepescagemServiceTest {
         assertEquals(ResultadoIntegracao.STATUS_ERRO_DESTINO, captor.getValue().getStatusCanhoto());
         assertEquals("PENDENTE_TECNICO", captor.getValue().getCanhotoClassificacaoOperacional());
         assertEquals(caminho, captor.getValue().getCanhotoReferencia());
+    }
+
+    @Test
+    void deveBloquearArquivoSftpSemChavesDocumentais() {
+        LogIntegracaoRepository repository = mock(LogIntegracaoRepository.class);
+        EtlEstadoIntegracaoService estado = new EtlEstadoIntegracaoService(repository);
+        EtlRepescagemService service = new EtlRepescagemService(
+                repository, mock(EtlRegistroService.class), estado,
+                mock(PpgIntegrationService.class), mock(VedacitIntegrationService.class)
+        );
+        String caminho = "comprovantes/sem-chaves.jpg";
+        when(repository.findTopBySistemaDestinoAndCanhotoReferenciaOrderByDataProcessamentoDescIdDesc("VEDACIT", caminho))
+                .thenReturn(java.util.Optional.empty());
+        when(repository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+
+        service.sincronizarInventarioSftpVedacit(new VedacitSftpInventory(
+                List.of(), List.of(new VedacitSftpInventory.DocumentoRejeitado(
+                caminho, null, null, "Arquivo invalido: nome sem NF-e/CT-e validos"))
+        ));
+
+        ArgumentCaptor<LogIntegracaoModel> captor = ArgumentCaptor.forClass(LogIntegracaoModel.class);
+        verify(repository).save(captor.capture());
+        assertEquals("BLOQUEADO_ORIGEM", captor.getValue().getCanhotoClassificacaoOperacional());
     }
 
     @Test

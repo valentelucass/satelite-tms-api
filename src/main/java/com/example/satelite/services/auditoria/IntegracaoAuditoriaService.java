@@ -32,6 +32,8 @@ import com.example.satelite.models.LogIntegracaoModel;
 import com.example.satelite.repositories.IntegracaoAuditoriaQueryRepository;
 import com.example.satelite.repositories.IntegracaoAuditoriaQueryRepository.Filtros;
 import com.example.satelite.repositories.IntegracaoAuditoriaQueryRepository.PendenciasResultado;
+import com.example.satelite.repositories.WorkSftpClientesAuditoriaRepository;
+import com.example.satelite.dto.auditoria.WorkSftpClienteStatusDTO;
 import com.example.satelite.repositories.LogIntegracaoRepository;
 import com.example.satelite.repositories.LogIntegracaoRepository.IntegracaoEvolucaoDiariaProjection;
 import com.example.satelite.repositories.LogIntegracaoRepository.MetricaIntegracaoClienteProjection;
@@ -69,13 +71,20 @@ public class IntegracaoAuditoriaService {
 
     private final LogIntegracaoRepository logIntegracaoRepository;
     private final IntegracaoAuditoriaQueryRepository integracaoAuditoriaQueryRepository;
+    private final WorkSftpClientesAuditoriaRepository workSftpClientesAuditoriaRepository;
 
     public IntegracaoAuditoriaService(
             LogIntegracaoRepository logIntegracaoRepository,
-            IntegracaoAuditoriaQueryRepository integracaoAuditoriaQueryRepository
+            IntegracaoAuditoriaQueryRepository integracaoAuditoriaQueryRepository,
+            WorkSftpClientesAuditoriaRepository workSftpClientesAuditoriaRepository
     ) {
         this.logIntegracaoRepository = logIntegracaoRepository;
         this.integracaoAuditoriaQueryRepository = integracaoAuditoriaQueryRepository;
+        this.workSftpClientesAuditoriaRepository = workSftpClientesAuditoriaRepository;
+    }
+
+    public List<WorkSftpClienteStatusDTO> consultarStatusWorkSftpClientes() {
+        return workSftpClientesAuditoriaRepository.buscarUltimosCiclos();
     }
 
     public AuditoriaIntegracoesClientesResponseDTO consultarIntegracoesClientes(

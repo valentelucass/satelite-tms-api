@@ -33,6 +33,7 @@
 		<project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
 		<project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
 		<spring-cloud.version>2025.1.2</spring-cloud.version>
+		<logback.version>1.5.16</logback.version>
 	</properties>
 	<dependencies>
 		<dependency>

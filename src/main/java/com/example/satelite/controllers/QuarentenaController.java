@@ -10,12 +10,16 @@ import org.springframework.http.MediaType;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.http.ResponseEntity;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.server.ResponseStatusException;
+import org.springframework.http.HttpStatus;
 import org.springframework.web.servlet.mvc.method.annotation.StreamingResponseBody;
 
 import com.example.satelite.dto.etl.QuarentenaErroManualDTO;
@@ -30,9 +34,19 @@ import com.example.satelite.utils.CsvStreamWriter;
 public class QuarentenaController {
 
     private final QuarentenaService quarentenaService;
+    private final boolean dashboardApiOnly;
+
+    @Autowired
+    public QuarentenaController(
+            QuarentenaService quarentenaService,
+            @Value("${APP_DASHBOARD_API_ONLY:false}") boolean dashboardApiOnly
+    ) {
+        this.quarentenaService = quarentenaService;
+        this.dashboardApiOnly = dashboardApiOnly;
+    }
 
     public QuarentenaController(QuarentenaService quarentenaService) {
-        this.quarentenaService = quarentenaService;
+        this(quarentenaService, false);
     }
 
     @GetMapping("/erros")
@@ -111,6 +125,10 @@ public class QuarentenaController {
 
     @PostMapping("/{destino}/reprocessar")
     public ResponseEntity<QuarentenaReprocessamentoResponseDTO> reprocessar(@PathVariable String destino) {
+        if (dashboardApiOnly) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN,
+                    "Comandos de quarentena estao desabilitados no modo Dashboard.");
+        }
         try {
             ResultadoReprocessamento resultado = quarentenaService.reprocessar(destino);
             return ResponseEntity.ok(new QuarentenaReprocessamentoResponseDTO(

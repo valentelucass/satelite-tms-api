@@ -47,6 +47,7 @@ class IntegracaoAuditoriaQueryRepositoryTest {
         assertTrue(sql.contains("l.canhoto_referencia AS canhotoReferencia"));
         assertTrue(sql.contains("l.canhoto_mime_type AS canhotoMimeType"));
         assertTrue(sql.contains("l.canhoto_referencia IS NOT NULL"));
+        assertTrue(sql.contains("COALESCE(l.arquivado, 0) = 0"));
         assertFalse(sql.contains("request_payload"));
     }
 

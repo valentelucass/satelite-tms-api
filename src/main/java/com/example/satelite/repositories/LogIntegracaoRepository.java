@@ -19,6 +19,10 @@ public interface LogIntegracaoRepository extends JpaRepository<LogIntegracaoMode
 
     long countBySistemaDestinoAndCanhotoClassificacaoOperacional(String sistemaDestino, String canhotoClassificacaoOperacional);
 
+    long countBySistemaDestinoAndSftpClienteAndCanhotoClassificacaoOperacional(
+            String sistemaDestino, String sftpCliente, String canhotoClassificacaoOperacional
+    );
+
     @Query(value = "SELECT CAST(SYSDATETIME() AS datetime2)", nativeQuery = true)
     LocalDateTime buscarDataHoraServidor();
 
@@ -30,6 +34,14 @@ public interface LogIntegracaoRepository extends JpaRepository<LogIntegracaoMode
     Optional<LogIntegracaoModel> findTopBySistemaDestinoAndChaveCteOrderByDataProcessamentoDescIdDesc(
             String sistemaDestino,
             String chaveCte
+    );
+
+    Optional<LogIntegracaoModel> findTopBySistemaDestinoAndSftpClienteAndChaveCteOrderByDataProcessamentoDescIdDesc(
+            String sistemaDestino, String sftpCliente, String chaveCte
+    );
+
+    Optional<LogIntegracaoModel> findTopBySistemaDestinoAndSftpClienteAndCanhotoReferenciaOrderByDataProcessamentoDescIdDesc(
+            String sistemaDestino, String sftpCliente, String canhotoReferencia
     );
 
     Optional<LogIntegracaoModel> findTopBySistemaDestinoAndCanhotoReferenciaOrderByDataProcessamentoDescIdDesc(
@@ -139,6 +151,30 @@ public interface LogIntegracaoRepository extends JpaRepository<LogIntegracaoMode
             @Param("chavesNfe") List<String> chavesNfe,
             @Param("chavesNfeJaTentadas") List<String> chavesNfeJaTentadas,
             Pageable pageable
+    );
+
+    @Query("""
+            SELECT l FROM LogIntegracaoModel l
+            WHERE l.sistemaDestino = 'VEDACIT' AND l.sftpCliente = :cliente
+              AND l.statusDados = 'SUCESSO' AND l.statusCanhoto <> 'SUCESSO'
+              AND COALESCE(l.canhotoClassificacaoOperacional, '') NOT IN ('BLOQUEADO_DESTINO', 'TIMEOUT_AMBIGUO')
+              AND l.chaveNfe IN :chavesNfe AND l.chaveCte IS NOT NULL AND TRIM(l.chaveCte) <> ''
+            ORDER BY l.dataProcessamento ASC, l.id ASC
+            """)
+    List<LogIntegracaoModel> findCandidatosSftpPorClienteENfes(
+            @Param("cliente") String cliente, @Param("chavesNfe") List<String> chavesNfe, Pageable pageable
+    );
+
+    @Query("""
+            SELECT l FROM LogIntegracaoModel l
+            WHERE l.sistemaDestino = 'VEDACIT' AND l.sftpCliente = :cliente
+              AND l.statusDados = 'SUCESSO' AND l.statusCanhoto = 'ERRO_DESTINO'
+              AND l.canhotoClassificacaoOperacional = 'PENDENTE_TECNICO'
+              AND l.chaveNfe IN :chavesNfe AND l.chaveCte IS NOT NULL AND TRIM(l.chaveCte) <> ''
+            ORDER BY l.dataProcessamento ASC, l.id ASC
+            """)
+    List<LogIntegracaoModel> findTecnicosSftpPorClienteENfes(
+            @Param("cliente") String cliente, @Param("chavesNfe") List<String> chavesNfe, Pageable pageable
     );
 
     @Query("""

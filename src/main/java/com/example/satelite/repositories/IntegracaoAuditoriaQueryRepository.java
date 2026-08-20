@@ -293,6 +293,7 @@ public class IntegracaoAuditoriaQueryRepository {
         MapSqlParameterSource params = new MapSqlParameterSource();
 
         where.add("l.sistema_destino IN (" + DESTINOS_ANALITICOS_SQL + ")");
+        where.add("COALESCE(l.arquivado, 0) = 0");
         where.add("l.sistema_destino IN (:destinos)");
         params.addValue("destinos", filtros.destinos());
         adicionarEscopo(where, filtros.escopo());

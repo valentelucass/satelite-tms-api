@@ -66,6 +66,15 @@ public class LogIntegracaoModel {
     private String canhotoMimeType;
     @Column(name = "canhoto_origem", length = 30)
     private String canhotoOrigem;
+    @Column(name = "sftp_cliente", length = 64)
+    private String sftpCliente;
+    @Column(name = "arquivado", nullable = false)
+    @Builder.Default
+    private Boolean arquivado = false;
+    @Column(name = "arquivado_em")
+    private LocalDateTime arquivadoEm;
+    @Column(name = "arquivado_motivo", length = 100)
+    private String arquivadoMotivo;
     @Column(name = "canhoto_chave_cte_efetiva", length = 44)
     private String canhotoChaveCteEfetiva;
     @Column(name = "canhoto_reconciliacao_tipo", length = 50)

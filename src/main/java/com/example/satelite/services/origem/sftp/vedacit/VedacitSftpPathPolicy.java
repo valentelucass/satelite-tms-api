@@ -12,8 +12,12 @@ public final class VedacitSftpPathPolicy {
 
     private VedacitSftpPathPolicy() { }
 
+    public static String validarDiretorioBase(String basePath) {
+        return normalizarDiretorio(basePath, "Base SFTP ausente");
+    }
+
     public static String validarDiretorioCliente(String basePath, String clientPath) {
-        String base = normalizarDiretorio(basePath, "Base SFTP ausente");
+        String base = validarDiretorioBase(basePath);
         String client = normalizarDiretorio(clientPath, "Subpasta SFTP Vedacit ausente");
         if (!client.startsWith(base + "/")) {
             throw new IllegalArgumentException("Subpasta SFTP Vedacit fora da base autorizada");

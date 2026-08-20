@@ -28,6 +28,7 @@ import com.example.satelite.services.selia.SeliaIntegrationService;
 import com.example.satelite.services.supporte.SupporteIntegrationService;
 import com.example.satelite.services.vedacit.VedacitIntegrationService;
 import com.example.satelite.services.vedacit.VedacitCteCanhotoReconciliationService;
+import com.example.satelite.services.origem.sftp.vedacit.VedacitSftpDocumentSource;
 
 @Service
 public class EtlRegistroService {
@@ -258,6 +259,14 @@ public class EtlRegistroService {
      * CT-e integrado. Não consulta ocorrência por NF-e e não reenvia XML.
      */
     public ResultadoRegistro reprocessarCanhotoVedacitPorCte(LogIntegracaoModel logIntegracao) {
+        return reprocessarCanhotoVedacitPorCte(logIntegracao, null);
+    }
+
+    /** Reprocessamento SFTP sem consulta ESL; a fonte é isolada pelo perfil do cliente. */
+    public ResultadoRegistro reprocessarCanhotoVedacitPorCte(
+            LogIntegracaoModel logIntegracao,
+            VedacitSftpDocumentSource fonteSftp
+    ) {
         if (!ehCandidatoCanhotoVedacit(logIntegracao)) {
             return ResultadoRegistro.IGNORADO;
         }
@@ -265,13 +274,16 @@ public class EtlRegistroService {
         EslOcorrenciaDTO ocorrencia = reconstruirOcorrenciaVedacit(logIntegracao);
         String chaveNfe = obterChaveNfe(ocorrencia);
         try {
-            if (reconciliacaoSftpVedacitHabilitada
+            // No worker multi-cliente, a auditoria e o documento pertencem ao perfil atual;
+            // nunca usa reconciliação global de outra fila.
+            boolean reconciliacaoIsolada = fonteSftp == null && reconciliacaoSftpVedacitHabilitada;
+            if (reconciliacaoIsolada
                     && etlEstadoIntegracaoService.jaExisteCanhotoVedacitEnviado(chaveNfe)) {
                 logDetalheSftpVedacit.info("⏭️ [VEDACIT] NF {}: canhoto já conciliado em CT-e relacionado; evitando reenvio.", chaveNfe);
                 return ResultadoRegistro.IGNORADO;
             }
             VedacitCteCanhotoReconciliationService.Decisao decisao = null;
-            if (reconciliacaoSftpVedacitHabilitada) {
+            if (reconciliacaoIsolada) {
                 if (vedacitCteCanhotoReconciliationService == null) {
                     throw new IllegalStateException("Serviço de reconciliação Vedacit indisponível");
                 }
@@ -297,12 +309,9 @@ public class EtlRegistroService {
                     chaveNfe,
                     logIntegracao.getChaveCte()
             );
-            ResultadoIntegracao resultado = vedacitIntegrationService.processarOcorrencia(
-                    ocorrencia,
-                    null,
-                    true,
-                    false
-            );
+            ResultadoIntegracao resultado = fonteSftp == null
+                    ? vedacitIntegrationService.processarOcorrencia(ocorrencia, null, true, false)
+                    : vedacitIntegrationService.processarOcorrencia(ocorrencia, null, true, false, fonteSftp);
             etlEstadoIntegracaoService.aplicarResultadoIntegracao(logIntegracao, resultado);
             etlEstadoIntegracaoService.classificarCanhotoVedacit(
                     logIntegracao,

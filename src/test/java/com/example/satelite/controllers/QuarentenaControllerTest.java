@@ -56,6 +56,19 @@ class QuarentenaControllerTest {
         assertEquals(400, erro.getStatusCode().value());
     }
 
+    @Test
+    void deveBloquearComandoManualNoModoDashboard() {
+        QuarentenaController controller = new QuarentenaController(
+                new QuarentenaService(mock(LogIntegracaoRepository.class), null), true);
+
+        ResponseStatusException erro = assertThrows(
+                ResponseStatusException.class,
+                () -> controller.reprocessar("VEDACIT")
+        );
+
+        assertEquals(403, erro.getStatusCode().value());
+    }
+
     private QuarentenaController controller(LogIntegracaoRepository repository) {
         return new QuarentenaController(new QuarentenaService(repository, null));
     }

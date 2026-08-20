@@ -12,6 +12,7 @@ import java.util.ArrayList;
 import java.util.stream.Stream;
 
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import net.schmizz.sshj.SSHClient;
@@ -24,6 +25,7 @@ import net.schmizz.sshj.transport.verification.FingerprintVerifier;
 /** Cliente read-only exclusivo Vedacit. Não conhece ESL, SOAP ou auditoria. */
 @Service
 public class VedacitSftpClient implements VedacitSftpDocumentSource {
+    private final String identificadorCliente;
     private final boolean enabled;
     private final String host;
     private final int port;
@@ -35,6 +37,7 @@ public class VedacitSftpClient implements VedacitSftpDocumentSource {
     private final long maxFileSizeBytes;
     private final long stableForMs;
 
+    @Autowired
     public VedacitSftpClient(
             @Value("${SFTP_RODOGARCIA_ENABLED:false}") boolean enabled,
             @Value("${SFTP_RODOGARCIA_HOST:}") String host,
@@ -47,10 +50,40 @@ public class VedacitSftpClient implements VedacitSftpDocumentSource {
             @Value("${SFTP_RODOGARCIA_MAX_FILE_SIZE_BYTES:26214400}") long maxFileSizeBytes,
             @Value("${SFTP_RODOGARCIA_STABLE_FOR_MS:120000}") long stableForMs
     ) {
+        this("LEGADO", enabled, host, port, username, password, basePath, clientPath, hostKeySha256, maxFileSizeBytes, stableForMs);
+    }
+
+    /** Cria uma conexão isolada para um único perfil do WORK-SFTP-CLIENTES. */
+    public VedacitSftpClient(SftpClientesProperties.Perfil perfil) {
+        this(
+                perfil.identificador(), true, perfil.host(), perfil.porta(), perfil.usuario(), perfil.senha(),
+                perfil.diretorioBase(), perfil.diretorioCliente(), perfil.hostKeySha256(),
+                perfil.maxTamanhoArquivoBytes(), perfil.estabilidadeMinimaMs()
+        );
+    }
+
+    private VedacitSftpClient(
+            String identificadorCliente,
+            boolean enabled,
+            String host,
+            int port,
+            String username,
+            String password,
+            String basePath,
+            String clientPath,
+            String hostKeySha256,
+            long maxFileSizeBytes,
+            long stableForMs
+    ) {
+        this.identificadorCliente = identificadorCliente;
         this.enabled = enabled; this.host = host; this.port = port; this.username = username; this.password = password;
         this.basePath = basePath; this.clientPath = VedacitSftpPathPolicy.validarDiretorioCliente(basePath, clientPath);
         this.hostKeySha256 = hostKeySha256; this.maxFileSizeBytes = maxFileSizeBytes;
         this.stableForMs = stableForMs;
+    }
+
+    public String identificadorCliente() {
+        return identificadorCliente;
     }
 
     @Override public Optional<VedacitSftpDocument> buscarXmlCte(String cte, String nfe) {

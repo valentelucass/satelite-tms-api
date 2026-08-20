@@ -34,6 +34,11 @@ BEGIN
         canhoto_referencia NVARCHAR(2048) NULL,
         canhoto_mime_type VARCHAR(100) NULL,
         canhoto_origem VARCHAR(30) NULL,
+        sftp_cliente VARCHAR(64) NULL,
+        arquivado BIT NOT NULL
+            CONSTRAINT DF_tb_log_integracao_arquivado DEFAULT 0,
+        arquivado_em DATETIME2(3) NULL,
+        arquivado_motivo VARCHAR(100) NULL,
         data_processamento DATETIME2(3) NOT NULL
             CONSTRAINT DF_tb_log_integracao_data_processamento DEFAULT SYSUTCDATETIME(),
         CONSTRAINT PK_tb_log_integracao PRIMARY KEY CLUSTERED (id)
@@ -146,6 +151,23 @@ GO
 
 IF COL_LENGTH('dbo.tb_log_integracao', 'canhoto_origem') IS NULL
     ALTER TABLE dbo.tb_log_integracao ADD canhoto_origem VARCHAR(30) NULL;
+GO
+
+IF COL_LENGTH('dbo.tb_log_integracao', 'sftp_cliente') IS NULL
+    ALTER TABLE dbo.tb_log_integracao ADD sftp_cliente VARCHAR(64) NULL;
+GO
+
+IF COL_LENGTH('dbo.tb_log_integracao', 'arquivado') IS NULL
+    ALTER TABLE dbo.tb_log_integracao ADD arquivado BIT NOT NULL
+        CONSTRAINT DF_tb_log_integracao_arquivado DEFAULT 0;
+GO
+
+IF COL_LENGTH('dbo.tb_log_integracao', 'arquivado_em') IS NULL
+    ALTER TABLE dbo.tb_log_integracao ADD arquivado_em DATETIME2(3) NULL;
+GO
+
+IF COL_LENGTH('dbo.tb_log_integracao', 'arquivado_motivo') IS NULL
+    ALTER TABLE dbo.tb_log_integracao ADD arquivado_motivo VARCHAR(100) NULL;
 GO
 
 IF COL_LENGTH('dbo.tb_log_integracao', 'data_processamento') IS NULL

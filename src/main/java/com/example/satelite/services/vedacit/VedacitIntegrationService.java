@@ -246,6 +246,17 @@ public class VedacitIntegrationService {
             boolean dadosJaEnviados,
             boolean canhotoJaEnviado
     ) {
+        return processarOcorrencia(ocorrencia, comprovante, dadosJaEnviados, canhotoJaEnviado, vedacitSftpDocumentSource);
+    }
+
+    /** Usado pelo worker multi-cliente para manter o comprovante na pasta do perfil corrente. */
+    public ResultadoIntegracao processarOcorrencia(
+            EslOcorrenciaDTO ocorrencia,
+            ComprovanteEslDTO comprovante,
+            boolean dadosJaEnviados,
+            boolean canhotoJaEnviado,
+            VedacitSftpDocumentSource fonteSftp
+    ) {
         String chaveNfe = obterChaveNfeLog(ocorrencia);
         String cteKey = obterChaveCteLog(ocorrencia);
 
@@ -322,7 +333,7 @@ public class VedacitIntegrationService {
         }
 
         try {
-            Canhoto canhoto = converterParaCanhoto(ocorrencia, comprovante, dataOcorrencia, formatter);
+            Canhoto canhoto = converterParaCanhoto(ocorrencia, comprovante, dataOcorrencia, formatter, fonteSftp);
             enviarCanhoto(canhoto, chaveNfe, cteKey);
             statusCanhoto = ResultadoIntegracao.STATUS_SUCESSO;
             return ResultadoIntegracao.vedacitConcluido(statusDados, statusCanhoto);
@@ -459,11 +470,12 @@ public class VedacitIntegrationService {
             EslOcorrenciaDTO ocorrencia,
             ComprovanteEslDTO comprovante,
             String dataEntrega,
-            DateTimeFormatter formatter
+            DateTimeFormatter formatter,
+            VedacitSftpDocumentSource fonteSftp
     ) throws Exception {
         String chaveNfe = ocorrencia.invoice().key();
         String cteKey = ocorrencia.freight().cteKey();
-        Optional<byte[]> canhotoSftp = buscarComprovanteSftp(cteKey, chaveNfe);
+        Optional<byte[]> canhotoSftp = buscarComprovanteSftp(fonteSftp, cteKey, chaveNfe);
         byte[] imagemOriginal;
         if (canhotoSftp.isPresent()) {
             imagemOriginal = canhotoSftp.get();
@@ -584,12 +596,12 @@ public class VedacitIntegrationService {
         }
     }
 
-    private Optional<byte[]> buscarComprovanteSftp(String chaveCte, String chaveNfe) {
-        if (vedacitSftpDocumentSource == null) {
+    private Optional<byte[]> buscarComprovanteSftp(VedacitSftpDocumentSource fonteSftp, String chaveCte, String chaveNfe) {
+        if (fonteSftp == null) {
             return Optional.empty();
         }
         try {
-            return vedacitSftpDocumentSource.buscarComprovante(chaveCte, chaveNfe)
+            return fonteSftp.buscarComprovante(chaveCte, chaveNfe)
                     .map(documento -> documento.conteudo())
                     .filter(conteudo -> conteudo.length > 0);
         } catch (RuntimeException e) {

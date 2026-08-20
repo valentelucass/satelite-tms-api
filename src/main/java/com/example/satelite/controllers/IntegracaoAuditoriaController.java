@@ -18,6 +18,7 @@ import org.springframework.web.servlet.mvc.method.annotation.StreamingResponseBo
 import com.example.satelite.dto.auditoria.AuditoriaIntegracoesClientesResponseDTO;
 import com.example.satelite.dto.auditoria.IntegracaoEvolucaoDiariaDTO;
 import com.example.satelite.dto.auditoria.ResumoTabelaIntegracaoDTO;
+import com.example.satelite.dto.auditoria.WorkSftpClienteStatusDTO;
 import com.example.satelite.utils.CsvStreamWriter;
 import com.example.satelite.services.auditoria.IntegracaoAuditoriaService;
 
@@ -94,6 +95,11 @@ public class IntegracaoAuditoriaController {
             @RequestParam(required = false) List<String> destino
     ) {
         return integracaoAuditoriaService.consultarResumoTabelas(dataInicial, dataFinal, destino);
+    }
+
+    @GetMapping("/vedacit-sftp/clientes")
+    public List<WorkSftpClienteStatusDTO> consultarStatusVedacitSftp() {
+        return integracaoAuditoriaService.consultarStatusWorkSftpClientes();
     }
 
     @GetMapping(value = "/logs/{id}/imagem", produces = MediaType.TEXT_PLAIN_VALUE)

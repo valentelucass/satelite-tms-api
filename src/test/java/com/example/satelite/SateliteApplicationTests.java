@@ -3,6 +3,7 @@ package com.example.satelite;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
+import org.springframework.jdbc.core.JdbcTemplate;
 
 import com.example.satelite.clients.PpgClient;
 import com.example.satelite.clients.RodogarciaClient;
@@ -11,6 +12,8 @@ import com.example.satelite.repositories.EslRequestTelemetryRepository;
 import com.example.satelite.repositories.IntegracaoAuditoriaQueryRepository;
 import com.example.satelite.repositories.LogIntegracaoRepository;
 import com.example.satelite.repositories.QuarentenaEventoRepository;
+import com.example.satelite.repositories.WorkSftpClientesAuditoriaRepository;
+import static org.mockito.Mockito.verifyNoInteractions;
 
 @SpringBootTest(properties = {
 		"spring.autoconfigure.exclude="
@@ -29,6 +32,9 @@ import com.example.satelite.repositories.QuarentenaEventoRepository;
 		"VEDACIT_API_BASE_URL=http://localhost",
 		"VEDACIT_API_TOKEN=token-teste",
 		"APP_SCHEDULER_ENABLED=false",
+		"APP_DASHBOARD_API_ONLY=true",
+		"APP_NIGHTLY_RETRY_ENABLED=false",
+		"work.sftp-clientes.enabled=false",
 		"ESL_MIN_INTERVAL_BETWEEN_REQUESTS_MS=0",
 		"INTEGRATION_SCHEDULER_INTERVAL_MS=60000"
 })
@@ -55,8 +61,19 @@ class SateliteApplicationTests {
 	@MockitoBean
 	private EslRequestTelemetryRepository eslRequestTelemetryRepository;
 
+	@MockitoBean
+	private WorkSftpClientesAuditoriaRepository workSftpClientesAuditoriaRepository;
+
+	@MockitoBean
+	private JdbcTemplate jdbcTemplate;
+
 	@Test
 	void contextLoads() {
+	}
+
+	@Test
+	void dashboardPassivoNaoChamaClientesExternosAoInicializar() {
+		verifyNoInteractions(ppgClient, rodogarciaClient);
 	}
 
 }

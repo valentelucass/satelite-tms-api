@@ -11,7 +11,8 @@ import org.springframework.scheduling.annotation.EnableScheduling;
                 + "|| '${APP_LOG_RETENTION_ENABLED:true}'.equalsIgnoreCase('true') ) "
                 + "&& !'${APP_CICLO_UNICO:${ciclo_unico:false}}'.equalsIgnoreCase('true') "
                 + "&& !'${retroactive.enabled:false}'.equalsIgnoreCase('true') "
-                + "&& !'${RETROACTIVE_ENABLED:false}'.equalsIgnoreCase('true')"
+                + "&& !'${RETROACTIVE_ENABLED:false}'.equalsIgnoreCase('true') "
+                + "&& !'${APP_DASHBOARD_API_ONLY:false}'.equalsIgnoreCase('true')"
 )
 public class SchedulerConfig {
 }
