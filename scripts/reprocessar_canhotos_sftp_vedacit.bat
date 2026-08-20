@@ -21,8 +21,7 @@ echo auditado. Le exclusivamente o SFTP; nao consulta fallback ESL
 echo e nao reenvia XML de CT-e.
 echo.
 set "BATCH_LIMIT=%~1"
-if not defined BATCH_LIMIT set /p "BATCH_LIMIT=Quantidade de canhotos para processar [10]: "
-if not defined BATCH_LIMIT set "BATCH_LIMIT=10"
+if not defined BATCH_LIMIT set "BATCH_LIMIT=100"
 
 powershell -NoProfile -ExecutionPolicy Bypass -Command "try { $n = [int]'%BATCH_LIMIT%'; if ($n -lt 1 -or $n -gt 100) { exit 2 }; exit 0 } catch { exit 1 }"
 if errorlevel 2 (
@@ -35,9 +34,8 @@ if errorlevel 1 (
 )
 
 echo.
-echo Iniciando lote SFTP exclusivo de ate %BATCH_LIMIT% canhoto(s)...
-set "DRAIN_ARGUMENT="
-if /I "%VEDACIT_SFTP_DRAIN_UNTIL_IDLE%"=="true" set "DRAIN_ARGUMENT=--vedacit.sftp-receipt-batch.drain-until-idle=true --vedacit.sftp-receipt-batch.drain-max-rounds=50 --vedacit.sftp-receipt-batch.drain-between-rounds-ms=30000"
+echo Iniciando dreno SFTP de todos os candidatos, em lotes de ate %BATCH_LIMIT% canhoto(s)...
+set "DRAIN_ARGUMENT=--vedacit.sftp-receipt-batch.drain-until-idle=true --vedacit.sftp-receipt-batch.drain-max-rounds=50 --vedacit.sftp-receipt-batch.drain-between-rounds-ms=30000"
 "%JAVA_EXECUTABLE%" -jar "%EXECUTABLE_JAR_PATH%" "--debug=false" "--APP_SCHEDULER_ENABLED=false" "--APP_CICLO_UNICO=false" "--APP_ETL_REPESCAGEM_ENABLED=false" "--APP_ETL_PENDENCIAS_ENABLED=false" "--APP_PPG_ENABLED=false" "--APP_VEDACIT_ENABLED=false" "--APP_SELIA_ENABLED=false" "--APP_SUPPORTE_ENABLED=false" "--server.port=0" "--spring.main.web-application-type=none" "--SFTP_RODOGARCIA_ENABLED=true" "--VEDACIT_SFTP_RECEIPT_ONLY=true" "--vedacit.sftp-receipt-batch.enabled=true" "--vedacit.sftp-receipt-batch.max-items=%BATCH_LIMIT%" "--vedacit.sftp-receipt-batch.interval-ms=1000" %DRAIN_ARGUMENT%
 set "JAVA_EXIT=%ERRORLEVEL%"
 

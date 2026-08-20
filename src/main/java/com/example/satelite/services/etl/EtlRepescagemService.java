@@ -203,6 +203,7 @@ public class EtlRepescagemService {
                     jaEnviados++;
                 } else {
                     existentes++;
+                    promoverCandidatoSftpComDadosConfirmados(existente.get(), documento);
                 }
                 continue;
             }
@@ -228,6 +229,34 @@ public class EtlRepescagemService {
             novos++;
         }
         return new ResultadoInventarioSftpVedacit(documentos.size(), novos, jaEnviados, existentes);
+    }
+
+    /**
+     * O inventário SFTP é a fonte da fila de canhotos. Um log existente com XML
+     * confirmado não pode ficar invisível apenas por possuir um status legado
+     * diferente de PENDENTE_FOTO. Recusas e timeouts continuam fora do dreno.
+     */
+    private void promoverCandidatoSftpComDadosConfirmados(
+            LogIntegracaoModel registro,
+            VedacitSftpDocument documento
+    ) {
+        if (!ResultadoIntegracao.STATUS_SUCESSO.equals(registro.getStatusDados())
+                || ResultadoIntegracao.STATUS_SUCESSO.equals(registro.getStatusCanhoto())) {
+            return;
+        }
+        String classificacao = registro.getCanhotoClassificacaoOperacional();
+        if (ClassificacaoOperacionalCanhotoVedacit.BLOQUEADO_DESTINO.name().equals(classificacao)
+                || ClassificacaoOperacionalCanhotoVedacit.TIMEOUT_AMBIGUO.name().equals(classificacao)) {
+            return;
+        }
+        registro.setStatus(ResultadoIntegracao.STATUS_PARCIAL);
+        registro.setStatusCanhoto(ResultadoIntegracao.STATUS_PENDENTE_FOTO);
+        registro.setCanhotoOrigem("SFTP");
+        registro.setCanhotoReferencia(documento.caminhoRelativo());
+        etlEstadoIntegracaoService.classificarCanhotoVedacit(
+                registro, ClassificacaoOperacionalCanhotoVedacit.PENDENTE_ENVIO
+        );
+        etlEstadoIntegracaoService.salvar(registro);
     }
 
     /** Persiste rejeições do inventário sem colocá-las na fila de envio. */

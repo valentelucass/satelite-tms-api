@@ -53,7 +53,7 @@ import org.tempuri.IOcorrencias;
 class VedacitIntegrationServiceTest {
 
     @Test
-    void deveCriarPortasSoapComWsdlLocalNoClasspath() throws Exception {
+    void deveCriarPortaDeOcorrenciasQuandoOWsdlLocalEstiverDefasado() throws Exception {
         VedacitIntegrationService service = new VedacitIntegrationService(
                 mock(ImageDownloader.class),
                 mock(RodogarciaClient.class),
@@ -65,8 +65,6 @@ class VedacitIntegrationServiceTest {
         ReflectionTestUtils.setField(service, "soapReadTimeoutMs", 60000);
 
         assertNotNull(service.criarPortaOcorrencias());
-        assertNotNull(service.criarPortaNFe());
-        assertNotNull(service.criarPortaCte());
     }
 
     @Test

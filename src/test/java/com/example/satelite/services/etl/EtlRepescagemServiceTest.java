@@ -1,6 +1,8 @@
 package com.example.satelite.services.etl;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
@@ -9,6 +11,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import java.time.LocalDateTime;
+import java.lang.reflect.Method;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
@@ -16,6 +19,7 @@ import java.util.Set;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.test.util.ReflectionTestUtils;
+import org.springframework.data.jpa.repository.Query;
 
 import com.example.satelite.models.LogIntegracaoModel;
 import com.example.satelite.repositories.LogIntegracaoRepository;
@@ -26,6 +30,24 @@ import com.example.satelite.services.origem.sftp.vedacit.VedacitSftpDocument;
 import com.example.satelite.services.origem.sftp.vedacit.VedacitSftpInventory;
 
 class EtlRepescagemServiceTest {
+
+    @Test
+    void deveManterRecusasDefinitivasETimeoutsForaDasFilasTecnicas() throws NoSuchMethodException {
+        Method retryManual = LogIntegracaoRepository.class.getMethod(
+                "findErrosParciaisCanhotoVedacit", org.springframework.data.domain.Pageable.class
+        );
+        String consultaRetryManual = retryManual.getAnnotation(Query.class).value();
+        assertTrue(consultaRetryManual.contains("canhotoClassificacaoOperacional = 'PENDENTE_TECNICO'"));
+
+        Method retryTecnico = LogIntegracaoRepository.class.getMethod(
+                "findCandidatosRepescagemNoturnaVedacitCanhoto", int.class,
+                org.springframework.data.domain.Pageable.class
+        );
+        String consultaRetryTecnico = retryTecnico.getAnnotation(Query.class).value();
+        assertTrue(consultaRetryTecnico.contains("canhotoClassificacaoOperacional = 'PENDENTE_TECNICO'"));
+        assertFalse(consultaRetryTecnico.contains("read timed out"));
+        assertFalse(consultaRetryTecnico.contains("LIKE '%timeout%'"));
+    }
 
     @Test
     void deveReprocessarErroParcialDeCanhotoSemJanelaEPulandoDadosVedacit() {
@@ -269,6 +291,40 @@ class EtlRepescagemServiceTest {
         assertEquals("PENDENTE_ORIGEM", captor.getValue().getStatusDados());
         assertEquals("PENDENTE_TECNICO", captor.getValue().getCanhotoClassificacaoOperacional());
         assertEquals("SFTP", captor.getValue().getCanhotoOrigem());
+    }
+
+    @Test
+    void devePromoverRegistroSftpExistenteComXmlConfirmadoParaFilaDeEnvio() {
+        LogIntegracaoRepository repository = mock(LogIntegracaoRepository.class);
+        EtlEstadoIntegracaoService estado = mock(EtlEstadoIntegracaoService.class);
+        EtlRepescagemService service = new EtlRepescagemService(
+                repository, mock(EtlRegistroService.class), estado,
+                mock(PpgIntegrationService.class), mock(VedacitIntegrationService.class)
+        );
+        String nfe = "35260860642774001209550010002365771266072428";
+        String cte = "35260860960473000758570030000541141709521720";
+        LogIntegracaoModel existente = LogIntegracaoModel.builder()
+                .sistemaDestino("VEDACIT").chaveNfe(nfe).chaveCte(cte)
+                .status(ResultadoIntegracao.STATUS_ERRO_DESTINO)
+                .statusDados(ResultadoIntegracao.STATUS_SUCESSO)
+                .statusCanhoto(ResultadoIntegracao.STATUS_ERRO_DESTINO)
+                .canhotoClassificacaoOperacional("PENDENTE_TECNICO")
+                .build();
+        var documento = new VedacitSftpDocument(
+                VedacitSftpDocument.Tipo.COMPROVANTE, "comprovantes/1_" + cte + "_" + nfe + ".jpg",
+                cte, nfe, 10L, java.time.Instant.now(), null
+        );
+        when(repository.findTopBySistemaDestinoAndChaveCteOrderByDataProcessamentoDescIdDesc("VEDACIT", cte))
+                .thenReturn(java.util.Optional.of(existente));
+
+        service.sincronizarInventarioSftpVedacit(List.of(documento));
+
+        assertEquals(ResultadoIntegracao.STATUS_PARCIAL, existente.getStatus());
+        assertEquals(ResultadoIntegracao.STATUS_PENDENTE_FOTO, existente.getStatusCanhoto());
+        assertEquals("SFTP", existente.getCanhotoOrigem());
+        assertEquals(documento.caminhoRelativo(), existente.getCanhotoReferencia());
+        verify(estado).classificarCanhotoVedacit(existente, ClassificacaoOperacionalCanhotoVedacit.PENDENTE_ENVIO);
+        verify(estado).salvar(existente);
     }
 
     @Test

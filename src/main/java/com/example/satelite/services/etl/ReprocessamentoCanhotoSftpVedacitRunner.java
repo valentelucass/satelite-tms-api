@@ -97,7 +97,7 @@ public class ReprocessamentoCanhotoSftpVedacitRunner implements CommandLineRunne
             long logsCandidatos = etlRepescagemService.contarLogsCandidatosCanhotoVedacitSftp(nfesComArquivoSftp);
             long lotesEstimados = (nfesCandidatas + limite - 1L) / limite;
             log.info(
-                    "[INVENTARIO] [VEDACIT][SFTP] arquivos={} | NF-e no SFTP={} | novos={} | já enviados={} | existentes={} | NF-e elegíveis={} | logs candidatos={} | plano={} lote(s) de até {}",
+                    "[INVENTARIO] [VEDACIT][SFTP] arquivos={} | NF-e no SFTP={} | novos={} | já enviados={} | existentes={} (normalizados quando XML confirmado) | NF-e elegíveis={} | logs candidatos={} | plano={} lote(s) de até {}",
                     inventario.arquivos(), nfesComArquivoSftp.size(), inventario.novos(), inventario.jaEnviados(), inventario.existentes(),
                     nfesCandidatas, logsCandidatos,
                     lotesEstimados,

@@ -31,6 +31,7 @@ import com.example.satelite.vedacit.nfe.RetornoOfboolean;
 
 import jakarta.xml.ws.Binding;
 import jakarta.xml.ws.BindingProvider;
+import jakarta.xml.ws.WebServiceException;
 import jakarta.xml.ws.handler.Handler;
 import jakarta.xml.ws.soap.SOAPFaultException;
 
@@ -110,13 +111,13 @@ public class VedacitIntegrationService {
     private boolean whitelistEnabled;
 
     @Value("${VEDACIT_SOAP_CONNECT_TIMEOUT_MS:30000}")
-    private int soapConnectTimeoutMs;
+    private int soapConnectTimeoutMs = 30000;
 
     @Value("${VEDACIT_SOAP_READ_TIMEOUT_MS:180000}")
-    private int soapReadTimeoutMs;
+    private int soapReadTimeoutMs = 180000;
 
     @Value("${VEDACIT_SOAP_INVOCATION_TIMEOUT_MS:210000}")
-    private int soapInvocationTimeoutMs;
+    private int soapInvocationTimeoutMs = 210000;
 
     private final ImageDownloader imageDownloader;
     private final RodogarciaClient rodogarciaClient;
@@ -720,8 +721,15 @@ public class VedacitIntegrationService {
     }
 
     protected IOcorrencias criarPortaOcorrencias() throws Exception {
-        IOcorrencias porta = new Ocorrencias(obterWsdlLocal(WSDL_OCORRENCIAS))
-                .getBasicHttpBindingIOcorrencias();
+        IOcorrencias porta;
+        try {
+            porta = new Ocorrencias(obterWsdlLocal(WSDL_OCORRENCIAS))
+                    .getBasicHttpBindingIOcorrencias();
+        } catch (WebServiceException e) {
+            log.warn("[VEDACIT] WSDL local de ocorrências incompatível com o proxy gerado; usando o contrato oficial para criar a porta.");
+            porta = new Ocorrencias(new URL(montarEndpointOcorrencias() + "?wsdl"))
+                    .getBasicHttpBindingIOcorrencias();
+        }
         configurarPortaSoap(porta, montarEndpointOcorrencias());
         return porta;
     }

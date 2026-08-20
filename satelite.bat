@@ -52,8 +52,8 @@ if errorlevel 21 goto status_robo
 if errorlevel 20 goto logs
 if errorlevel 19 goto testes_e2e
 if errorlevel 18 goto reprocessar_timeouts_sftp_vedacit
-if errorlevel 17 goto reprocessar_pendencias_tecnicas_vedacit
-if errorlevel 16 goto reprocessar_canhotos_sftp_vedacit_reconciliado
+if errorlevel 17 goto reprocessar_canhotos_sftp_vedacit_reconciliado
+if errorlevel 16 goto reprocessar_pendencias_tecnicas_vedacit
 if errorlevel 15 goto previa_reconciliacao_canhotos_sftp_vedacit
 if errorlevel 14 goto monitorar_canhotos_sftp_vedacit
 if errorlevel 13 goto reprocessar_canhotos_sftp_vedacit

@@ -84,6 +84,7 @@ public interface LogIntegracaoRepository extends JpaRepository<LogIntegracaoMode
               AND l.statusCanhoto = 'ERRO_DESTINO'
               AND l.chaveCte IS NOT NULL
               AND TRIM(l.chaveCte) <> ''
+              AND l.canhotoClassificacaoOperacional = 'PENDENTE_TECNICO'
             ORDER BY l.dataProcessamento ASC, l.id ASC
             """)
     List<LogIntegracaoModel> findErrosParciaisCanhotoVedacit(Pageable pageable);
@@ -115,7 +116,8 @@ public interface LogIntegracaoRepository extends JpaRepository<LogIntegracaoMode
     @Query("""
             SELECT l FROM LogIntegracaoModel l
             WHERE l.sistemaDestino = 'VEDACIT' AND l.statusDados = 'SUCESSO'
-              AND l.statusCanhoto = 'PENDENTE_FOTO'
+              AND l.statusCanhoto <> 'SUCESSO'
+              AND COALESCE(l.canhotoClassificacaoOperacional, '') NOT IN ('BLOQUEADO_DESTINO', 'TIMEOUT_AMBIGUO')
               AND l.chaveNfe IN :chavesNfe AND l.chaveCte IS NOT NULL AND TRIM(l.chaveCte) <> ''
             ORDER BY l.dataProcessamento ASC, l.id ASC
             """)
@@ -126,7 +128,8 @@ public interface LogIntegracaoRepository extends JpaRepository<LogIntegracaoMode
     @Query("""
             SELECT l FROM LogIntegracaoModel l
             WHERE l.sistemaDestino = 'VEDACIT' AND l.statusDados = 'SUCESSO'
-              AND l.statusCanhoto = 'PENDENTE_FOTO'
+              AND l.statusCanhoto <> 'SUCESSO'
+              AND COALESCE(l.canhotoClassificacaoOperacional, '') NOT IN ('BLOQUEADO_DESTINO', 'TIMEOUT_AMBIGUO')
               AND l.chaveNfe IN :chavesNfe
               AND l.chaveNfe NOT IN :chavesNfeJaTentadas
               AND l.chaveCte IS NOT NULL AND TRIM(l.chaveCte) <> ''
@@ -225,10 +228,9 @@ public interface LogIntegracaoRepository extends JpaRepository<LogIntegracaoMode
               AND l.chaveCte IS NOT NULL
               AND TRIM(l.chaveCte) <> ''
               AND COALESCE(l.tentativasCanhoto, 0) < :limiteTentativas
+              AND l.canhotoClassificacaoOperacional = 'PENDENTE_TECNICO'
               AND (
-                    LOWER(COALESCE(l.mensagemErroCanhoto, l.erro, '')) LIKE '%read timed out%'
-                    OR LOWER(COALESCE(l.mensagemErroCanhoto, l.erro, '')) LIKE '%timeout%'
-                    OR LOWER(COALESCE(l.mensagemErroCanhoto, l.erro, '')) LIKE '%connection%'
+                    LOWER(COALESCE(l.mensagemErroCanhoto, l.erro, '')) LIKE '%connection%'
                     OR LOWER(COALESCE(l.mensagemErroCanhoto, l.erro, '')) LIKE '% 429 %'
                     OR LOWER(COALESCE(l.mensagemErroCanhoto, l.erro, '')) LIKE '% 500 %'
                     OR LOWER(COALESCE(l.mensagemErroCanhoto, l.erro, '')) LIKE '% 502 %'
