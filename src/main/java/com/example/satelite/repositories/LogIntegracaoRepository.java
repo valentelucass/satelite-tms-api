@@ -435,6 +435,7 @@ public interface LogIntegracaoRepository extends JpaRepository<LogIntegracaoMode
             FROM (VALUES ('VEDACIT'), ('PPG'), ('SELIA'), ('SUPPORTE')) AS d(sistema_destino)
             LEFT JOIN dbo.tb_log_integracao l
                 ON l.sistema_destino = d.sistema_destino
+               AND COALESCE(l.arquivado, 0) = 0
                AND l.data_processamento >= :dataInicial
                AND l.data_processamento < :dataFinalLimit
             WHERE d.sistema_destino IN (:destinos)
@@ -467,6 +468,7 @@ public interface LogIntegracaoRepository extends JpaRepository<LogIntegracaoMode
                     THEN 0 ELSE 1 END) AS erros
             FROM dbo.tb_log_integracao l
             WHERE l.sistema_destino IN (:destinos)
+              AND COALESCE(l.arquivado, 0) = 0
               AND l.data_processamento >= :dataInicial
               AND l.data_processamento < :dataFinalLimit
             GROUP BY CAST(l.data_processamento AS DATE)
@@ -509,6 +511,7 @@ public interface LogIntegracaoRepository extends JpaRepository<LogIntegracaoMode
                         END AS BIT) AS possuiImagemPayload
                     FROM dbo.tb_log_integracao l
                     WHERE l.sistema_destino IN ('VEDACIT', 'PPG', 'SELIA', 'SUPPORTE')
+                      AND COALESCE(l.arquivado, 0) = 0
                       AND (
                           l.status_canhoto = 'PENDENTE_FOTO'
                           OR l.status_dados = 'ERRO_DESTINO'
@@ -527,6 +530,7 @@ public interface LogIntegracaoRepository extends JpaRepository<LogIntegracaoMode
                     SELECT COUNT(1)
                     FROM dbo.tb_log_integracao l
                     WHERE l.sistema_destino IN ('VEDACIT', 'PPG', 'SELIA', 'SUPPORTE')
+                      AND COALESCE(l.arquivado, 0) = 0
                       AND (
                           l.status_canhoto = 'PENDENTE_FOTO'
                           OR l.status_dados = 'ERRO_DESTINO'

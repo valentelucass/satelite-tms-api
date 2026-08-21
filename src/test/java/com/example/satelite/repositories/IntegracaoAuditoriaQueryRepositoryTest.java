@@ -225,6 +225,7 @@ class IntegracaoAuditoriaQueryRepositoryTest {
         assertTrue(sql.contains("N'Canhoto'"));
         assertTrue(sql.contains("l.data_processamento >= :dataInicial"));
         assertTrue(sql.contains("l.data_processamento < :dataFinalLimit"));
+        assertTrue(sql.contains("COALESCE(l.arquivado, 0) = 0"));
         assertTrue(sql.contains("COUNT_BIG(1) AS total_processado"));
         assertTrue(sql.contains("SUM(CASE WHEN classe_status = N'SUCESSO' THEN 1 ELSE 0 END) AS total_sucesso"));
         assertTrue(sql.contains("SUM(CASE WHEN classe_status = N'ERRO' THEN 1 ELSE 0 END) AS total_erro"));
@@ -243,6 +244,17 @@ class IntegracaoAuditoriaQueryRepositoryTest {
         assertTrue(query.value().contains("l.sistemaDestino IN :destinos"));
         assertTrue(query.countQuery().contains("l.sistemaDestino IN :destinos"));
         assertFalse(query.value().contains("SELIA_PLP"));
+    }
+
+    @Test
+    void metricasDoDashboardDevemIgnorarRegistrosArquivados() throws NoSuchMethodException {
+        Method metricas = LogIntegracaoRepository.class.getMethod(
+                "buscarMetricasIntegracoesClientes", LocalDateTime.class, LocalDateTime.class, List.class);
+        Method evolucao = LogIntegracaoRepository.class.getMethod(
+                "buscarEvolucaoDiariaIntegracoes", LocalDateTime.class, LocalDateTime.class, List.class);
+
+        assertTrue(metricas.getAnnotation(Query.class).value().contains("COALESCE(l.arquivado, 0) = 0"));
+        assertTrue(evolucao.getAnnotation(Query.class).value().contains("COALESCE(l.arquivado, 0) = 0"));
     }
 
     private NamedParameterJdbcTemplate criarJdbcTemplate() {

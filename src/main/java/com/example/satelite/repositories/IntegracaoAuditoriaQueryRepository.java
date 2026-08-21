@@ -188,6 +188,7 @@ public class IntegracaoAuditoriaQueryRepository {
                     l.data_processamento_canhoto AS dataProcessamentoCanhoto
                 FROM dbo.tb_log_integracao l
                 WHERE l.status = 'ERRO_DESTINO'
+                  AND COALESCE(l.arquivado, 0) = 0
                   AND (l.tentativas_dados >= 3 OR l.tentativas_canhoto >= 3)
                   AND l.sistema_destino IN (:destinos)
                   AND NOT EXISTS (
@@ -245,6 +246,7 @@ public class IntegracaoAuditoriaQueryRepository {
                         (N'Canhoto', COALESCE(NULLIF(LTRIM(RTRIM(l.status_canhoto)), N''), NULLIF(LTRIM(RTRIM(l.status)), N'')), l.tentativas_canhoto)
                     ) etapa(entidade, status_etapa, tentativas)
                     WHERE l.sistema_destino IN (:destinos)
+                      AND COALESCE(l.arquivado, 0) = 0
                       AND l.data_processamento >= :dataInicial
                       AND l.data_processamento < :dataFinalLimit
                       AND NULLIF(LTRIM(RTRIM(COALESCE(etapa.status_etapa, N''))), N'') IS NOT NULL
