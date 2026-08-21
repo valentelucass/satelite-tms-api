@@ -42,12 +42,15 @@ class IntegracaoAuditoriaQueryRepositoryTest {
         assertTrue(sql.contains("l.status_dados = 'ERRO_DESTINO'"));
         assertTrue(sql.contains("l.status_dados = 'SUCESSO'"));
         assertTrue(sql.contains("l.tentativas_canhoto < 3"));
+        assertTrue(sql.contains("l.canhoto_classificacao_operacional IN ('BLOQUEADO_ORIGEM', 'BLOQUEADO_DESTINO')"));
+        assertTrue(sql.contains("AND NOT ("));
         assertTrue(sql.contains("Erro Parcial - Aguarda Retry"));
         assertTrue(sql.contains("possuiImagemPayload"));
         assertTrue(sql.contains("l.canhoto_referencia AS canhotoReferencia"));
         assertTrue(sql.contains("l.canhoto_mime_type AS canhotoMimeType"));
         assertTrue(sql.contains("l.canhoto_referencia IS NOT NULL"));
         assertTrue(sql.contains("COALESCE(l.arquivado, 0) = 0"));
+        assertTrue(sql.contains("l.canhoto_classificacao_operacional IN ('BLOQUEADO_ORIGEM', 'BLOQUEADO_DESTINO')"));
         assertFalse(sql.contains("request_payload"));
     }
 
@@ -255,6 +258,8 @@ class IntegracaoAuditoriaQueryRepositoryTest {
 
         assertTrue(metricas.getAnnotation(Query.class).value().contains("COALESCE(l.arquivado, 0) = 0"));
         assertTrue(evolucao.getAnnotation(Query.class).value().contains("COALESCE(l.arquivado, 0) = 0"));
+        assertTrue(metricas.getAnnotation(Query.class).value().contains("BLOQUEADO_ORIGEM"));
+        assertTrue(evolucao.getAnnotation(Query.class).value().contains("BLOQUEADO_ORIGEM"));
     }
 
     private NamedParameterJdbcTemplate criarJdbcTemplate() {

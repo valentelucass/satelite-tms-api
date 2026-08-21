@@ -10,6 +10,8 @@ import java.util.List;
 import org.junit.jupiter.api.Test;
 
 import com.example.satelite.dto.auditoria.WorkSftpClienteStatusDTO;
+import com.example.satelite.dto.auditoria.WorkSftpClienteExecucoesPaginadasDTO;
+import com.example.satelite.dto.auditoria.PaginacaoDTO;
 import com.example.satelite.services.auditoria.IntegracaoAuditoriaService;
 
 class IntegracaoAuditoriaControllerTest {
@@ -27,6 +29,21 @@ class IntegracaoAuditoriaControllerTest {
                 .consultarStatusVedacitSftp();
 
         assertEquals(List.of(resumo), resposta);
+        assertEquals(15, WorkSftpClienteStatusDTO.class.getRecordComponents().length);
+    }
+
+    @Test
+    void deveEncaminharHistoricoSftpSemDadosFiscais() {
+        IntegracaoAuditoriaService service = mock(IntegracaoAuditoriaService.class);
+        WorkSftpClienteExecucoesPaginadasDTO pagina = new WorkSftpClienteExecucoesPaginadasDTO(
+                List.of(), new PaginacaoDTO(0, 25, 0, 0, true, true));
+        when(service.consultarHistoricoWorkSftpClientes(0, 25, "VEDACIT", "CONCLUIDO", "2026-08-01", "2026-08-02"))
+                .thenReturn(pagina);
+
+        WorkSftpClienteExecucoesPaginadasDTO resposta = new IntegracaoAuditoriaController(service)
+                .consultarExecucoesVedacitSftp(0, 25, "VEDACIT", "CONCLUIDO", "2026-08-01", "2026-08-02");
+
+        assertEquals(pagina, resposta);
         assertEquals(15, WorkSftpClienteStatusDTO.class.getRecordComponents().length);
     }
 }

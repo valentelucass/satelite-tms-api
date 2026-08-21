@@ -34,6 +34,7 @@ import com.example.satelite.repositories.IntegracaoAuditoriaQueryRepository.Filt
 import com.example.satelite.repositories.IntegracaoAuditoriaQueryRepository.PendenciasResultado;
 import com.example.satelite.repositories.WorkSftpClientesAuditoriaRepository;
 import com.example.satelite.dto.auditoria.WorkSftpClienteStatusDTO;
+import com.example.satelite.dto.auditoria.WorkSftpClienteExecucoesPaginadasDTO;
 import com.example.satelite.repositories.LogIntegracaoRepository;
 import com.example.satelite.repositories.LogIntegracaoRepository.IntegracaoEvolucaoDiariaProjection;
 import com.example.satelite.repositories.LogIntegracaoRepository.MetricaIntegracaoClienteProjection;
@@ -85,6 +86,25 @@ public class IntegracaoAuditoriaService {
 
     public List<WorkSftpClienteStatusDTO> consultarStatusWorkSftpClientes() {
         return workSftpClientesAuditoriaRepository.buscarUltimosCiclos();
+    }
+
+    public WorkSftpClienteExecucoesPaginadasDTO consultarHistoricoWorkSftpClientes(
+            int pagina, int tamanho, String cliente, String status, String dataInicial, String dataFinal
+    ) {
+        int paginaNormalizada = normalizarPagina(pagina);
+        int tamanhoNormalizado = normalizarTamanho(tamanho);
+        PeriodoFiltro periodo = lerPeriodoOpcional(dataInicial, dataFinal);
+        String clienteNormalizado = normalizarTexto(cliente);
+        String statusNormalizado = normalizarTexto(status);
+        WorkSftpClientesAuditoriaRepository.PaginaCiclos resultado = workSftpClientesAuditoriaRepository.buscarHistorico(
+                clienteNormalizado, statusNormalizado, periodo.dataInicialSql(), periodo.dataFinalLimitSql(),
+                paginaNormalizada, tamanhoNormalizado
+        );
+        int totalPaginas = calcularTotalPaginas(resultado.totalElementos(), tamanhoNormalizado);
+        return new WorkSftpClienteExecucoesPaginadasDTO(resultado.itens(), new PaginacaoDTO(
+                paginaNormalizada, tamanhoNormalizado, resultado.totalElementos(), totalPaginas,
+                paginaNormalizada == 0, totalPaginas == 0 || paginaNormalizada >= totalPaginas - 1
+        ));
     }
 
     public AuditoriaIntegracoesClientesResponseDTO consultarIntegracoesClientes(

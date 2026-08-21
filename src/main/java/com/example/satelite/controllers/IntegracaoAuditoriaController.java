@@ -19,6 +19,7 @@ import com.example.satelite.dto.auditoria.AuditoriaIntegracoesClientesResponseDT
 import com.example.satelite.dto.auditoria.IntegracaoEvolucaoDiariaDTO;
 import com.example.satelite.dto.auditoria.ResumoTabelaIntegracaoDTO;
 import com.example.satelite.dto.auditoria.WorkSftpClienteStatusDTO;
+import com.example.satelite.dto.auditoria.WorkSftpClienteExecucoesPaginadasDTO;
 import com.example.satelite.utils.CsvStreamWriter;
 import com.example.satelite.services.auditoria.IntegracaoAuditoriaService;
 
@@ -100,6 +101,20 @@ public class IntegracaoAuditoriaController {
     @GetMapping("/vedacit-sftp/clientes")
     public List<WorkSftpClienteStatusDTO> consultarStatusVedacitSftp() {
         return integracaoAuditoriaService.consultarStatusWorkSftpClientes();
+    }
+
+    @GetMapping("/vedacit-sftp/execucoes")
+    public WorkSftpClienteExecucoesPaginadasDTO consultarExecucoesVedacitSftp(
+            @RequestParam(defaultValue = "0") int pagina,
+            @RequestParam(defaultValue = "50") int tamanho,
+            @RequestParam(required = false) String cliente,
+            @RequestParam(required = false) String status,
+            @RequestParam(required = false) String dataInicial,
+            @RequestParam(required = false) String dataFinal
+    ) {
+        return integracaoAuditoriaService.consultarHistoricoWorkSftpClientes(
+                pagina, tamanho, cliente, status, dataInicial, dataFinal
+        );
     }
 
     @GetMapping(value = "/logs/{id}/imagem", produces = MediaType.TEXT_PLAIN_VALUE)

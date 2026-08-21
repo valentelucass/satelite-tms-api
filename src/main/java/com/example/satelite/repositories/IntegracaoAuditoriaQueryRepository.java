@@ -47,6 +47,13 @@ public class IntegracaoAuditoriaQueryRepository {
     private static final String NUMERO_NF_TEXTO_EXPR = "CAST(" + NUMERO_NF_EXPR + " AS VARCHAR(32))";
     private static final String ESCOPO_SUCESSO = "SUCESSO";
     private static final String ESCOPO_TODOS = "TODOS";
+    private static final String FILTRO_BLOQUEIO_SFTP_VEDACIT = """
+            (
+                l.sistema_destino = 'VEDACIT'
+                AND l.sftp_cliente IS NOT NULL
+                AND l.canhoto_classificacao_operacional IN ('BLOQUEADO_ORIGEM', 'BLOQUEADO_DESTINO')
+            )
+            """;
     private static final String FILTRO_PENDENCIAS = """
             (
                 l.status_canhoto = 'PENDENTE_FOTO'
@@ -55,7 +62,8 @@ public class IntegracaoAuditoriaQueryRepository {
                 OR (l.status_canhoto IS NULL AND l.status = 'PENDENTE_FOTO')
                 OR (l.status_dados IS NULL AND l.status = 'ERRO_DESTINO')
             )
-            """.formatted(FILTRO_ERRO_PARCIAL_CANHOTO_RETRY);
+            AND NOT %s
+            """.formatted(FILTRO_ERRO_PARCIAL_CANHOTO_RETRY, FILTRO_BLOQUEIO_SFTP_VEDACIT);
     private static final String FILTRO_SUCESSO = """
             (
                 l.status IN ('ENVIADO', 'PROCESSADO')
@@ -247,6 +255,7 @@ public class IntegracaoAuditoriaQueryRepository {
                     ) etapa(entidade, status_etapa, tentativas)
                     WHERE l.sistema_destino IN (:destinos)
                       AND COALESCE(l.arquivado, 0) = 0
+                      AND NOT %s
                       AND l.data_processamento >= :dataInicial
                       AND l.data_processamento < :dataFinalLimit
                       AND NULLIF(LTRIM(RTRIM(COALESCE(etapa.status_etapa, N''))), N'') IS NOT NULL
@@ -274,7 +283,7 @@ public class IntegracaoAuditoriaQueryRepository {
                     SUM(CASE WHEN classe_status IN (N'ERRO', N'QUARENTENA') THEN 1 ELSE 0 END) DESC,
                     COUNT_BIG(1) DESC,
                     entidade_tabela ASC
-                """;
+                """.formatted(FILTRO_BLOQUEIO_SFTP_VEDACIT);
 
         MapSqlParameterSource params = new MapSqlParameterSource()
                 .addValue("dataInicial", dataInicial)

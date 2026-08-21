@@ -2,6 +2,7 @@ package com.example.satelite.repositories;
 
 import java.sql.Timestamp;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.List;
 
 import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
@@ -74,6 +75,54 @@ public class WorkSftpClientesAuditoriaRepository {
         ));
     }
 
+    public PaginaCiclos buscarHistorico(
+            String cliente,
+            String status,
+            LocalDateTime inicio,
+            LocalDateTime fimExclusivo,
+            int pagina,
+            int tamanho
+    ) {
+        List<String> filtros = new ArrayList<>();
+        MapSqlParameterSource params = new MapSqlParameterSource();
+        if (cliente != null) {
+            filtros.add("e.sftp_cliente = :cliente");
+            params.addValue("cliente", cliente);
+        }
+        if (status != null) {
+            filtros.add("e.status_ciclo = :status");
+            params.addValue("status", status);
+        }
+        filtros.add("e.fim_em >= :inicio");
+        filtros.add("e.fim_em < :fimExclusivo");
+        params.addValue("inicio", inicio).addValue("fimExclusivo", fimExclusivo);
+        String where = String.join(" AND ", filtros);
+        long total = jdbc.queryForObject(
+                "SELECT COUNT_BIG(1) FROM dbo.tb_work_sftp_cliente_execucao e WHERE " + where,
+                params,
+                Long.class
+        );
+        params.addValue("offset", Math.max(0, pagina) * tamanho).addValue("tamanho", tamanho);
+        String sql = """
+                SELECT e.sftp_cliente, e.inicio_em, e.fim_em, e.conexao, e.status_ciclo,
+                       e.arquivos_validos, e.arquivos_rejeitados, e.selecionados, e.enviados, e.pendentes,
+                       e.saldo, e.bloqueios, e.timeouts_ambiguos, e.duracao_ms,
+                       DATEADD(MINUTE, 30, e.fim_em) AS proxima_execucao_estimada
+                FROM dbo.tb_work_sftp_cliente_execucao e
+                WHERE %s
+                ORDER BY e.fim_em DESC, e.id DESC
+                OFFSET :offset ROWS FETCH NEXT :tamanho ROWS ONLY
+                """.formatted(where);
+        return new PaginaCiclos(jdbc.query(sql, params, (rs, row) -> new WorkSftpClienteStatusDTO(
+                rs.getString("sftp_cliente"), data(rs, "inicio_em"), data(rs, "fim_em"),
+                rs.getString("conexao"), rs.getString("status_ciclo"),
+                rs.getInt("arquivos_validos"), rs.getInt("arquivos_rejeitados"),
+                rs.getInt("selecionados"), rs.getInt("enviados"), rs.getInt("pendentes"),
+                rs.getLong("saldo"), rs.getLong("bloqueios"), rs.getLong("timeouts_ambiguos"),
+                rs.getLong("duracao_ms"), data(rs, "proxima_execucao_estimada")
+        )), total);
+    }
+
     private LocalDateTime data(java.sql.ResultSet rs, String coluna) throws java.sql.SQLException {
         Timestamp valor = rs.getTimestamp(coluna);
         return valor == null ? null : valor.toLocalDateTime();
@@ -84,4 +133,6 @@ public class WorkSftpClientesAuditoriaRepository {
             int arquivosValidos, int arquivosRejeitados, int selecionados, int enviados, int pendentes,
             long saldo, long bloqueios, long timeoutsAmbiguos, long duracaoMs
     ) { }
+
+    public record PaginaCiclos(List<WorkSftpClienteStatusDTO> itens, long totalElementos) { }
 }

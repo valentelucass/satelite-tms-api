@@ -322,6 +322,7 @@ public interface LogIntegracaoRepository extends JpaRepository<LogIntegracaoMode
                     SELECT l
                     FROM LogIntegracaoModel l
                     WHERE l.status = 'ERRO_DESTINO'
+                      AND COALESCE(l.arquivado, false) = false
                       AND (l.tentativasDados >= 3 OR l.tentativasCanhoto >= 3)
                       AND l.sistemaDestino IN :destinos
                       AND NOT EXISTS (
@@ -347,6 +348,7 @@ public interface LogIntegracaoRepository extends JpaRepository<LogIntegracaoMode
                     SELECT COUNT(l)
                     FROM LogIntegracaoModel l
                     WHERE l.status = 'ERRO_DESTINO'
+                      AND COALESCE(l.arquivado, false) = false
                       AND (l.tentativasDados >= 3 OR l.tentativasCanhoto >= 3)
                       AND l.sistemaDestino IN :destinos
                       AND NOT EXISTS (
@@ -434,8 +436,13 @@ public interface LogIntegracaoRepository extends JpaRepository<LogIntegracaoMode
                 ) AS percentualCanhotoSucesso
             FROM (VALUES ('VEDACIT'), ('PPG'), ('SELIA'), ('SUPPORTE')) AS d(sistema_destino)
             LEFT JOIN dbo.tb_log_integracao l
-                ON l.sistema_destino = d.sistema_destino
+               ON l.sistema_destino = d.sistema_destino
                AND COALESCE(l.arquivado, 0) = 0
+               AND NOT (
+                    l.sistema_destino = 'VEDACIT'
+                    AND l.sftp_cliente IS NOT NULL
+                    AND l.canhoto_classificacao_operacional IN ('BLOQUEADO_ORIGEM', 'BLOQUEADO_DESTINO')
+               )
                AND l.data_processamento >= :dataInicial
                AND l.data_processamento < :dataFinalLimit
             WHERE d.sistema_destino IN (:destinos)
@@ -469,6 +476,11 @@ public interface LogIntegracaoRepository extends JpaRepository<LogIntegracaoMode
             FROM dbo.tb_log_integracao l
             WHERE l.sistema_destino IN (:destinos)
               AND COALESCE(l.arquivado, 0) = 0
+              AND NOT (
+                    l.sistema_destino = 'VEDACIT'
+                    AND l.sftp_cliente IS NOT NULL
+                    AND l.canhoto_classificacao_operacional IN ('BLOQUEADO_ORIGEM', 'BLOQUEADO_DESTINO')
+              )
               AND l.data_processamento >= :dataInicial
               AND l.data_processamento < :dataFinalLimit
             GROUP BY CAST(l.data_processamento AS DATE)
