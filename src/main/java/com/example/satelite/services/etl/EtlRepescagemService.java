@@ -153,12 +153,21 @@ public class EtlRepescagemService {
     }
 
     private ResultadoRegistro processarComLockCliente(String cliente, LogIntegracaoModel registro, VedacitSftpDocumentSource fonteSftp) {
-        if (sftpDocumentoLockService == null) return ResultadoRegistro.IGNORADO;
-        return sftpDocumentoLockService.executarComLock(cliente, registro.getChaveNfe(), registro.getChaveCte(), () -> {
+        if (sftpDocumentoLockService == null) {
+            throw new IllegalStateException("Lock SFTP Vedacit indisponível");
+        }
+        Optional<ResultadoRegistro> resultadoComLock = sftpDocumentoLockService.executarComLock(
+                cliente, registro.getChaveNfe(), registro.getChaveCte(), () -> {
             registro.setSftpCliente(cliente);
             registrarOrigemSftpDoCanhoto(registro);
             return etlRegistroService.reprocessarCanhotoVedacitPorCte(registro, fonteSftp);
-        }).orElse(ResultadoRegistro.IGNORADO);
+        });
+        if (resultadoComLock.isPresent()) {
+            return resultadoComLock.get();
+        }
+        log.warn("[WORK-SFTP-CLIENTES] cliente={} NF={} CT-e={}: lock ocupado; mantendo pendente para nova tentativa.",
+                cliente, chaveResumida(registro.getChaveNfe()), chaveResumida(registro.getChaveCte()));
+        return ResultadoRegistro.PENDENTE_FOTO;
     }
 
     private ResultadoInventarioSftpVedacit sincronizarInventarioSftpVedacit(String cliente, VedacitSftpInventory inventario) {
@@ -168,8 +177,24 @@ public class EtlRepescagemService {
             Optional<LogIntegracaoModel> existente = logIntegracaoRepository
                     .findTopBySistemaDestinoAndSftpClienteAndChaveCteOrderByDataProcessamentoDescIdDesc(DESTINO_VEDACIT, cliente, documento.chaveCte());
             if (existente.isPresent()) {
+                if (ResultadoIntegracao.STATUS_PENDENTE_ORIGEM.equals(existente.get().getStatusDados())) {
+                    Optional<LogIntegracaoModel> legado = logIntegracaoRepository
+                            .findLegadoVedacitArquivadoComDadosSucesso(documento.chaveNfe(), documento.chaveCte());
+                    if (legado.isPresent()) {
+                        reconciliarRegistroSftpComLegado(existente.get(), documento, legado.get());
+                        if (ResultadoIntegracao.STATUS_SUCESSO.equals(legado.get().getStatusCanhoto())) enviados++;
+                        else existentes++;
+                        continue;
+                    }
+                }
                 if (ResultadoIntegracao.STATUS_SUCESSO.equals(existente.get().getStatusCanhoto())) enviados++;
                 else { existentes++; promoverCandidatoSftpComDadosConfirmados(existente.get(), documento); }
+                continue;
+            }
+            Optional<LogIntegracaoModel> legado = logIntegracaoRepository
+                    .findLegadoVedacitArquivadoComDadosSucesso(documento.chaveNfe(), documento.chaveCte());
+            if (legado.isPresent()) {
+                materializarLegadoArquivadoDoCliente(cliente, documento, legado.get());
                 continue;
             }
             LogIntegracaoModel pendencia = LogIntegracaoModel.builder().sistemaDestino(DESTINO_VEDACIT).sftpCliente(cliente)
@@ -191,6 +216,41 @@ public class EtlRepescagemService {
             etlEstadoIntegracaoService.salvar(registro);
         }
         return new ResultadoInventarioSftpVedacit(inventario.documentosValidos().size(), novos, enviados, existentes);
+    }
+
+    private void materializarLegadoArquivadoDoCliente(
+            String cliente, VedacitSftpDocument documento, LogIntegracaoModel legado
+    ) {
+        boolean comprovanteJaEnviado = ResultadoIntegracao.STATUS_SUCESSO.equals(legado.getStatusCanhoto());
+        LogIntegracaoModel atual = LogIntegracaoModel.builder()
+                .sistemaDestino(DESTINO_VEDACIT).sftpCliente(cliente)
+                .chaveNfe(documento.chaveNfe()).chaveCte(documento.chaveCte())
+                .status(comprovanteJaEnviado ? ResultadoIntegracao.STATUS_ENVIADO : ResultadoIntegracao.STATUS_PARCIAL)
+                .statusDados(ResultadoIntegracao.STATUS_SUCESSO)
+                .statusCanhoto(comprovanteJaEnviado ? ResultadoIntegracao.STATUS_SUCESSO : ResultadoIntegracao.STATUS_PENDENTE_FOTO)
+                .canhotoOrigem("SFTP").canhotoReferencia(documento.caminhoRelativo())
+                .tentativasDados(0).tentativasCanhoto(0)
+                .dataProcessamento(etlEstadoIntegracaoService.agoraAuditoria())
+                .build();
+        etlEstadoIntegracaoService.classificarCanhotoVedacit(atual,
+                comprovanteJaEnviado ? ClassificacaoOperacionalCanhotoVedacit.SUCESSO
+                        : ClassificacaoOperacionalCanhotoVedacit.PENDENTE_ENVIO);
+        etlEstadoIntegracaoService.salvar(atual);
+    }
+
+    private void reconciliarRegistroSftpComLegado(
+            LogIntegracaoModel atual, VedacitSftpDocument documento, LogIntegracaoModel legado
+    ) {
+        boolean comprovanteJaEnviado = ResultadoIntegracao.STATUS_SUCESSO.equals(legado.getStatusCanhoto());
+        atual.setStatus(comprovanteJaEnviado ? ResultadoIntegracao.STATUS_ENVIADO : ResultadoIntegracao.STATUS_PARCIAL);
+        atual.setStatusDados(ResultadoIntegracao.STATUS_SUCESSO);
+        atual.setStatusCanhoto(comprovanteJaEnviado ? ResultadoIntegracao.STATUS_SUCESSO : ResultadoIntegracao.STATUS_PENDENTE_FOTO);
+        atual.setCanhotoOrigem("SFTP");
+        atual.setCanhotoReferencia(documento.caminhoRelativo());
+        etlEstadoIntegracaoService.classificarCanhotoVedacit(atual,
+                comprovanteJaEnviado ? ClassificacaoOperacionalCanhotoVedacit.SUCESSO
+                        : ClassificacaoOperacionalCanhotoVedacit.PENDENTE_ENVIO);
+        etlEstadoIntegracaoService.salvar(atual);
     }
 
     public void executarRepescagem(LocalDateTime inicioCiclo) {

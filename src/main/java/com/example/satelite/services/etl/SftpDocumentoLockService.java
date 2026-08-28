@@ -1,23 +1,47 @@
 package com.example.satelite.services.etl;
 
+import java.sql.Connection;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
+import java.sql.SQLException;
 import java.util.Locale;
 import java.util.Optional;
 import java.util.function.Supplier;
 
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.jdbc.core.ConnectionCallback;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 
 /** Lock distribuído no SQL Server para impedir envio concorrente do mesmo documento SFTP. */
 @Service
 public class SftpDocumentoLockService {
+    private static final String SQL_ADQUIRIR_LOCK = """
+            DECLARE @resultado INT;
+            EXEC @resultado = sp_getapplock
+                @Resource = ?,
+                @LockMode = 'Exclusive',
+                @LockOwner = 'Session',
+                @LockTimeout = ?,
+                @DbPrincipal = 'public';
+            SELECT @resultado;
+            """;
+    private static final String SQL_LIBERAR_LOCK = """
+            EXEC sp_releaseapplock
+                @Resource = ?,
+                @LockOwner = 'Session',
+                @DbPrincipal = 'public';
+            """;
+
     private final JdbcTemplate jdbcTemplate;
+
+    @Value("${WORK_SFTP_CLIENTES_LOCK_TIMEOUT_MS:5000}")
+    private long lockTimeoutMs = 5000L;
 
     public SftpDocumentoLockService(JdbcTemplate jdbcTemplate) {
         this.jdbcTemplate = jdbcTemplate;
     }
 
-    @Transactional
     public <T> Optional<T> executarComLock(
             String cliente,
             String chaveNfe,
@@ -25,20 +49,38 @@ public class SftpDocumentoLockService {
             Supplier<T> operacao
     ) {
         String recurso = recurso(cliente, chaveNfe, chaveCte);
-        Integer resultado = jdbcTemplate.queryForObject("""
-                DECLARE @resultado INT;
-                EXEC @resultado = sp_getapplock
-                    @Resource = ?,
-                    @LockMode = 'Exclusive',
-                    @LockOwner = 'Transaction',
-                    @LockTimeout = 0,
-                    @DbPrincipal = 'public';
-                SELECT @resultado;
-                """, Integer.class, recurso);
-        if (resultado == null || resultado < 0) {
-            return Optional.empty();
+        long timeoutSeguro = Math.max(0L, Math.min(lockTimeoutMs, 60_000L));
+        return jdbcTemplate.execute((ConnectionCallback<Optional<T>>) connection -> {
+            int resultado = adquirir(connection, recurso, timeoutSeguro);
+            if (resultado < 0) {
+                return Optional.empty();
+            }
+            try {
+                return Optional.ofNullable(operacao.get());
+            } finally {
+                liberar(connection, recurso);
+            }
+        });
+    }
+
+    private int adquirir(Connection connection, String recurso, long timeoutMs) throws SQLException {
+        try (PreparedStatement statement = connection.prepareStatement(SQL_ADQUIRIR_LOCK)) {
+            statement.setString(1, recurso);
+            statement.setLong(2, timeoutMs);
+            try (ResultSet resultSet = statement.executeQuery()) {
+                if (!resultSet.next()) {
+                    return -999;
+                }
+                return resultSet.getInt(1);
+            }
         }
-        return Optional.ofNullable(operacao.get());
+    }
+
+    private void liberar(Connection connection, String recurso) throws SQLException {
+        try (PreparedStatement statement = connection.prepareStatement(SQL_LIBERAR_LOCK)) {
+            statement.setString(1, recurso);
+            statement.execute();
+        }
     }
 
     static String recurso(String cliente, String chaveNfe, String chaveCte) {

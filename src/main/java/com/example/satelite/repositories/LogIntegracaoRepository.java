@@ -40,6 +40,20 @@ public interface LogIntegracaoRepository extends JpaRepository<LogIntegracaoMode
             String sistemaDestino, String sftpCliente, String chaveCte
     );
 
+    @Query("""
+            SELECT l FROM LogIntegracaoModel l
+            WHERE l.sistemaDestino = 'VEDACIT'
+              AND l.arquivado = true
+              AND l.chaveNfe = :chaveNfe
+              AND l.chaveCte = :chaveCte
+              AND l.statusDados = 'SUCESSO'
+            ORDER BY l.dataProcessamento DESC, l.id DESC
+            """)
+    Optional<LogIntegracaoModel> findLegadoVedacitArquivadoComDadosSucesso(
+            @Param("chaveNfe") String chaveNfe,
+            @Param("chaveCte") String chaveCte
+    );
+
     Optional<LogIntegracaoModel> findTopBySistemaDestinoAndSftpClienteAndCanhotoReferenciaOrderByDataProcessamentoDescIdDesc(
             String sistemaDestino, String sftpCliente, String canhotoReferencia
     );

@@ -14,6 +14,7 @@ import java.time.LocalDateTime;
 import java.lang.reflect.Method;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Optional;
 import java.util.Set;
 
 import org.junit.jupiter.api.Test;
@@ -56,6 +57,93 @@ class EtlRepescagemServiceTest {
         assertEquals("CLIENTE_B", captor.getValue().getSftpCliente());
         assertEquals("BLOQUEADO_ORIGEM", captor.getValue().getCanhotoClassificacaoOperacional());
         verify(repository, never()).findTopBySistemaDestinoAndChaveCteOrderByDataProcessamentoDescIdDesc(any(), any());
+    }
+
+    @Test
+    void deveReaproveitarLegadoArquivadoComDadosSucessoSemReenviarComprovanteJaConcluido() {
+        LogIntegracaoRepository repository = mock(LogIntegracaoRepository.class);
+        EtlEstadoIntegracaoService estado = mock(EtlEstadoIntegracaoService.class);
+        EtlRepescagemService service = new EtlRepescagemService(repository, mock(EtlRegistroService.class), estado,
+                mock(PpgIntegrationService.class), mock(VedacitIntegrationService.class), null, mock(SftpDocumentoLockService.class));
+        String nfe = "35260860642774001209550010002365771266072428";
+        String cte = "35260860960473000758570030000541141709521720";
+        VedacitSftpDocument documento = new VedacitSftpDocument(VedacitSftpDocument.Tipo.COMPROVANTE,
+                "comprovantes/a.jpg", cte, nfe, 10L, java.time.Instant.now(), null);
+        LogIntegracaoModel legado = LogIntegracaoModel.builder().sistemaDestino("VEDACIT")
+                .chaveNfe(nfe).chaveCte(cte).statusDados("SUCESSO").statusCanhoto("SUCESSO").arquivado(true).build();
+        when(repository.findTopBySistemaDestinoAndSftpClienteAndChaveCteOrderByDataProcessamentoDescIdDesc("VEDACIT", "CLIENTE_B", cte))
+                .thenReturn(Optional.empty());
+        when(repository.findLegadoVedacitArquivadoComDadosSucesso(nfe, cte)).thenReturn(Optional.of(legado));
+        when(repository.findCandidatosSftpPorClienteENfes(eq("CLIENTE_B"), eq(List.of(nfe)), any())).thenReturn(List.of());
+        when(repository.findTecnicosSftpPorClienteENfes(eq("CLIENTE_B"), eq(List.of(nfe)), any())).thenReturn(List.of());
+
+        service.processarClienteSftpVedacit("CLIENTE_B", new VedacitSftpInventory(List.of(documento), List.of()),
+                mock(VedacitSftpDocumentSource.class), 10, 0);
+
+        ArgumentCaptor<LogIntegracaoModel> captor = ArgumentCaptor.forClass(LogIntegracaoModel.class);
+        verify(estado).salvar(captor.capture());
+        assertEquals("ENVIADO", captor.getValue().getStatus());
+        assertEquals("SUCESSO", captor.getValue().getStatusDados());
+        assertEquals("SUCESSO", captor.getValue().getStatusCanhoto());
+        verify(estado).classificarCanhotoVedacit(captor.getValue(), ClassificacaoOperacionalCanhotoVedacit.SUCESSO);
+    }
+
+    @Test
+    void devePromoverLegadoArquivadoComDadosSucessoESemComprovanteParaFilaNormal() {
+        LogIntegracaoRepository repository = mock(LogIntegracaoRepository.class);
+        EtlEstadoIntegracaoService estado = mock(EtlEstadoIntegracaoService.class);
+        EtlRepescagemService service = new EtlRepescagemService(repository, mock(EtlRegistroService.class), estado,
+                mock(PpgIntegrationService.class), mock(VedacitIntegrationService.class), null, mock(SftpDocumentoLockService.class));
+        String nfe = "35260860642774001209550010002365771266072428";
+        String cte = "35260860960473000758570030000541141709521720";
+        VedacitSftpDocument documento = new VedacitSftpDocument(VedacitSftpDocument.Tipo.COMPROVANTE,
+                "comprovantes/a.jpg", cte, nfe, 10L, java.time.Instant.now(), null);
+        LogIntegracaoModel legado = LogIntegracaoModel.builder().sistemaDestino("VEDACIT")
+                .chaveNfe(nfe).chaveCte(cte).statusDados("SUCESSO").statusCanhoto("ERRO_DESTINO").arquivado(true).build();
+        when(repository.findTopBySistemaDestinoAndSftpClienteAndChaveCteOrderByDataProcessamentoDescIdDesc("VEDACIT", "CLIENTE_B", cte))
+                .thenReturn(Optional.empty());
+        when(repository.findLegadoVedacitArquivadoComDadosSucesso(nfe, cte)).thenReturn(Optional.of(legado));
+        when(repository.findCandidatosSftpPorClienteENfes(eq("CLIENTE_B"), eq(List.of(nfe)), any())).thenReturn(List.of());
+        when(repository.findTecnicosSftpPorClienteENfes(eq("CLIENTE_B"), eq(List.of(nfe)), any())).thenReturn(List.of());
+
+        service.processarClienteSftpVedacit("CLIENTE_B", new VedacitSftpInventory(List.of(documento), List.of()),
+                mock(VedacitSftpDocumentSource.class), 10, 0);
+
+        ArgumentCaptor<LogIntegracaoModel> captor = ArgumentCaptor.forClass(LogIntegracaoModel.class);
+        verify(estado).salvar(captor.capture());
+        assertEquals("PARCIAL", captor.getValue().getStatus());
+        assertEquals("SUCESSO", captor.getValue().getStatusDados());
+        assertEquals("PENDENTE_FOTO", captor.getValue().getStatusCanhoto());
+        verify(estado).classificarCanhotoVedacit(captor.getValue(), ClassificacaoOperacionalCanhotoVedacit.PENDENTE_ENVIO);
+    }
+
+    @Test
+    void deveManterPendenteQuandoDocumentoSftpEstiverComLockOcupado() {
+        LogIntegracaoRepository repository = mock(LogIntegracaoRepository.class);
+        EtlRegistroService registroService = mock(EtlRegistroService.class);
+        SftpDocumentoLockService lockService = mock(SftpDocumentoLockService.class);
+        EtlRepescagemService service = new EtlRepescagemService(repository, registroService,
+                new EtlEstadoIntegracaoService(repository), mock(PpgIntegrationService.class),
+                mock(VedacitIntegrationService.class), null, lockService);
+        String nfe = "35260860642774001209550010002365771266072428";
+        String cte = "35260860960473000758570030000541141709521720";
+        VedacitSftpDocument documento = new VedacitSftpDocument(VedacitSftpDocument.Tipo.COMPROVANTE,
+                "comprovantes/a.jpg", cte, nfe, 10L, java.time.Instant.now(), null);
+        LogIntegracaoModel pendencia = LogIntegracaoModel.builder().sistemaDestino("VEDACIT").sftpCliente("CLIENTE_B")
+                .chaveNfe(nfe).chaveCte(cte).statusDados("SUCESSO").statusCanhoto("PENDENTE_FOTO").build();
+
+        when(repository.findTopBySistemaDestinoAndSftpClienteAndChaveCteOrderByDataProcessamentoDescIdDesc("VEDACIT", "CLIENTE_B", cte))
+                .thenReturn(Optional.of(pendencia));
+        when(repository.findCandidatosSftpPorClienteENfes(eq("CLIENTE_B"), eq(List.of(nfe)), any())).thenReturn(List.of(pendencia));
+        when(lockService.executarComLock(eq("CLIENTE_B"), eq(nfe), eq(cte), any())).thenReturn(Optional.empty());
+
+        var resultado = service.processarClienteSftpVedacit("CLIENTE_B", new VedacitSftpInventory(List.of(documento), List.of()),
+                mock(VedacitSftpDocumentSource.class), 10, 0);
+
+        assertEquals(1, resultado.processamento().selecionados());
+        assertEquals(1, resultado.processamento().pendentes());
+        assertEquals(0, resultado.processamento().ignorados());
+        verify(registroService, never()).reprocessarCanhotoVedacitPorCte(any(), any());
     }
 
     @Test
