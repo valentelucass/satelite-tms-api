@@ -2,12 +2,15 @@ package com.example.satelite.services.vedacit;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.mockConstruction;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.withSettings;
 
 import java.awt.Color;
 import java.awt.Graphics2D;
@@ -16,6 +19,9 @@ import java.io.ByteArrayOutputStream;
 import java.time.OffsetDateTime;
 import java.time.Instant;
 import java.util.List;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.Optional;
 import java.util.function.Supplier;
 
@@ -23,8 +29,12 @@ import javax.imageio.ImageIO;
 import javax.xml.namespace.QName;
 
 import jakarta.xml.soap.SOAPFactory;
+import jakarta.xml.ws.Binding;
+import jakarta.xml.ws.BindingProvider;
+import jakarta.xml.ws.WebServiceException;
 import jakarta.xml.ws.soap.SOAPFaultException;
 import org.junit.jupiter.api.Test;
+import org.mockito.MockedConstruction;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import com.example.satelite.clients.RodogarciaClient;
@@ -49,6 +59,7 @@ import com.example.satelite.vedacit.nfe.INFe;
 
 import org.datacontract.schemas._2004._07.dominio_objetosdevalor_embarcador.Ocorrencia;
 import org.tempuri.IOcorrencias;
+import org.tempuri.Ocorrencias;
 
 class VedacitIntegrationServiceTest {
 
@@ -64,7 +75,35 @@ class VedacitIntegrationServiceTest {
         ReflectionTestUtils.setField(service, "soapConnectTimeoutMs", 30000);
         ReflectionTestUtils.setField(service, "soapReadTimeoutMs", 60000);
 
-        assertNotNull(service.criarPortaOcorrencias());
+        IOcorrencias porta = mock(IOcorrencias.class, withSettings().extraInterfaces(BindingProvider.class));
+        BindingProvider bindingProvider = (BindingProvider) porta;
+        Binding binding = mock(Binding.class);
+        Map<String, Object> requestContext = new HashMap<>();
+        when(bindingProvider.getRequestContext()).thenReturn(requestContext);
+        when(bindingProvider.getBinding()).thenReturn(binding);
+        when(binding.getHandlerChain()).thenReturn(List.of());
+        List<String> contratos = new ArrayList<>();
+        var wsdlLocal = VedacitIntegrationService.class.getResource("/wsdl/vedacit/ocorrencias/Ocorrencias.wsdl");
+        assertNotNull(wsdlLocal);
+
+        try (MockedConstruction<Ocorrencias> proxies = mockConstruction(Ocorrencias.class, (proxy, context) -> {
+            contratos.add(context.arguments().get(0).toString());
+            if (context.getCount() == 1) {
+                when(proxy.getBasicHttpBindingIOcorrencias()).thenThrow(new WebServiceException("WSDL local defasado"));
+            } else {
+                when(proxy.getBasicHttpBindingIOcorrencias()).thenReturn(porta);
+            }
+        })) {
+            assertSame(porta, service.criarPortaOcorrencias());
+            assertEquals(2, proxies.constructed().size());
+            assertEquals(wsdlLocal.toString(), contratos.get(0));
+            assertEquals("https://vedacit.multiembarcador.com.br/SGT.WebService/Ocorrencias.svc?wsdl", contratos.get(1));
+            assertEquals("https://vedacit.multiembarcador.com.br/SGT.WebService/Ocorrencias.svc",
+                    requestContext.get(BindingProvider.ENDPOINT_ADDRESS_PROPERTY));
+            assertEquals(30000, requestContext.get("com.sun.xml.ws.connect.timeout"));
+            assertEquals(60000, requestContext.get("com.sun.xml.ws.request.timeout"));
+            verify(binding).setHandlerChain(any());
+        }
     }
 
     @Test

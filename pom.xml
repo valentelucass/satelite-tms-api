@@ -34,6 +34,7 @@
 		<project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
 		<spring-cloud.version>2025.1.2</spring-cloud.version>
 		<logback.version>1.5.16</logback.version>
+		<satelite.build.directory>${project.basedir}/target</satelite.build.directory>
 	</properties>
 	<dependencies>
 		<dependency>
@@ -117,6 +118,7 @@
 	</dependencyManagement>
 
 	<build>
+		<directory>${satelite.build.directory}</directory>
 		<pluginManagement>
 			<plugins>
 				<plugin>
@@ -367,7 +369,7 @@
 						<artifactId>spring-boot-maven-plugin</artifactId>
 						<executions>
 							<execution>
-								<id>repackage</id>
+								<id>default</id>
 								<configuration>
 									<classifier>vedacit-fix</classifier>
 								</configuration>

@@ -13,12 +13,16 @@ class VedacitSftpClientFactoryTest {
                 .withProperty("SFTP_CLIENTS_IDS", "VEDACIT,CLIENTE_B");
         perfil(environment, "VEDACIT", "/g_rodogarcia/VEDACIT");
         perfil(environment, "CLIENTE_B", "/g_cliente_b/CLIENTE_B");
+        environment.withProperty("SFTP_CLIENT_VEDACIT_MAX_FILES_PER_CYCLE", "25")
+                .withProperty("SFTP_CLIENT_CLIENTE_B_MAX_FILES_PER_CYCLE", "60");
 
         var clientes = new VedacitSftpClientFactory(new SftpClientesProperties(environment)).criarClientesHabilitados();
 
         assertEquals(2, clientes.size());
         assertEquals("VEDACIT", clientes.get(0).identificador());
+        assertEquals(25, clientes.get(0).limiteItensPorCiclo());
         assertEquals("CLIENTE_B", clientes.get(1).cliente().identificadorCliente());
+        assertEquals(60, clientes.get(1).limiteItensPorCiclo());
     }
 
     private void perfil(MockEnvironment environment, String id, String caminho) {

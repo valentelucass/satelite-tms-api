@@ -12,13 +12,15 @@ class SftpClientesPropertiesTest {
     void devolveSomentePerfisHabilitadosEValidados() {
         MockEnvironment environment = perfilValido(new MockEnvironment())
                 .withProperty("SFTP_CLIENTS_IDS", "VEDACIT,CLIENTE_B")
-                .withProperty("SFTP_CLIENT_CLIENTE_B_ENABLED", "false");
+                .withProperty("SFTP_CLIENT_CLIENTE_B_ENABLED", "false")
+                .withProperty("SFTP_CLIENT_VEDACIT_MAX_FILES_PER_CYCLE", "37");
 
         var perfis = new SftpClientesProperties(environment).perfisHabilitados();
 
         assertEquals(1, perfis.size());
         assertEquals("VEDACIT", perfis.get(0).identificador());
         assertEquals("/g_rodogarcia/VEDACIT", perfis.get(0).diretorioCliente());
+        assertEquals(37, perfis.get(0).maxArquivosPorCiclo());
     }
 
     @Test

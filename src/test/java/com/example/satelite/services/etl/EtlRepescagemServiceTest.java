@@ -4,9 +4,11 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -16,6 +18,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
+import java.util.stream.IntStream;
 
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -355,9 +358,8 @@ class EtlRepescagemServiceTest {
 
         when(repository.findCanhotosPendentesFotoVedacitPorNfes(eq(List.of(nfePrimeira, nfeSegunda)), any()))
                 .thenReturn(List.of(primeiraAntiga, primeiraDuplicada));
-        when(repository.findCanhotosPendentesFotoVedacitPorNfesExcluindoJaTentadas(
-                eq(List.of(nfePrimeira, nfeSegunda)), eq(List.of(nfePrimeira)), any()
-        )).thenReturn(List.of(segunda));
+        when(repository.findCanhotosPendentesFotoVedacitPorNfes(eq(List.of(nfeSegunda)), any()))
+                .thenReturn(List.of(segunda));
         when(etlRegistroService.reprocessarCanhotoVedacitPorCte(primeiraAntiga)).thenReturn(ResultadoRegistro.ENVIADO);
         when(etlRegistroService.reprocessarCanhotoVedacitPorCte(segunda)).thenReturn(ResultadoRegistro.PENDENTE_FOTO);
 
@@ -374,6 +376,56 @@ class EtlRepescagemServiceTest {
         assertEquals(1, segundaRodada.pendentes());
         assertEquals(Set.of(nfePrimeira, nfeSegunda), tentadas);
         verify(etlRegistroService, never()).reprocessarCanhotoVedacitPorCte(primeiraDuplicada);
+    }
+
+    @Test
+    void deveDividirConsultaSftpGrandeSemPerderOrdemGlobalDaFila() {
+        LogIntegracaoRepository repository = mock(LogIntegracaoRepository.class);
+        EtlRegistroService etlRegistroService = mock(EtlRegistroService.class);
+        EtlRepescagemService service = new EtlRepescagemService(
+                repository,
+                etlRegistroService,
+                mock(EtlEstadoIntegracaoService.class),
+                mock(PpgIntegrationService.class),
+                mock(VedacitIntegrationService.class)
+        );
+        List<String> nfes = IntStream.range(1, 2_795)
+                .mapToObj(numero -> String.format("%044d", numero))
+                .toList();
+        LogIntegracaoModel maisRecente = pendenciaSftp(80L, nfes.get(0), "35260860960473000758570030000541141709521720");
+        maisRecente.setDataProcessamento(LocalDateTime.of(2026, 9, 7, 1, 0));
+        LogIntegracaoModel maisAntiga = pendenciaSftp(81L, nfes.get(2_500), "35260760960473000758570030000521491971250456");
+        maisAntiga.setDataProcessamento(LocalDateTime.of(2026, 9, 7, 0, 0));
+
+        when(repository.findCanhotosPendentesFotoVedacitPorNfes(anyList(), any())).thenAnswer(invocacao -> {
+            List<String> lote = invocacao.getArgument(0);
+            if (lote.contains(maisAntiga.getChaveNfe())) return List.of(maisAntiga);
+            if (lote.contains(maisRecente.getChaveNfe())) return List.of(maisRecente);
+            return List.of();
+        });
+        when(etlRegistroService.reprocessarCanhotoVedacitPorCte(maisAntiga)).thenReturn(ResultadoRegistro.ENVIADO);
+
+        var resultado = service.reprocessarCanhotosPendentesFotoSftpVedacit(1, 0, nfes, new HashSet<>());
+
+        ArgumentCaptor<List<String>> lotes = ArgumentCaptor.<List<String>>captor();
+        verify(repository, times(6)).findCanhotosPendentesFotoVedacitPorNfes(lotes.capture(), any());
+        assertEquals(6, lotes.getAllValues().size());
+        assertTrue(lotes.getAllValues().stream().allMatch(lote -> lote.size() <= 500));
+        assertEquals(1, resultado.selecionados());
+        assertEquals(1, resultado.enviados());
+        verify(etlRegistroService).reprocessarCanhotoVedacitPorCte(maisAntiga);
+        verify(etlRegistroService, never()).reprocessarCanhotoVedacitPorCte(maisRecente);
+
+        when(repository.countNfesCandidatasCanhotoVedacitPorNfes(anyList()))
+                .thenAnswer(invocacao -> (long) ((List<?>) invocacao.getArgument(0)).size());
+        when(repository.countLogsCandidatosCanhotoVedacitPorNfes(anyList()))
+                .thenAnswer(invocacao -> 2L * ((List<?>) invocacao.getArgument(0)).size());
+
+        assertEquals(2_794L, service.contarNfesCandidatasCanhotoVedacitSftp(nfes));
+        assertEquals(5_588L, service.contarLogsCandidatosCanhotoVedacitSftp(nfes));
+        ArgumentCaptor<List<String>> lotesContagem = ArgumentCaptor.<List<String>>captor();
+        verify(repository, times(6)).countNfesCandidatasCanhotoVedacitPorNfes(lotesContagem.capture());
+        assertTrue(lotesContagem.getAllValues().stream().allMatch(lote -> lote.size() <= 500));
     }
 
     @Test

@@ -40,8 +40,8 @@ class WorkSftpClientesRunnerTest {
         doThrow(new IllegalStateException("conexao indisponivel")).when(falho).verificarDisponibilidade();
         when(saudavel.listarInventarioComprovantes()).thenReturn(inventario);
         when(factory.criarClientesHabilitados()).thenReturn(List.of(
-                new VedacitSftpClientFactory.ClienteSftp("FALHO", falho),
-                new VedacitSftpClientFactory.ClienteSftp("VEDACIT", saudavel)
+                new VedacitSftpClientFactory.ClienteSftp("FALHO", falho, 100),
+                new VedacitSftpClientFactory.ClienteSftp("VEDACIT", saudavel, 100)
         ));
         when(repescagem.processarClienteSftpVedacit(eq("VEDACIT"), eq(inventario), eq(saudavel), eq(100), eq(1000L)))
                 .thenReturn(resultado);
@@ -54,6 +54,31 @@ class WorkSftpClientesRunnerTest {
         verify(saudavel).verificarDisponibilidade();
         verify(repescagem).processarClienteSftpVedacit("VEDACIT", inventario, saudavel, 100, 1000L);
         verify(auditoria, org.mockito.Mockito.times(2)).registrar(any());
+    }
+
+    @Test
+    void deveRespeitarOTetoConfiguradoParaOCadaCliente() {
+        VedacitSftpClientFactory factory = mock(VedacitSftpClientFactory.class);
+        VedacitSftpClient sftp = mock(VedacitSftpClient.class);
+        EtlRepescagemService repescagem = mock(EtlRepescagemService.class);
+        WorkSftpClientesAuditoriaRepository auditoria = mock(WorkSftpClientesAuditoriaRepository.class);
+        VedacitSftpInventory inventario = new VedacitSftpInventory(List.of(), List.of());
+        ResultadoClienteSftpVedacit resultado = new ResultadoClienteSftpVedacit(
+                new ResultadoInventarioSftpVedacit(0, 0, 0, 0),
+                new ResultadoReprocessamentoCanhotoVedacit(0, 0, 0, 0, 0), 0);
+
+        when(factory.criarClientesHabilitados()).thenReturn(List.of(
+                new VedacitSftpClientFactory.ClienteSftp("VEDACIT", sftp, 25)
+        ));
+        when(sftp.listarInventarioComprovantes()).thenReturn(inventario);
+        when(repescagem.processarClienteSftpVedacit("VEDACIT", inventario, sftp, 25, 1000L)).thenReturn(resultado);
+        when(repescagem.contarClassificacaoCanhotoVedacit(any(), any())).thenReturn(0L);
+
+        int codigo = new WorkSftpClientesRunner(factory, repescagem, ambienteExclusivo(),
+                mock(ConfigurableApplicationContext.class), auditoria).executarCiclo();
+
+        assertEquals(0, codigo);
+        verify(repescagem).processarClienteSftpVedacit("VEDACIT", inventario, sftp, 25, 1000L);
     }
 
     private Environment ambienteExclusivo() {

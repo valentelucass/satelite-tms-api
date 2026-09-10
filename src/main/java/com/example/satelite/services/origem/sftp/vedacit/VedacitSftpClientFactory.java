@@ -15,9 +15,13 @@ public class VedacitSftpClientFactory {
 
     public List<ClienteSftp> criarClientesHabilitados() {
         return properties.perfisHabilitados().stream()
-                .map(perfil -> new ClienteSftp(perfil.identificador(), new VedacitSftpClient(perfil)))
+                .map(perfil -> new ClienteSftp(
+                        perfil.identificador(),
+                        new VedacitSftpClient(perfil),
+                        perfil.maxArquivosPorCiclo()
+                ))
                 .toList();
     }
 
-    public record ClienteSftp(String identificador, VedacitSftpClient cliente) { }
+    public record ClienteSftp(String identificador, VedacitSftpClient cliente, int limiteItensPorCiclo) { }
 }

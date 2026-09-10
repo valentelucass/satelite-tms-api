@@ -40,4 +40,23 @@ class LogIntegracaoRepositoryTest {
         assertTrue(query.value().contains("posterior.chaveCte = l.chaveCte"));
         assertTrue(query.value().contains("posterior.occurrenceId = l.occurrenceId"));
     }
+
+    @Test
+    void filaSftpDeveSelecionarSomentePendenciaAtivaEClassificada() throws NoSuchMethodException {
+        Method normal = LogIntegracaoRepository.class.getMethod(
+                "findCandidatosSftpPorClienteENfes", String.class, List.class, Pageable.class
+        );
+        Method tecnico = LogIntegracaoRepository.class.getMethod(
+                "findTecnicosSftpPorClienteENfes", String.class, List.class, Pageable.class
+        );
+        Method saldo = LogIntegracaoRepository.class.getMethod(
+                "countNfesCandidatasSftpPorClienteENfes", String.class, List.class
+        );
+
+        assertTrue(normal.getAnnotation(Query.class).value().contains("COALESCE(l.arquivado, false) = false"));
+        assertTrue(normal.getAnnotation(Query.class).value().contains("canhotoClassificacaoOperacional = 'PENDENTE_ENVIO'"));
+        assertTrue(normal.getAnnotation(Query.class).value().contains("l.statusCanhoto = 'PENDENTE_FOTO'"));
+        assertTrue(tecnico.getAnnotation(Query.class).value().contains("canhotoClassificacaoOperacional = 'PENDENTE_TECNICO'"));
+        assertTrue(saldo.getAnnotation(Query.class).value().contains("COUNT(DISTINCT l.chaveNfe)"));
+    }
 }

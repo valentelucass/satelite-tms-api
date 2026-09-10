@@ -11,6 +11,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -26,7 +27,6 @@ import java.util.List;
 import java.util.Optional;
 import java.util.Objects;
 import java.util.Set;
-import java.util.function.Supplier;
 import java.util.stream.LongStream;
 
 import org.junit.jupiter.api.Test;
@@ -189,7 +189,8 @@ class OrquestradorEtlServiceTest {
         verify(dependencias.rodogarciaClient()).buscarOcorrencias("Bearer token-ppg", 123L, null, null, 1);
         verify(dependencias.rodogarciaClient()).buscarOcorrencias("Bearer token-vedacit", 123L, null, null, 110);
         verify(dependencias.rodogarciaClient()).buscarOcorrencias("Bearer token-vedacit", 123L, null, null, 1);
-        verify(dependencias.eslRequestPolicyService(), times(3)).executar(anyString(), any());
+        verify(dependencias.eslRequestPolicyService(), times(3))
+                .executarComTelemetria(any(EslRequestContext.class), any());
     }
 
     @Test
@@ -346,7 +347,8 @@ class OrquestradorEtlServiceTest {
         assertEquals(OrquestradorEtlService.CODIGO_SAIDA_SUCESSO, resultado.codigoSaida());
         verify(dependencias.rodogarciaClient(), times(2))
                 .buscarOcorrencias("Bearer token-ppg", null, null, null, 1);
-        verify(dependencias.eslRequestPolicyService(), times(1)).executar(anyString(), any());
+        verify(dependencias.eslRequestPolicyService(), times(1))
+                .executarComTelemetria(any(EslRequestContext.class), any());
     }
 
     @Test
@@ -1235,40 +1237,9 @@ class OrquestradorEtlServiceTest {
         VedacitIntegrationService vedacitIntegrationService = mock(VedacitIntegrationService.class);
         LogIntegracaoRepository logIntegracaoRepository = mock(LogIntegracaoRepository.class);
         ControleCursorRepository controleCursorRepository = mock(ControleCursorRepository.class);
-        EslRequestPolicyService eslRequestPolicyService = mock(EslRequestPolicyService.class);
-        when(eslRequestPolicyService.executar(anyString(), any())).thenAnswer(invocation -> {
-            Supplier<?> chamada = invocation.getArgument(1);
-            while (true) {
-                try {
-                    return chamada.get();
-                } catch (RetryableException e) {
-                    if (e.status() == 429) {
-                        continue;
-                    }
-
-                    throw new EslRequestPolicyService.EslRequestTransientException(
-                            invocation.getArgument(0),
-                            EslRequestPolicyService.STATUS_SEM_RESPOSTA_HTTP,
-                            "Timeout na comunicacao com a ESL em " + invocation.getArgument(0),
-                            e
-                    );
-                } catch (FeignException e) {
-                    if (e.status() == 429) {
-                        continue;
-                    }
-
-                    if (e.status() >= 500 && e.status() <= 599) {
-                        throw new EslRequestPolicyService.EslRequestTransientException(
-                                invocation.getArgument(0),
-                                e.status(),
-                                e
-                        );
-                    }
-
-                    throw e;
-                }
-            }
-        });
+        EslRequestPolicyService eslRequestPolicyService = spy(new EslRequestPolicyService(
+                0, 0, 2, 30, 183, 0, 0, mock(EslRequestTelemetryRecorder.class)
+        ));
         EtlResilienciaService etlResilienciaService = new EtlResilienciaService();
         EtlEstadoIntegracaoService etlEstadoIntegracaoService = new EtlEstadoIntegracaoService(logIntegracaoRepository);
         QuarentenaService quarentenaService = new QuarentenaService(

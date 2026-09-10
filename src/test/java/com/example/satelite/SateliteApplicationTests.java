@@ -4,9 +4,13 @@ import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.core.env.ConfigurableEnvironment;
 
 import com.example.satelite.clients.PpgClient;
 import com.example.satelite.clients.RodogarciaClient;
+import com.example.satelite.clients.SeliaClient;
+import com.example.satelite.clients.SupporteClient;
 import com.example.satelite.repositories.ControleCursorRepository;
 import com.example.satelite.repositories.EslRequestTelemetryRepository;
 import com.example.satelite.repositories.IntegracaoAuditoriaQueryRepository;
@@ -14,8 +18,10 @@ import com.example.satelite.repositories.LogIntegracaoRepository;
 import com.example.satelite.repositories.QuarentenaEventoRepository;
 import com.example.satelite.repositories.WorkSftpClientesAuditoriaRepository;
 import static org.mockito.Mockito.verifyNoInteractions;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 
 @SpringBootTest(properties = {
+		"spring.config.import=",
 		"spring.autoconfigure.exclude="
 				+ "org.springframework.boot.jdbc.autoconfigure.DataSourceAutoConfiguration,"
 				+ "org.springframework.boot.hibernate.autoconfigure.HibernateJpaAutoConfiguration,"
@@ -31,6 +37,11 @@ import static org.mockito.Mockito.verifyNoInteractions;
 		"PPG_CNPJ_TRANSPORTADORA=12345678000199",
 		"VEDACIT_API_BASE_URL=http://localhost",
 		"VEDACIT_API_TOKEN=token-teste",
+		"SELIA_INTELIPOST_API_BASE_URL=http://localhost",
+		"SUPPORTE_API_BASE_URL=http://localhost",
+		"SFTP_RODOGARCIA_ENABLED=false",
+		"SFTP_RODOGARCIA_BASE_PATH=/teste-unitario",
+		"SFTP_RODOGARCIA_CLIENT_PATH=/teste-unitario/VEDACIT",
 		"APP_SCHEDULER_ENABLED=false",
 		"APP_DASHBOARD_API_ONLY=true",
 		"APP_NIGHTLY_RETRY_ENABLED=false",
@@ -40,11 +51,20 @@ import static org.mockito.Mockito.verifyNoInteractions;
 })
 class SateliteApplicationTests {
 
+	@Autowired
+	private ConfigurableEnvironment environment;
+
 	@MockitoBean
 	private PpgClient ppgClient;
 
 	@MockitoBean
 	private RodogarciaClient rodogarciaClient;
+
+	@MockitoBean
+	private SeliaClient seliaClient;
+
+	@MockitoBean
+	private SupporteClient supporteClient;
 
 	@MockitoBean
 	private LogIntegracaoRepository logIntegracaoRepository;
@@ -69,11 +89,13 @@ class SateliteApplicationTests {
 
 	@Test
 	void contextLoads() {
+		environment.getPropertySources().forEach(source ->
+				assertFalse(source.getName().contains(".env"), "Teste nao deve carregar o .env operacional"));
 	}
 
 	@Test
 	void dashboardPassivoNaoChamaClientesExternosAoInicializar() {
-		verifyNoInteractions(ppgClient, rodogarciaClient);
+		verifyNoInteractions(ppgClient, rodogarciaClient, seliaClient, supporteClient);
 	}
 
 }

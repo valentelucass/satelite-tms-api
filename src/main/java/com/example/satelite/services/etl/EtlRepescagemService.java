@@ -3,13 +3,17 @@ package com.example.satelite.services.etl;
 import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.function.Function;
+import java.util.function.ToLongFunction;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -35,6 +39,18 @@ public class EtlRepescagemService {
 
     private static final Logger log = LoggerFactory.getLogger(EtlRepescagemService.class);
     private static final Logger logDetalheSftpVedacit = LoggerFactory.getLogger("satelite.vedacit.sftp.detail");
+    /** Mantém a consulta muito abaixo do limite de 2.100 parâmetros do SQL Server. */
+    private static final int MAXIMO_NFES_POR_CONSULTA_SQL = 500;
+    private static final Comparator<LogIntegracaoModel> ORDEM_FILA_SFTP = (primeiro, segundo) -> {
+        if (primeiro == segundo) return 0;
+        if (primeiro == null) return 1;
+        if (segundo == null) return -1;
+        int porData = Comparator.nullsLast(Comparator.<LocalDateTime>naturalOrder()).compare(
+                primeiro.getDataProcessamento(), segundo.getDataProcessamento()
+        );
+        if (porData != 0) return porData;
+        return Comparator.nullsLast(Comparator.<Long>naturalOrder()).compare(primeiro.getId(), segundo.getId());
+    };
 
     private static final String DESTINO_PPG = "PPG";
     private static final String DESTINO_SELIA = "SELIA";
@@ -111,17 +127,22 @@ public class EtlRepescagemService {
         if (!clienteSeguro.matches("[A-Z0-9_]+")) throw new IllegalArgumentException("Cliente SFTP inválido");
         VedacitSftpInventory seguro = inventario == null ? new VedacitSftpInventory(List.of(), List.of()) : inventario;
         ResultadoInventarioSftpVedacit materializacao = sincronizarInventarioSftpVedacit(clienteSeguro, seguro);
-        Set<String> chavesNfe = new java.util.LinkedHashSet<>();
+        Set<String> chavesNfe = new LinkedHashSet<>();
         for (VedacitSftpDocument documento : seguro.documentosValidos()) {
             if (documento != null && documento.chaveNfe() != null) {
                 chavesNfe.add(documento.chaveNfe());
             }
         }
-        List<String> nfes = List.copyOf(chavesNfe);
+        List<String> nfes = normalizarChavesNfe(chavesNfe);
         if (nfes.isEmpty()) return new ResultadoClienteSftpVedacit(materializacao, new ResultadoReprocessamentoCanhotoVedacit(0,0,0,0,0), 0);
-        List<LogIntegracaoModel> registros = limitarUmaTentativaPorNfe(
-                logIntegracaoRepository.findCandidatosSftpPorClienteENfes(clienteSeguro, nfes, PageRequest.of(0, Math.max(1, limite))),
-                Math.max(1, limite));
+        int limiteSeguro = Math.max(1, limite);
+        List<LogIntegracaoModel> registros = buscarRegistrosSftpEmLotes(
+                nfes,
+                limiteSeguro,
+                lote -> logIntegracaoRepository.findCandidatosSftpPorClienteENfes(
+                        clienteSeguro, lote, PageRequest.of(0, limiteSeguro)
+                )
+        );
         int enviados = 0, pendentes = 0, erros = 0, ignorados = 0;
         for (int indice = 0; indice < registros.size(); indice++) {
             LogIntegracaoModel registro = registros.get(indice);
@@ -134,9 +155,14 @@ public class EtlRepescagemService {
         }
         // A quarentena técnica só inicia quando a fila normal do cliente ficou ociosa.
         if (registros.isEmpty()) {
-            List<LogIntegracaoModel> tecnicos = limitarUmaTentativaPorNfe(
-                    logIntegracaoRepository.findTecnicosSftpPorClienteENfes(clienteSeguro, nfes, PageRequest.of(0, Math.min(10, Math.max(1, limite)))),
-                    Math.min(10, Math.max(1, limite)));
+            int limiteTecnicos = Math.min(10, limiteSeguro);
+            List<LogIntegracaoModel> tecnicos = buscarRegistrosSftpEmLotes(
+                    nfes,
+                    limiteTecnicos,
+                    lote -> logIntegracaoRepository.findTecnicosSftpPorClienteENfes(
+                            clienteSeguro, lote, PageRequest.of(0, limiteTecnicos)
+                    )
+            );
             int errosTecnicos = 0;
             for (int indice = 0; indice < tecnicos.size() && errosTecnicos < 3; indice++) {
                 ResultadoRegistro resultado = processarComLockCliente(clienteSeguro, tecnicos.get(indice), fonteSftp);
@@ -147,7 +173,10 @@ public class EtlRepescagemService {
                 if (indice < tecnicos.size() - 1 && !pausarEntreRegistros(intervaloEntreItensMs)) break;
             }
         }
-        long saldo = logIntegracaoRepository.findCandidatosSftpPorClienteENfes(clienteSeguro, nfes, PageRequest.of(0, 500)).size();
+        long saldo = contarNfesSftpEmLotes(
+                nfes,
+                lote -> logIntegracaoRepository.countNfesCandidatasSftpPorClienteENfes(clienteSeguro, lote)
+        );
         return new ResultadoClienteSftpVedacit(materializacao,
                 new ResultadoReprocessamentoCanhotoVedacit(enviados + pendentes + erros + ignorados, enviados, pendentes, erros, ignorados), saldo);
     }
@@ -473,19 +502,23 @@ public class EtlRepescagemService {
     ) {
         int limiteSeguro = Math.max(1, limite);
         Set<String> tentadas = chavesNfeJaTentadas == null ? new HashSet<>() : chavesNfeJaTentadas;
-        List<String> excluidas = List.copyOf(tentadas);
-        List<LogIntegracaoModel> registros = chavesNfeComArquivoSftp == null
-                ? logIntegracaoRepository.findCanhotosPendentesFotoVedacit(PageRequest.of(0, limiteSeguro))
-                : chavesNfeComArquivoSftp.isEmpty()
-                        ? List.of()
-                        : excluidas.isEmpty()
-                                ? logIntegracaoRepository.findCanhotosPendentesFotoVedacitPorNfes(
-                                chavesNfeComArquivoSftp, PageRequest.of(0, limiteSeguro)
-                                )
-                                : logIntegracaoRepository.findCanhotosPendentesFotoVedacitPorNfesExcluindoJaTentadas(
-                                chavesNfeComArquivoSftp, excluidas, PageRequest.of(0, limiteSeguro)
-                                );
-        registros = limitarUmaTentativaPorNfe(registros, limiteSeguro);
+        List<LogIntegracaoModel> registros;
+        if (chavesNfeComArquivoSftp == null) {
+            registros = limitarUmaTentativaPorNfe(
+                    logIntegracaoRepository.findCanhotosPendentesFotoVedacit(PageRequest.of(0, limiteSeguro)), limiteSeguro
+            );
+        } else {
+            List<String> nfesDisponiveis = normalizarChavesNfe(chavesNfeComArquivoSftp).stream()
+                    .filter(chaveNfe -> !tentadas.contains(chaveNfe))
+                    .toList();
+            registros = buscarRegistrosSftpEmLotes(
+                    nfesDisponiveis,
+                    limiteSeguro,
+                    lote -> logIntegracaoRepository.findCanhotosPendentesFotoVedacitPorNfes(
+                            lote, PageRequest.of(0, limiteSeguro)
+                    )
+            );
+        }
         if (registros == null || registros.isEmpty()) {
             log.info("🎯 [VEDACIT] Nenhum canhoto PENDENTE_FOTO com CT-e elegível no lote SFTP.");
             return new ResultadoReprocessamentoCanhotoVedacit(0, 0, 0, 0, 0);
@@ -596,10 +629,13 @@ public class EtlRepescagemService {
         if (chavesNfeComArquivoSftp == null || chavesNfeComArquivoSftp.isEmpty()) {
             return new ResultadoReprocessamentoCanhotoVedacit(0, 0, 0, 0, 0);
         }
-        List<LogIntegracaoModel> registros = limitarUmaTentativaPorNfe(
-                logIntegracaoRepository.findCanhotosTecnicosSftpVedacitPorNfes(
-                        chavesNfeComArquivoSftp, PageRequest.of(0, Math.max(1, limite))
-                ), Math.max(1, limite)
+        int limiteSeguro = Math.max(1, limite);
+        List<LogIntegracaoModel> registros = buscarRegistrosSftpEmLotes(
+                chavesNfeComArquivoSftp,
+                limiteSeguro,
+                lote -> logIntegracaoRepository.findCanhotosTecnicosSftpVedacitPorNfes(
+                        lote, PageRequest.of(0, limiteSeguro)
+                )
         );
         if (registros.isEmpty()) {
             return new ResultadoReprocessamentoCanhotoVedacit(0, 0, 0, 0, 0);
@@ -645,14 +681,20 @@ public class EtlRepescagemService {
         if (chavesNfeComArquivoSftp == null || chavesNfeComArquivoSftp.isEmpty()) {
             return 0;
         }
-        return logIntegracaoRepository.countNfesCandidatasCanhotoVedacitPorNfes(chavesNfeComArquivoSftp);
+        return contarNfesSftpEmLotes(
+                chavesNfeComArquivoSftp,
+                logIntegracaoRepository::countNfesCandidatasCanhotoVedacitPorNfes
+        );
     }
 
     public long contarLogsCandidatosCanhotoVedacitSftp(List<String> chavesNfeComArquivoSftp) {
         if (chavesNfeComArquivoSftp == null || chavesNfeComArquivoSftp.isEmpty()) {
             return 0;
         }
-        return logIntegracaoRepository.countLogsCandidatosCanhotoVedacitPorNfes(chavesNfeComArquivoSftp);
+        return contarNfesSftpEmLotes(
+                chavesNfeComArquivoSftp,
+                logIntegracaoRepository::countLogsCandidatosCanhotoVedacitPorNfes
+        );
     }
 
     public long contarClassificacaoCanhotoVedacit(String classificacao) {
@@ -688,6 +730,57 @@ public class EtlRepescagemService {
             }
         }
         return List.copyOf(primeiroPorNfe.values());
+    }
+
+    private List<LogIntegracaoModel> buscarRegistrosSftpEmLotes(
+            List<String> chavesNfe,
+            int limite,
+            Function<List<String>, List<LogIntegracaoModel>> consulta
+    ) {
+        int limiteSeguro = Math.max(1, limite);
+        List<LogIntegracaoModel> registros = new ArrayList<>();
+        for (List<String> lote : dividirChavesNfeParaConsulta(chavesNfe)) {
+            List<LogIntegracaoModel> encontrados = consulta.apply(lote);
+            if (encontrados != null) {
+                registros.addAll(encontrados);
+            }
+        }
+        registros.sort(ORDEM_FILA_SFTP);
+        return limitarUmaTentativaPorNfe(registros, limiteSeguro);
+    }
+
+    private long contarNfesSftpEmLotes(List<String> chavesNfe, ToLongFunction<List<String>> consulta) {
+        long total = 0;
+        for (List<String> lote : dividirChavesNfeParaConsulta(chavesNfe)) {
+            total += consulta.applyAsLong(lote);
+        }
+        return total;
+    }
+
+    private List<List<String>> dividirChavesNfeParaConsulta(List<String> chavesNfe) {
+        List<String> chavesNormalizadas = normalizarChavesNfe(chavesNfe);
+        if (chavesNormalizadas.isEmpty()) {
+            return List.of();
+        }
+        List<List<String>> lotes = new ArrayList<>();
+        for (int inicio = 0; inicio < chavesNormalizadas.size(); inicio += MAXIMO_NFES_POR_CONSULTA_SQL) {
+            int fim = Math.min(inicio + MAXIMO_NFES_POR_CONSULTA_SQL, chavesNormalizadas.size());
+            lotes.add(List.copyOf(chavesNormalizadas.subList(inicio, fim)));
+        }
+        return List.copyOf(lotes);
+    }
+
+    private List<String> normalizarChavesNfe(Iterable<String> chavesNfe) {
+        if (chavesNfe == null) {
+            return List.of();
+        }
+        Set<String> normalizadas = new LinkedHashSet<>();
+        for (String chaveNfe : chavesNfe) {
+            if (chaveNfe != null && !chaveNfe.isBlank()) {
+                normalizadas.add(chaveNfe.trim());
+            }
+        }
+        return List.copyOf(normalizadas);
     }
 
     private void logarProgressoSftp(

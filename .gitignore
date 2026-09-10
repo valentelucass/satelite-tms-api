@@ -45,6 +45,7 @@ dump.pm2
 
 # Java / Maven build output
 target/
+/target-build-*/
 *.class
 .mvn/wrapper/maven-wrapper.jar
 !**/src/main/**/target/
@@ -53,8 +54,15 @@ target/
 # Local development tools (for example, the portable Java 17 used for tests)
 .tools/
 
-# Local SOAP contract dumps/caches generated from remote WSDL URLs.
-src/main/resources/wsdl/
+# Official SOAP snapshots required by the packaged proxies are versioned.
+# Other local contract dumps remain ignored.
+src/main/resources/wsdl/**
+!src/main/resources/wsdl/vedacit/
+!src/main/resources/wsdl/vedacit/cte/
+!src/main/resources/wsdl/vedacit/nfe/
+!src/main/resources/wsdl/vedacit/ocorrencias/
+!src/main/resources/wsdl/vedacit/*/*.wsdl
+!src/main/resources/wsdl/vedacit/*/*.xsd
 
 # Generated reports and crash dumps
 hs_err_pid*
@@ -115,5 +123,8 @@ desktop.ini
 scripts/*
 !scripts/*.bat
 !scripts/*.ps1
+!scripts/validacao/
+scripts/validacao/*
+!scripts/validacao/SqlSftpReadOnlyProbe.java
 
 /docs/contexto

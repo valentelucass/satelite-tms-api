@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import org.junit.jupiter.api.Assumptions;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 
 import javax.imageio.ImageIO;
@@ -14,6 +15,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Locale;
 
+@Disabled("Teste manual visual: pode baixar imagem real e acessar C:\\temp; fora da suite unitaria.")
 class VedacitImageCompressionVisualTest {
 
     private static final String CHAVE_CTE_EXEMPLO = "35260560960473000758570030000447631295287632";

@@ -3,7 +3,6 @@ package com.example.satelite.services.origem.sftp.vedacit;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.time.Instant;
-import java.nio.charset.StandardCharsets;
 import java.util.EnumSet;
 import java.util.List;
 import java.util.Map;
@@ -14,9 +13,12 @@ import java.util.stream.Stream;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
+import com.example.satelite.utils.CteXmlValidator;
 
 import net.schmizz.sshj.SSHClient;
 import net.schmizz.sshj.sftp.OpenMode;
+import net.schmizz.sshj.sftp.FileMode;
+import net.schmizz.sshj.sftp.FileAttributes;
 import net.schmizz.sshj.sftp.RemoteFile;
 import net.schmizz.sshj.sftp.RemoteResourceInfo;
 import net.schmizz.sshj.sftp.SFTPClient;
@@ -102,7 +104,9 @@ public class VedacitSftpClient implements VedacitSftpDocumentSource {
             ssh.addHostKeyVerifier(FingerprintVerifier.getInstance(hostKeySha256));
             ssh.connect(host, port); ssh.authPassword(username, password);
             try (SFTPClient sftp = ssh.newSFTPClient()) {
+                validarDiretorioRemoto(sftp, directory);
                 return sftp.ls(directory).stream()
+                        .filter(this::arquivoElegivel)
                         .map(file -> Map.entry(file, VedacitSftpPathPolicy.extrairChavesComprovante(file.getName())))
                         .filter(entry -> entry.getValue().isPresent() && nfe.equals(entry.getValue().get().chaveNfe()))
                         .filter(entry -> entry.getKey().getAttributes().getSize() > 0 && entry.getKey().getAttributes().getSize() <= maxFileSizeBytes)
@@ -129,6 +133,7 @@ public class VedacitSftpClient implements VedacitSftpDocumentSource {
             ssh.addHostKeyVerifier(FingerprintVerifier.getInstance(hostKeySha256));
             ssh.connect(host, port); ssh.authPassword(username, password);
             try (SFTPClient sftp = ssh.newSFTPClient()) {
+                validarDiretorioRemoto(sftp, directory);
                 List<VedacitSftpDocument> validos = new ArrayList<>();
                 List<VedacitSftpInventory.DocumentoRejeitado> rejeitados = new ArrayList<>();
                 Instant limiteEstabilidade = Instant.now().minusMillis(Math.max(0L, stableForMs));
@@ -137,7 +142,9 @@ public class VedacitSftpClient implements VedacitSftpDocumentSource {
                     var chaves = VedacitSftpPathPolicy.extrairChavesComprovante(file.getName());
                     long tamanho = file.getAttributes().getSize();
                     long mtime = file.getAttributes().getMtime();
-                    if (chaves.isEmpty()) {
+                    if (!arquivoRegular(file.getAttributes()) || !nomeSeguro(file.getName())) {
+                        rejeitados.add(new VedacitSftpInventory.DocumentoRejeitado(caminho, null, null, "Arquivo inválido: tipo ou caminho não permitido"));
+                    } else if (chaves.isEmpty()) {
                         rejeitados.add(new VedacitSftpInventory.DocumentoRejeitado(caminho, null, null, "Arquivo inválido: nome sem NF-e/CT-e válidos"));
                     } else if (tamanho <= 0 || tamanho > maxFileSizeBytes) {
                         rejeitados.add(new VedacitSftpInventory.DocumentoRejeitado(caminho, chaves.get().chaveCte(), chaves.get().chaveNfe(), "Arquivo inválido: tamanho fora do limite configurado"));
@@ -165,6 +172,7 @@ public class VedacitSftpClient implements VedacitSftpDocumentSource {
             ssh.connect(host, port);
             ssh.authPassword(username, password);
             try (SFTPClient sftp = ssh.newSFTPClient()) {
+                validarDiretorioRemoto(sftp, VedacitSftpPathPolicy.caminhoComprovantes(basePath, clientPath));
                 sftp.stat(VedacitSftpPathPolicy.caminhoComprovantes(basePath, clientPath));
             }
         } catch (IOException e) {
@@ -175,12 +183,16 @@ public class VedacitSftpClient implements VedacitSftpDocumentSource {
     private Optional<VedacitSftpDocument> buscar(String directory, VedacitSftpDocument.Tipo tipo, String cte, String nfe, boolean nomeDeterministico) {
         if (!enabled) return Optional.empty();
         validarConfiguracao();
+        if (cte == null || nfe == null || !cte.matches("\\d{44}") || !nfe.matches("\\d{44}"))
+            throw new IllegalArgumentException("Chaves SFTP inválidas");
         try (SSHClient ssh = new SSHClient()) {
             ssh.addHostKeyVerifier(FingerprintVerifier.getInstance(hostKeySha256));
             ssh.connect(host, port); ssh.authPassword(username, password);
             try (SFTPClient sftp = ssh.newSFTPClient()) {
+                validarDiretorioRemoto(sftp, directory);
                 List<RemoteResourceInfo> files = sftp.ls(directory);
                 for (RemoteResourceInfo file : files) {
+                    if (!arquivoElegivel(file)) continue;
                     String name = file.getName();
                     if (name.equals(".") || name.equals("..") || (nomeDeterministico && !VedacitSftpPathPolicy.nomeComprovanteCorresponde(name, cte, nfe))) continue;
                     if (tipo == VedacitSftpDocument.Tipo.XML_CTE && !name.toLowerCase().endsWith(".xml")) continue;
@@ -189,11 +201,10 @@ public class VedacitSftpClient implements VedacitSftpDocumentSource {
                     if (size <= 0 || size > maxFileSizeBytes) continue;
                     byte[] bytes = read(sftp, directory + "/" + name, size);
                     if (bytes.length != size) continue;
-                    var after = sftp.stat(directory + "/" + name);
-                    if (after.getSize() != size || after.getMtime() != mtime) continue;
+                    var after = sftp.lstat(directory + "/" + name);
+                    if (!arquivoRegular(after) || after.getSize() != size || after.getMtime() != mtime) continue;
                     if (tipo == VedacitSftpDocument.Tipo.XML_CTE) {
-                        String xml = new String(bytes, StandardCharsets.UTF_8);
-                        if (!xml.contains(cte) || !xml.contains(nfe)) continue;
+                        if (!CteXmlValidator.corresponde(bytes, cte, nfe)) continue;
                     }
                     return Optional.of(new VedacitSftpDocument(tipo, tipo == VedacitSftpDocument.Tipo.XML_CTE ? "xml/" + name : "comprovantes/" + name, cte, nfe, size, Instant.ofEpochSecond(mtime), bytes));
                 }
@@ -202,9 +213,15 @@ public class VedacitSftpClient implements VedacitSftpDocumentSource {
         } catch (IOException e) { throw new IllegalStateException("Falha controlada na leitura SFTP Vedacit", e); }
     }
     private byte[] read(SFTPClient sftp, String path, long size) throws IOException {
-        try (RemoteFile file = sftp.open(path, EnumSet.of(OpenMode.READ)); ByteArrayOutputStream output = new ByteArrayOutputStream((int) size)) {
+        var before = sftp.lstat(path);
+        if (!arquivoRegular(before) || before.getSize() != size) throw new IOException("Arquivo SFTP alterado antes da leitura");
+        try (RemoteFile file = sftp.open(path, EnumSet.of(OpenMode.READ)); ByteArrayOutputStream output = new ByteArrayOutputStream((int) Math.min(size, 8192))) {
             byte[] buffer = new byte[8192]; long offset = 0; int read;
-            while ((read = file.read(offset, buffer, 0, buffer.length)) > 0) { output.write(buffer, 0, read); offset += read; }
+            while ((read = file.read(offset, buffer, 0, (int) Math.min(buffer.length, size - offset + 1))) > 0) {
+                if (offset + read > size || offset + read > maxFileSizeBytes)
+                    throw new IOException("Arquivo SFTP excedeu o tamanho declarado durante a leitura");
+                output.write(buffer, 0, read); offset += read;
+            }
             return output.toByteArray();
         }
     }
@@ -215,10 +232,35 @@ public class VedacitSftpClient implements VedacitSftpDocumentSource {
         try {
             long size = file.getAttributes().getSize(); long mtime = file.getAttributes().getMtime();
             byte[] bytes = read(sftp, directory + "/" + file.getName(), size);
-            var after = sftp.stat(directory + "/" + file.getName());
-            if (bytes.length != size || after.getSize() != size || after.getMtime() != mtime) return Optional.empty();
+            var after = sftp.lstat(directory + "/" + file.getName());
+            if (!arquivoRegular(after) || bytes.length != size || after.getSize() != size || after.getMtime() != mtime) return Optional.empty();
             return Optional.of(new VedacitSftpDocument(VedacitSftpDocument.Tipo.COMPROVANTE, "comprovantes/" + file.getName(), chaves.chaveCte(), chaves.chaveNfe(), size, Instant.ofEpochSecond(mtime), bytes));
         } catch (IOException e) { throw new IllegalStateException("Falha ao ler comprovante SFTP Vedacit", e); }
+    }
+    private boolean arquivoRegular(FileAttributes attributes) {
+        return attributes.getType() == FileMode.Type.REGULAR;
+    }
+
+    private boolean nomeSeguro(String nome) {
+        return nome != null && !nome.isBlank() && !nome.equals(".") && !nome.equals("..")
+                && !nome.contains("/") && !nome.contains("\\");
+    }
+
+    private boolean arquivoElegivel(RemoteResourceInfo file) {
+        var attributes = file.getAttributes();
+        return arquivoRegular(attributes) && nomeSeguro(file.getName())
+                && attributes.getSize() > 0 && attributes.getSize() <= maxFileSizeBytes
+                && !Instant.ofEpochSecond(attributes.getMtime()).isAfter(Instant.now().minusMillis(Math.max(0, stableForMs)));
+    }
+
+    private void validarDiretorioRemoto(SFTPClient sftp, String directory) throws IOException {
+        String atual = "";
+        for (String parte : directory.split("/")) {
+            if (parte.isEmpty()) continue;
+            atual += "/" + parte;
+            if (sftp.lstat(atual).getType() != FileMode.Type.DIRECTORY)
+                throw new IOException("Diretório SFTP contém link ou tipo não permitido");
+        }
     }
     private void validarConfiguracao() {
         if (host.isBlank() || username.isBlank() || password.isBlank() || hostKeySha256.isBlank() || port <= 0 || maxFileSizeBytes <= 0) throw new IllegalStateException("Configuração SFTP Vedacit incompleta");

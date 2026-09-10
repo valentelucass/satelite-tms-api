@@ -129,8 +129,10 @@ public interface LogIntegracaoRepository extends JpaRepository<LogIntegracaoMode
             SELECT l
             FROM LogIntegracaoModel l
             WHERE l.sistemaDestino = 'VEDACIT'
+              AND COALESCE(l.arquivado, false) = false
               AND l.statusDados = 'SUCESSO'
               AND l.statusCanhoto = 'PENDENTE_FOTO'
+              AND l.canhotoClassificacaoOperacional = 'PENDENTE_ENVIO'
               AND l.chaveNfe IS NOT NULL
               AND TRIM(l.chaveNfe) <> ''
               AND l.chaveCte IS NOT NULL
@@ -141,9 +143,9 @@ public interface LogIntegracaoRepository extends JpaRepository<LogIntegracaoMode
 
     @Query("""
             SELECT l FROM LogIntegracaoModel l
-            WHERE l.sistemaDestino = 'VEDACIT' AND l.statusDados = 'SUCESSO'
-              AND l.statusCanhoto <> 'SUCESSO'
-              AND COALESCE(l.canhotoClassificacaoOperacional, '') NOT IN ('BLOQUEADO_DESTINO', 'TIMEOUT_AMBIGUO')
+            WHERE l.sistemaDestino = 'VEDACIT' AND COALESCE(l.arquivado, false) = false AND l.statusDados = 'SUCESSO'
+              AND l.statusCanhoto = 'PENDENTE_FOTO'
+              AND l.canhotoClassificacaoOperacional = 'PENDENTE_ENVIO'
               AND l.chaveNfe IN :chavesNfe AND l.chaveCte IS NOT NULL AND TRIM(l.chaveCte) <> ''
             ORDER BY l.dataProcessamento ASC, l.id ASC
             """)
@@ -153,25 +155,9 @@ public interface LogIntegracaoRepository extends JpaRepository<LogIntegracaoMode
 
     @Query("""
             SELECT l FROM LogIntegracaoModel l
-            WHERE l.sistemaDestino = 'VEDACIT' AND l.statusDados = 'SUCESSO'
-              AND l.statusCanhoto <> 'SUCESSO'
-              AND COALESCE(l.canhotoClassificacaoOperacional, '') NOT IN ('BLOQUEADO_DESTINO', 'TIMEOUT_AMBIGUO')
-              AND l.chaveNfe IN :chavesNfe
-              AND l.chaveNfe NOT IN :chavesNfeJaTentadas
-              AND l.chaveCte IS NOT NULL AND TRIM(l.chaveCte) <> ''
-            ORDER BY l.dataProcessamento ASC, l.id ASC
-            """)
-    List<LogIntegracaoModel> findCanhotosPendentesFotoVedacitPorNfesExcluindoJaTentadas(
-            @Param("chavesNfe") List<String> chavesNfe,
-            @Param("chavesNfeJaTentadas") List<String> chavesNfeJaTentadas,
-            Pageable pageable
-    );
-
-    @Query("""
-            SELECT l FROM LogIntegracaoModel l
-            WHERE l.sistemaDestino = 'VEDACIT' AND l.sftpCliente = :cliente
-              AND l.statusDados = 'SUCESSO' AND l.statusCanhoto <> 'SUCESSO'
-              AND COALESCE(l.canhotoClassificacaoOperacional, '') NOT IN ('BLOQUEADO_DESTINO', 'TIMEOUT_AMBIGUO')
+            WHERE l.sistemaDestino = 'VEDACIT' AND l.sftpCliente = :cliente AND COALESCE(l.arquivado, false) = false
+              AND l.statusDados = 'SUCESSO' AND l.statusCanhoto = 'PENDENTE_FOTO'
+              AND l.canhotoClassificacaoOperacional = 'PENDENTE_ENVIO'
               AND l.chaveNfe IN :chavesNfe AND l.chaveCte IS NOT NULL AND TRIM(l.chaveCte) <> ''
             ORDER BY l.dataProcessamento ASC, l.id ASC
             """)
@@ -181,7 +167,7 @@ public interface LogIntegracaoRepository extends JpaRepository<LogIntegracaoMode
 
     @Query("""
             SELECT l FROM LogIntegracaoModel l
-            WHERE l.sistemaDestino = 'VEDACIT' AND l.sftpCliente = :cliente
+            WHERE l.sistemaDestino = 'VEDACIT' AND l.sftpCliente = :cliente AND COALESCE(l.arquivado, false) = false
               AND l.statusDados = 'SUCESSO' AND l.statusCanhoto = 'ERRO_DESTINO'
               AND l.canhotoClassificacaoOperacional = 'PENDENTE_TECNICO'
               AND l.chaveNfe IN :chavesNfe AND l.chaveCte IS NOT NULL AND TRIM(l.chaveCte) <> ''
@@ -193,23 +179,36 @@ public interface LogIntegracaoRepository extends JpaRepository<LogIntegracaoMode
 
     @Query("""
             SELECT COUNT(DISTINCT l.chaveNfe) FROM LogIntegracaoModel l
-            WHERE l.sistemaDestino = 'VEDACIT' AND l.statusDados = 'SUCESSO'
+            WHERE l.sistemaDestino = 'VEDACIT' AND COALESCE(l.arquivado, false) = false AND l.statusDados = 'SUCESSO'
               AND l.statusCanhoto = 'PENDENTE_FOTO'
+              AND l.canhotoClassificacaoOperacional = 'PENDENTE_ENVIO'
               AND l.chaveNfe IN :chavesNfe AND l.chaveCte IS NOT NULL AND TRIM(l.chaveCte) <> ''
             """)
     long countNfesCandidatasCanhotoVedacitPorNfes(@Param("chavesNfe") List<String> chavesNfe);
 
     @Query("""
             SELECT COUNT(l) FROM LogIntegracaoModel l
-            WHERE l.sistemaDestino = 'VEDACIT' AND l.statusDados = 'SUCESSO'
+            WHERE l.sistemaDestino = 'VEDACIT' AND COALESCE(l.arquivado, false) = false AND l.statusDados = 'SUCESSO'
               AND l.statusCanhoto = 'PENDENTE_FOTO'
+              AND l.canhotoClassificacaoOperacional = 'PENDENTE_ENVIO'
               AND l.chaveNfe IN :chavesNfe AND l.chaveCte IS NOT NULL AND TRIM(l.chaveCte) <> ''
             """)
     long countLogsCandidatosCanhotoVedacitPorNfes(@Param("chavesNfe") List<String> chavesNfe);
 
     @Query("""
+            SELECT COUNT(DISTINCT l.chaveNfe) FROM LogIntegracaoModel l
+            WHERE l.sistemaDestino = 'VEDACIT' AND l.sftpCliente = :cliente AND COALESCE(l.arquivado, false) = false
+              AND l.statusDados = 'SUCESSO' AND l.statusCanhoto = 'PENDENTE_FOTO'
+              AND l.canhotoClassificacaoOperacional = 'PENDENTE_ENVIO'
+              AND l.chaveNfe IN :chavesNfe AND l.chaveCte IS NOT NULL AND TRIM(l.chaveCte) <> ''
+            """)
+    long countNfesCandidatasSftpPorClienteENfes(
+            @Param("cliente") String cliente, @Param("chavesNfe") List<String> chavesNfe
+    );
+
+    @Query("""
             SELECT l FROM LogIntegracaoModel l
-            WHERE l.sistemaDestino = 'VEDACIT' AND l.statusDados = 'SUCESSO'
+            WHERE l.sistemaDestino = 'VEDACIT' AND COALESCE(l.arquivado, false) = false AND l.statusDados = 'SUCESSO'
               AND l.statusCanhoto = 'ERRO_DESTINO'
               AND l.canhotoClassificacaoOperacional = 'PENDENTE_TECNICO'
               AND l.chaveNfe IN :chavesNfe AND l.chaveCte IS NOT NULL AND TRIM(l.chaveCte) <> ''

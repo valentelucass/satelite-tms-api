@@ -453,7 +453,8 @@ public class EtlFluxoDestinoService {
         List<EslOcorrenciaDTO> ocorrenciasOrdenadas = lote.data().stream()
                 .filter(Objects::nonNull)
                 .sorted(Comparator.comparing(
-                        this::obterDataReferenciaPeriodo,
+                        (EslOcorrenciaDTO ocorrencia) -> DESTINO_SELIA.equals(destino) && ocorrencia.occurrenceAt() != null
+                                ? ocorrencia.occurrenceAt() : obterDataReferenciaPeriodo(ocorrencia),
                         Comparator.nullsLast(Comparator.naturalOrder())
                 ).thenComparing(ocorrencia -> etlRegistroService.obterOccurrenceId(ocorrencia),
                         Comparator.nullsLast(Comparator.naturalOrder())))
@@ -468,7 +469,10 @@ public class EtlFluxoDestinoService {
                         obterDataReferenciaPeriodo(ocorrencia),
                         request.dataFinal()
                 );
-                return resultado.comFimJanelaRetroativa();
+                // SELIA é ordenada pelo horário do evento; created_at pode estar fora de ordem.
+                if (!DESTINO_SELIA.equals(destino)) return resultado.comFimJanelaRetroativa();
+                resultado = resultado.comFimJanelaRetroativa();
+                continue;
             }
 
             ResultadoRegistro registro = DESTINO_VEDACIT.equals(destino)
@@ -727,6 +731,10 @@ public class EtlFluxoDestinoService {
             AssinaturaPagina assinaturaPaginaAnterior,
             AssinaturaPagina assinaturaPaginaAtual
     ) {
+        if (cursorRequisitado != null && ((cursorRetornadoPelaEsl != null && cursorRetornadoPelaEsl < cursorRequisitado)
+                || (cursorParaPersistir != null && cursorParaPersistir < cursorRequisitado))) {
+            return ResultadoLoopPaginacao.detectado("Cursor ESL regressivo na página " + pagina + "; cursor anterior preservado.");
+        }
         if (!cursorNaoAvancou(cursorRequisitado, cursorRetornadoPelaEsl, cursorParaPersistir)) {
             return ResultadoLoopPaginacao.naoDetectado();
         }
