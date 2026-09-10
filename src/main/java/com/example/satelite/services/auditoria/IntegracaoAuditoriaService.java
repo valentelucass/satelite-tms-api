@@ -89,16 +89,18 @@ public class IntegracaoAuditoriaService {
     }
 
     public WorkSftpClienteExecucoesPaginadasDTO consultarHistoricoWorkSftpClientes(
-            int pagina, int tamanho, String cliente, String status, String dataInicial, String dataFinal
+            int pagina, int tamanho, String cliente, String status, String dataInicial, String dataFinal, String origem
     ) {
         int paginaNormalizada = normalizarPagina(pagina);
         int tamanhoNormalizado = normalizarTamanho(tamanho);
         PeriodoFiltro periodo = lerPeriodoOpcional(dataInicial, dataFinal);
         String clienteNormalizado = normalizarTexto(cliente);
         String statusNormalizado = normalizarTexto(status);
+        String origemNormalizada = normalizarTexto(origem);
+        if (origemNormalizada != null) origemNormalizada = origemNormalizada.toUpperCase(java.util.Locale.ROOT);
         WorkSftpClientesAuditoriaRepository.PaginaCiclos resultado = workSftpClientesAuditoriaRepository.buscarHistorico(
                 clienteNormalizado, statusNormalizado, periodo.dataInicialSql(), periodo.dataFinalLimitSql(),
-                paginaNormalizada, tamanhoNormalizado
+                paginaNormalizada, tamanhoNormalizado, origemNormalizada
         );
         int totalPaginas = calcularTotalPaginas(resultado.totalElementos(), tamanhoNormalizado);
         return new WorkSftpClienteExecucoesPaginadasDTO(resultado.itens(), new PaginacaoDTO(

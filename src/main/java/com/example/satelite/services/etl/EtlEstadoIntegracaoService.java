@@ -87,6 +87,11 @@ public class EtlEstadoIntegracaoService {
         );
     }
 
+    public boolean xmlVedacitConfirmado(String chaveCte) {
+        return chaveCte != null && logIntegracaoRepository
+                .existsBySistemaDestinoAndChaveCteAndStatusDados("VEDACIT", chaveCte, "SUCESSO");
+    }
+
     public boolean finalizadoSemReenvio(LogIntegracaoModel logIntegracao) {
         return logIntegracao != null && STATUS_FINALIZADOS_SEM_REENVIO.contains(logIntegracao.getStatus());
     }

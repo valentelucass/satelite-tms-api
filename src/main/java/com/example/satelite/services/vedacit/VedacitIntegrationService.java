@@ -124,6 +124,10 @@ public class VedacitIntegrationService {
     private final EslRequestPolicyService eslRequestPolicyService;
     private final VedacitSftpDocumentSource vedacitSftpDocumentSource;
 
+    @Value("${VEDACIT_XML_SEND_INTERVAL_MS:1000}")
+    private long intervaloXmlMs = 1000;
+    private long ultimaTentativaXmlNanos;
+
     public VedacitIntegrationService(
             ImageDownloader imageDownloader,
             RodogarciaClient rodogarciaClient,
@@ -550,7 +554,9 @@ public class VedacitIntegrationService {
             throw e;
         }
 
-        if (retorno != null && Boolean.FALSE.equals(retorno.isStatus())) {
+        if (retorno == null || retorno.isStatus() == null)
+            throw new IllegalStateException("Resposta SOAP sem confirmação do canhoto; conciliação necessária antes de repetir");
+        if (!Boolean.TRUE.equals(retorno.isStatus())) {
             String mensagem = obterMensagem(retorno);
             if (textoIndicaDuplicidadeVedacit(mensagem)) {
                 logarConciliacaoDuplicidadeVedacit("Canhoto", chaveNfe, cteKey);
@@ -702,6 +708,7 @@ public class VedacitIntegrationService {
 
     private void enviarXmlCte(byte[] xmlCte, String chaveNfe, String cteKey) throws Exception {
         ICTe porta = criarPortaCte();
+        aguardarIntervaloXml();
 
         log.info("📤 [VEDACIT] NF {}: Enviando XML do CT-e para MultiTMS... CTe={}", chaveNfe, cteKey);
         RetornoOfstring retorno;
@@ -719,7 +726,9 @@ public class VedacitIntegrationService {
             throw e;
         }
 
-        if (retorno != null && Boolean.FALSE.equals(retorno.isStatus())) {
+        if (retorno == null || retorno.isStatus() == null)
+            throw new IllegalStateException("Resposta SOAP sem confirmação do XML CT-e; conciliação necessária antes de repetir");
+        if (!Boolean.TRUE.equals(retorno.isStatus())) {
             String mensagem = obterMensagem(retorno);
             if (textoIndicaDuplicidadeVedacit(mensagem)) {
                 logarConciliacaoDuplicidadeVedacit("XML do CT-e", chaveNfe, cteKey);
@@ -730,6 +739,13 @@ public class VedacitIntegrationService {
         }
 
         log.info("✅ [VEDACIT] NF {}: XML do CT-e enviado com sucesso! CTe={}", chaveNfe, cteKey);
+    }
+
+    private synchronized void aguardarIntervaloXml() throws InterruptedException {
+        long intervalo = java.util.concurrent.TimeUnit.MILLISECONDS.toNanos(Math.max(0, Math.min(60000, intervaloXmlMs)));
+        long restante = intervalo - (System.nanoTime() - ultimaTentativaXmlNanos);
+        if (ultimaTentativaXmlNanos != 0 && restante > 0) java.util.concurrent.TimeUnit.NANOSECONDS.sleep(restante);
+        ultimaTentativaXmlNanos = System.nanoTime();
     }
 
     protected IOcorrencias criarPortaOcorrencias() throws Exception {

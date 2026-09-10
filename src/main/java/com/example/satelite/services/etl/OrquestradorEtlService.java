@@ -77,6 +77,9 @@ public class OrquestradorEtlService {
     @Value("${VEDACIT_XML_BACKFILL_ENABLED:false}")
     private boolean vedacitXmlBackfillEnabled;
 
+    @Value("${VEDACIT_XML_ONLY:false}")
+    private boolean vedacitXmlOnly;
+
     @Value("${VEDACIT_XML_BACKFILL_START_DATE:2026-05-01}")
     private String vedacitXmlBackfillStartDate;
 
@@ -129,6 +132,20 @@ public class OrquestradorEtlService {
         return executarFluxosComResultado(ExecucaoEtlRequest.incremental(maxPaginasPorCiclo));
     }
 
+    /** Etapa XML do worker: cursor próprio, evento 110 e nenhuma execução de outros destinos/canhotos. */
+    ResultadoDestino executarXmlVedacit() {
+        return executarXmlVedacit(obterExecucaoXmlVedacit(ExecucaoEtlRequest.incremental(maxPaginasPorCiclo)));
+    }
+
+    private ResultadoDestino executarXmlVedacit(ExecucaoEtlRequest request) {
+        if (!vedacitEnabled) return ResultadoDestino.desabilitado(DESTINO_VEDACIT);
+        if (tokenVedacitEsl == null || tokenVedacitEsl.isBlank())
+            throw new IllegalStateException("Token de ocorrências Vedacit não configurado");
+        return etlFluxoDestinoService.executarFluxoDestino(DESTINO_VEDACIT, "VEDACIT_XML", tokenVedacitEsl,
+                request, EtapaVedacit.EMISSAO_XML.codigoOcorrencia(), false,
+                (ocorrencia, comprovante, registro) -> ResultadoIntegracao.ignorado());
+    }
+
     public ResultadoCiclo executarFluxosComResultado(ExecucaoEtlRequest request) {
         ExecucaoEtlRequest execucao = request != null
                 ? request
@@ -164,16 +181,8 @@ public class OrquestradorEtlService {
                 resultadoVedacit = ResultadoDestino.naoSelecionado(DESTINO_VEDACIT);
             } else if (vedacitEnabled) {
                 ExecucaoEtlRequest execucaoXmlVedacit = obterExecucaoXmlVedacit(execucao);
-                ResultadoDestino resultadoVedacitXml = etlFluxoDestinoService.executarFluxoDestino(
-                        DESTINO_VEDACIT,
-                        "VEDACIT_XML",
-                        tokenVedacitEsl,
-                        execucaoXmlVedacit,
-                        EtapaVedacit.EMISSAO_XML.codigoOcorrencia(),
-                        false,
-                        (ocorrencia, comprovante, logIntegracao) -> ResultadoIntegracao.ignorado()
-                );
-                ResultadoDestino resultadoVedacitCanhoto = etlFluxoDestinoService.executarFluxoDestino(
+                ResultadoDestino resultadoVedacitXml = executarXmlVedacit(execucaoXmlVedacit);
+                ResultadoDestino resultadoVedacitCanhoto = vedacitXmlOnly ? ResultadoDestino.naoSelecionado(DESTINO_VEDACIT) : etlFluxoDestinoService.executarFluxoDestino(
                         DESTINO_VEDACIT,
                         tokenVedacitEsl,
                         execucao,

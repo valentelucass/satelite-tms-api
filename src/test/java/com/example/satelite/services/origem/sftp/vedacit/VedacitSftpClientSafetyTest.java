@@ -177,6 +177,24 @@ class VedacitSftpClientSafetyTest {
         }
     }
 
+    @Test
+    void xmlIndexadoEvitaRelerOutroCteEInvalidaAoMudarMetadados() throws Exception {
+        byte[] xml = ("<CTe xmlns='http://www.portalfiscal.inf.br/cte'><infCte Id='CTe" + CTE
+                + "'><infNFe><chave>" + NFE + "</chave></infNFe></infCte></CTe>").getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        prepare("a.xml", ROOT + "/xml", xml);
+        String outro = "9".repeat(44);
+        try (var ignored = connection()) {
+            assertTrue(client.buscarXmlCte(CTE, NFE).isPresent());
+            assertTrue(client.buscarXmlCte(outro, NFE).isEmpty());
+            assertTrue(client.buscarXmlCte(outro, NFE).isEmpty());
+            verify(sftp, times(1)).open(anyString(), any());
+            when(sftp.ls(ROOT + "/xml")).thenReturn(List.of(file("a.xml", FileMode.Type.REGULAR, xml.length, OLD - 1)));
+            when(sftp.lstat(ROOT + "/xml/a.xml")).thenReturn(attrs(FileMode.Type.REGULAR, xml.length, OLD - 1));
+            assertTrue(client.buscarXmlCte(outro, NFE).isEmpty());
+            verify(sftp, times(2)).open(anyString(), any());
+        }
+    }
+
     private MockedConstruction<SSHClient> connection() {
         return mockConstruction(SSHClient.class, (ssh, context) -> when(ssh.newSFTPClient()).thenReturn(sftp));
     }

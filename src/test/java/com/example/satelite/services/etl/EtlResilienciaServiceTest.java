@@ -19,6 +19,18 @@ import com.example.satelite.services.ResultadoIntegracao;
 
 class EtlResilienciaServiceTest {
 
+    @Test void timeoutDeXmlNaoReenviaSemConciliacao() {
+        var resiliencia = new EtlResilienciaService();
+        var registro = LogIntegracaoModel.builder().statusDados("ERRO_DESTINO")
+                .mensagemErroDados("SOAP XML read timed out").tentativasDados(1).build();
+        AtomicInteger chamadas = new AtomicInteger();
+        var resultado = resiliencia.processarEmissaoXmlVedacitComRetentativas("teste", registro, () -> {
+            chamadas.incrementAndGet(); return ResultadoRegistro.ERRO_INFRAESTRUTURA;
+        });
+        assertEquals(1, chamadas.get());
+        assertEquals(ResultadoRegistro.ERRO_INFRAESTRUTURA, resultado);
+    }
+
     private EtlResilienciaService service;
 
     @BeforeEach

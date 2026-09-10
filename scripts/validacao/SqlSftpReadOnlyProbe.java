@@ -90,6 +90,21 @@ public final class SqlSftpReadOnlyProbe {
             }
             require(keys.size()>2100,"INSUFFICIENT_REAL_NFE_FOR_BOUNDARY");
             result.put("audited_distinct_nfe",keys.size());
+            String confirmationQuery=query("findConfirmacaoVedacitAtivaPorPar",String.class,String.class,String.class,Pageable.class);
+            String confirmationSql="SELECT TOP (1) id FROM dbo.tb_log_integracao WHERE sistema_destino='VEDACIT' AND (arquivado=0 OR arquivado IS NULL) AND (sftp_cliente IS NULL OR sftp_cliente=?) AND chave_nfe=? AND chave_cte=? AND status_dados='SUCESSO' AND (data_processamento_dados IS NOT NULL OR status_canhoto='SUCESSO') ORDER BY CASE WHEN status_canhoto='SUCESSO' THEN 0 WHEN canhoto_classificacao_operacional IN ('TIMEOUT_AMBIGUO','BLOQUEADO_DESTINO') THEN 1 ELSE 2 END, data_processamento DESC,id DESC";
+            try(PreparedStatement sample=c.prepareStatement("SELECT TOP (1) chave_nfe,chave_cte FROM dbo.tb_log_integracao WHERE sistema_destino='VEDACIT' AND (arquivado=0 OR arquivado IS NULL) AND (sftp_cliente IS NULL OR sftp_cliente='VEDACIT') AND status_dados='SUCESSO' AND (data_processamento_dados IS NOT NULL OR status_canhoto='SUCESSO') AND chave_nfe IS NOT NULL AND chave_cte IS NOT NULL ORDER BY id DESC")) {
+                sample.setQueryTimeout(10);
+                String nfe,cte;
+                try(ResultSet rs=sample.executeQuery()){require(rs.next(),"NO_CONFIRMATION_SAMPLE");nfe=rs.getString(1);cte=rs.getString(2);}
+                List<LogIntegracaoModel> confirmation=session.createQuery(confirmationQuery,LogIntegracaoModel.class)
+                        .setParameter("cliente","VEDACIT").setParameter("chaveNfe",nfe).setParameter("chaveCte",cte)
+                        .setMaxResults(1).setReadOnly(true).setTimeout(10).getResultList();
+                try(PreparedStatement baseline=c.prepareStatement(confirmationSql)) {
+                    baseline.setQueryTimeout(10);baseline.setString(1,"VEDACIT");baseline.setString(2,nfe);baseline.setString(3,cte);
+                    try(ResultSet rs=baseline.executeQuery()){require(rs.next()&&confirmation.size()==1&&confirmation.get(0).getId()==rs.getLong(1),"CONFIRMATION_QUERY_MISMATCH");}
+                }
+                result.put("active_confirmation_matches_independent_sql",true);
+            }
             EtlRepescagemService service=new EtlRepescagemService(null,null,null,null,null);
             Method select=EtlRepescagemService.class.getDeclaredMethod("buscarRegistrosSftpEmLotes",List.class,int.class,Function.class);select.setAccessible(true);
             Method count=EtlRepescagemService.class.getDeclaredMethod("contarNfesSftpEmLotes",List.class,ToLongFunction.class);count.setAccessible(true);

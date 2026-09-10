@@ -211,6 +211,9 @@ class VedacitIntegrationServiceTest {
         RodogarciaClient rodogarciaClient = mock(RodogarciaClient.class);
         EslRequestPolicyService politicaEsl = criarPoliticaEslExecutora();
         ICTe portaCte = mock(ICTe.class);
+        var aceite = new com.example.satelite.vedacit.cte.sgt.RetornoOfstring();
+        aceite.setStatus(true);
+        when(portaCte.enviarArquivoXMLCTe(any(byte[].class))).thenReturn(aceite);
 
         when(rodogarciaClient.buscarXmlCte(
                 "Bearer token-cte",
@@ -244,6 +247,9 @@ class VedacitIntegrationServiceTest {
         RodogarciaClient rodogarciaClient = mock(RodogarciaClient.class);
         EslRequestPolicyService politicaEsl = criarPoliticaEslExecutora();
         ICTe portaCte = mock(ICTe.class);
+        var aceite = new com.example.satelite.vedacit.cte.sgt.RetornoOfstring();
+        aceite.setStatus(true);
+        when(portaCte.enviarArquivoXMLCTe(any(byte[].class))).thenReturn(aceite);
         String chaveNfe = "35260760642774001209550010002329831546555019";
         String chaveCte = "35260760960473000758570030000521491971250456";
         when(rodogarciaClient.buscarXmlCte("Bearer token-cte", chaveCte))
@@ -323,6 +329,9 @@ class VedacitIntegrationServiceTest {
         EslRequestPolicyService politicaEsl = criarPoliticaEslExecutora();
         VedacitSftpDocumentSource sftp = mock(VedacitSftpDocumentSource.class);
         ICTe portaCte = mock(ICTe.class);
+        var aceite = new com.example.satelite.vedacit.cte.sgt.RetornoOfstring();
+        aceite.setStatus(true);
+        when(portaCte.enviarArquivoXMLCTe(any(byte[].class))).thenReturn(aceite);
         EslOcorrenciaDTO ocorrencia = criarOcorrencia();
         byte[] xml = "<cte>35260612345678000123570010000012341000012345"
                 .concat("35260612345678000123550010000012341000012345</cte>").getBytes();
@@ -360,6 +369,9 @@ class VedacitIntegrationServiceTest {
         EslRequestPolicyService politicaEsl = criarPoliticaEslExecutora();
         VedacitSftpDocumentSource sftp = mock(VedacitSftpDocumentSource.class);
         INFe portaNFe = mock(INFe.class);
+        var aceite = new com.example.satelite.vedacit.nfe.RetornoOfboolean();
+        aceite.setStatus(true);
+        when(portaNFe.enviarDigitalizacaoCanhoto(any())).thenReturn(aceite);
         byte[] imagem = criarImagemJpegTeste();
         when(sftp.buscarComprovante("35260612345678000123570010000012341000012345",
                 "35260612345678000123550010000012341000012345"))
@@ -396,6 +408,9 @@ class VedacitIntegrationServiceTest {
         VedacitSftpDocumentSource sftp = mock(VedacitSftpDocumentSource.class);
         INFe portaNFe = mock(INFe.class);
         when(sftp.buscarComprovante(any(), any())).thenThrow(new IllegalStateException("SFTP indisponível"));
+        var aceite = new com.example.satelite.vedacit.nfe.RetornoOfboolean();
+        aceite.setStatus(true);
+        when(portaNFe.enviarDigitalizacaoCanhoto(any())).thenReturn(aceite);
         when(rodogarciaClient.buscarComprovante("Bearer token-comprovante",
                 "35260612345678000123570010000012341000012345"))
                 .thenReturn(criarComprovante());
@@ -476,6 +491,23 @@ class VedacitIntegrationServiceTest {
         assertEquals(ResultadoIntegracao.STATUS_ENVIADO, resultado.status());
         assertEquals(ResultadoIntegracao.STATUS_SUCESSO, resultado.statusDados());
         assertEquals(ResultadoIntegracao.STATUS_SUCESSO, resultado.statusCanhoto());
+    }
+
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(strings = {"AUSENTE", "SEM_STATUS", "RECUSADO"})
+    void xmlExigeConfirmacaoPositivaDoSoap(String tipo) throws Exception {
+        var porta = mock(ICTe.class);
+        var retorno = new com.example.satelite.vedacit.cte.sgt.RetornoOfstring();
+        if (tipo.equals("RECUSADO")) retorno.setStatus(false);
+        when(porta.enviarArquivoXMLCTe(any(byte[].class))).thenReturn(tipo.equals("AUSENTE") ? null : retorno);
+        var origem = mock(RodogarciaClient.class);
+        when(origem.buscarXmlCte(any(), any())).thenReturn(new CteResponseDTO(List.of(new CteDataDTO(new CteItemDTO(1L, "autorizado", "<cte/>")))));
+        var service = new VedacitIntegrationService(mock(ImageDownloader.class), origem, criarPoliticaEslExecutora()) {
+            @Override protected ICTe criarPortaCte() { return porta; }
+        };
+        ReflectionTestUtils.setField(service, "envioXmlCteHabilitado", true);
+        ReflectionTestUtils.setField(service, "tokenCteXmlEsl", "teste");
+        assertEquals("ERRO_DESTINO", service.processarXmlCteEmitido(criarOcorrencia(), null).statusDados());
     }
 
     private EslOcorrenciaDTO criarOcorrencia() {

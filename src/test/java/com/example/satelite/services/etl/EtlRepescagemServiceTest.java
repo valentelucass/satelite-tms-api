@@ -46,7 +46,7 @@ class EtlRepescagemServiceTest {
         String cte = "35260860960473000758570030000541141709521720";
         VedacitSftpDocument documento = new VedacitSftpDocument(VedacitSftpDocument.Tipo.COMPROVANTE,
                 "comprovantes/a.jpg", cte, nfe, 10L, java.time.Instant.now(), null);
-        when(repository.findTopBySistemaDestinoAndSftpClienteAndChaveCteOrderByDataProcessamentoDescIdDesc("VEDACIT", "CLIENTE_B", cte))
+        when(repository.findTopBySistemaDestinoAndSftpClienteAndChaveNfeAndChaveCteOrderByDataProcessamentoDescIdDesc("VEDACIT", "CLIENTE_B", nfe, cte))
                 .thenReturn(java.util.Optional.empty());
         when(repository.findCandidatosSftpPorClienteENfes(eq("CLIENTE_B"), eq(List.of(nfe)), any())).thenReturn(List.of());
         when(repository.findTecnicosSftpPorClienteENfes(eq("CLIENTE_B"), eq(List.of(nfe)), any())).thenReturn(List.of());
@@ -74,7 +74,7 @@ class EtlRepescagemServiceTest {
                 "comprovantes/a.jpg", cte, nfe, 10L, java.time.Instant.now(), null);
         LogIntegracaoModel legado = LogIntegracaoModel.builder().sistemaDestino("VEDACIT")
                 .chaveNfe(nfe).chaveCte(cte).statusDados("SUCESSO").statusCanhoto("SUCESSO").arquivado(true).build();
-        when(repository.findTopBySistemaDestinoAndSftpClienteAndChaveCteOrderByDataProcessamentoDescIdDesc("VEDACIT", "CLIENTE_B", cte))
+        when(repository.findTopBySistemaDestinoAndSftpClienteAndChaveNfeAndChaveCteOrderByDataProcessamentoDescIdDesc("VEDACIT", "CLIENTE_B", nfe, cte))
                 .thenReturn(Optional.empty());
         when(repository.findLegadoVedacitArquivadoComDadosSucesso(nfe, cte)).thenReturn(Optional.of(legado));
         when(repository.findCandidatosSftpPorClienteENfes(eq("CLIENTE_B"), eq(List.of(nfe)), any())).thenReturn(List.of());
@@ -103,7 +103,7 @@ class EtlRepescagemServiceTest {
                 "comprovantes/a.jpg", cte, nfe, 10L, java.time.Instant.now(), null);
         LogIntegracaoModel legado = LogIntegracaoModel.builder().sistemaDestino("VEDACIT")
                 .chaveNfe(nfe).chaveCte(cte).statusDados("SUCESSO").statusCanhoto("ERRO_DESTINO").arquivado(true).build();
-        when(repository.findTopBySistemaDestinoAndSftpClienteAndChaveCteOrderByDataProcessamentoDescIdDesc("VEDACIT", "CLIENTE_B", cte))
+        when(repository.findTopBySistemaDestinoAndSftpClienteAndChaveNfeAndChaveCteOrderByDataProcessamentoDescIdDesc("VEDACIT", "CLIENTE_B", nfe, cte))
                 .thenReturn(Optional.empty());
         when(repository.findLegadoVedacitArquivadoComDadosSucesso(nfe, cte)).thenReturn(Optional.of(legado));
         when(repository.findCandidatosSftpPorClienteENfes(eq("CLIENTE_B"), eq(List.of(nfe)), any())).thenReturn(List.of());
@@ -135,7 +135,7 @@ class EtlRepescagemServiceTest {
         LogIntegracaoModel pendencia = LogIntegracaoModel.builder().sistemaDestino("VEDACIT").sftpCliente("CLIENTE_B")
                 .chaveNfe(nfe).chaveCte(cte).statusDados("SUCESSO").statusCanhoto("PENDENTE_FOTO").build();
 
-        when(repository.findTopBySistemaDestinoAndSftpClienteAndChaveCteOrderByDataProcessamentoDescIdDesc("VEDACIT", "CLIENTE_B", cte))
+        when(repository.findTopBySistemaDestinoAndSftpClienteAndChaveNfeAndChaveCteOrderByDataProcessamentoDescIdDesc("VEDACIT", "CLIENTE_B", nfe, cte))
                 .thenReturn(Optional.of(pendencia));
         when(repository.findCandidatosSftpPorClienteENfes(eq("CLIENTE_B"), eq(List.of(nfe)), any())).thenReturn(List.of(pendencia));
         when(lockService.executarComLock(eq("CLIENTE_B"), eq(nfe), eq(cte), any())).thenReturn(Optional.empty());

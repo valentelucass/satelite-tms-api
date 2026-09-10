@@ -5,6 +5,8 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.HashSet;
+import java.util.Set;
 import java.util.regex.Pattern;
 
 import org.slf4j.Logger;
@@ -60,7 +62,9 @@ public class RecuperacaoDirigidaVedacitRunner implements CommandLineRunner, Exit
     @Override
     public void run(String... args) {
         try {
-            List<String> chaves = carregarChaves(obterArquivoObrigatorio(), obterLimiteSeguro());
+            List<String> chaves = carregarAlvos(obterArquivoObrigatorio());
+            if (!environment.getProperty("vedacit.recovery.drain-enabled", Boolean.class, true))
+                chaves = chaves.stream().limit(obterLimiteSeguro()).toList();
             String token = obterTokenObrigatorio();
             ResultadoRecuperacao resultado = recuperar(chaves, token);
             exitCode = resultado.erros() == 0 ? 0 : 1;
@@ -85,25 +89,43 @@ public class RecuperacaoDirigidaVedacitRunner implements CommandLineRunner, Exit
         int ignoradas = 0;
         int erros = 0;
 
-        for (String chaveNfe : chaves) {
+        boolean previa = environment.getProperty("vedacit.recovery.preview", Boolean.class, true);
+        long intervalo = environment.getProperty("vedacit.recovery.interval-ms", Long.class, 1000L);
+        if (intervalo < 0 || intervalo > 60000) throw new IllegalArgumentException("Intervalo de recuperação inválido");
+        Set<String> ctesTentados = new HashSet<>();
+        int falhasConsecutivas = 0;
+        for (String alvo : chaves) {
+            if (Thread.currentThread().isInterrupted() || falhasConsecutivas >= 3) break;
+            String[] par = alvo.split(";", -1);
+            String chaveNfe = par[0];
+            String chaveCte = par.length == 2 ? par[1] : null;
             try {
+                Long cursor = null;
+                Set<Long> cursores = new HashSet<>();
+                boolean encontrou = false;
+                while (!Thread.currentThread().isInterrupted()) {
+                Long inicioPagina = cursor;
                 EslLoteResponseDTO lote = eslRequestPolicyService.executarComTelemetria(
                         EslRequestContext.criar("VEDACIT", "VEDACIT_XML_RECOVERY"),
                         () -> rodogarciaClient.buscarOcorrencias(
-                                "Bearer " + token, null, chaveNfe, null, EtapaVedacit.EMISSAO_XML.codigoOcorrencia()
+                                "Bearer " + token, inicioPagina, chaveNfe, null, EtapaVedacit.EMISSAO_XML.codigoOcorrencia()
                         )
                 );
-                List<EslOcorrenciaDTO> ocorrencias = lote != null && lote.data() != null ? lote.data() : List.of();
+                if (lote == null) break;
+                List<EslOcorrenciaDTO> ocorrencias = lote.data() != null ? lote.data() : List.of();
                 List<EslOcorrenciaDTO> emissoes = ocorrencias.stream()
                         .filter(etlRegistroService::ehCteEmitido)
+                        .filter(o -> o.invoice() != null && chaveNfe.equals(o.invoice().key()))
+                        .filter(o -> o.freight() != null && o.freight().cteKey() != null
+                                && o.freight().cteKey().matches("\\d{44}"))
+                        .filter(o -> chaveCte == null || chaveCte.equals(o.freight().cteKey()))
                         .toList();
-                if (emissoes.isEmpty()) {
-                    log.warn("⚠️ [VEDACIT] NF {}: emissão 110 não encontrada na ESL; nenhum envio realizado.", chaveNfe);
-                    continue;
-                }
-
-                encontradas += emissoes.size();
                 for (EslOcorrenciaDTO ocorrencia : emissoes) {
+                    encontrou = true;
+                    if (!ctesTentados.add(ocorrencia.freight().cteKey())) continue;
+                    encontradas++;
+                    if (previa) { ignoradas++; continue; }
+                    if (ctesTentados.size() > 1 && intervalo > 0) Thread.sleep(intervalo);
                     ResultadoRegistro resultado = etlRegistroService.processarEmissaoXmlVedacit(
                             "Bearer " + token, null, ocorrencia
                     );
@@ -113,14 +135,39 @@ public class RecuperacaoDirigidaVedacitRunner implements CommandLineRunner, Exit
                         case IGNORADO -> ignoradas++;
                         default -> erros++;
                     }
+                    falhasConsecutivas = resultado.erro() ? falhasConsecutivas + 1 : 0;
+                    if (falhasConsecutivas >= 3) break;
+                }
+                if (falhasConsecutivas >= 3 || ocorrencias.isEmpty() || lote.paging() == null || lote.paging().nextId() == null) break;
+                Long proximo = lote.paging().nextId();
+                if (!cursores.add(proximo) || (cursor != null && proximo <= cursor))
+                    throw new IllegalStateException("Paginação ESL não avançou; recuperação interrompida para esta NF-e");
+                cursor = proximo;
+                }
+                if (!encontrou) {
+                    ignoradas++;
+                    log.warn("[VEDACIT][RECOVERY] Emissão 110 do par solicitado ausente; nenhum envio para NF final {}.", chaveNfe.substring(38));
                 }
             } catch (Exception e) {
                 erros++;
-                log.error("❌ [VEDACIT] NF {}: falha na recuperação dirigida: {}", chaveNfe, e.getMessage());
+                falhasConsecutivas++;
+                if (e instanceof InterruptedException) Thread.currentThread().interrupt();
+                log.error("[VEDACIT][RECOVERY] NF final {}: falha controlada ({})", chaveNfe.substring(38), e.getClass().getSimpleName());
             }
         }
 
         return new ResultadoRecuperacao(encontradas, enviadas, jaProcessadas, ignoradas, erros);
+    }
+
+    /** Manifesto explícito de NF-e;CT-e. O modo legado de NF-e isolada continua aceito. */
+    static List<String> carregarAlvos(Path arquivo) throws IOException {
+        try (var linhas = Files.lines(arquivo, StandardCharsets.UTF_8)) {
+            return linhas.map(l -> l.replace("\uFEFF", "").trim())
+                    .filter(l -> !l.isBlank() && !l.startsWith("#"))
+                    .peek(l -> { if (!l.matches("\\d{44}(;\\d{44})?"))
+                        throw new IllegalArgumentException("Manifesto inválido; esperado NF-e;CT-e de 44 dígitos"); })
+                    .distinct().toList();
+        }
     }
 
     static List<String> carregarChaves(Path arquivo, int limite) throws IOException {

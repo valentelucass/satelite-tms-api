@@ -38,6 +38,8 @@ public class VedacitSftpClient implements VedacitSftpDocumentSource {
     private final String hostKeySha256;
     private final long maxFileSizeBytes;
     private final long stableForMs;
+    // Apenas identificação e metadados; nenhum byte fiscal é mantido em cache.
+    private final Map<String, XmlIndexado> indiceXml = new java.util.concurrent.ConcurrentHashMap<>();
 
     @Autowired
     public VedacitSftpClient(
@@ -191,6 +193,13 @@ public class VedacitSftpClient implements VedacitSftpDocumentSource {
             try (SFTPClient sftp = ssh.newSFTPClient()) {
                 validarDiretorioRemoto(sftp, directory);
                 List<RemoteResourceInfo> files = sftp.ls(directory);
+                if (tipo == VedacitSftpDocument.Tipo.XML_CTE) {
+                    var nomesPresentes = new java.util.HashSet<String>();
+                    for (RemoteResourceInfo file : files) {
+                        if (file != null) nomesPresentes.add(file.getName());
+                    }
+                    indiceXml.keySet().retainAll(nomesPresentes);
+                }
                 for (RemoteResourceInfo file : files) {
                     if (!arquivoElegivel(file)) continue;
                     String name = file.getName();
@@ -199,18 +208,29 @@ public class VedacitSftpClient implements VedacitSftpDocumentSource {
                     long size = file.getAttributes().getSize();
                     long mtime = file.getAttributes().getMtime();
                     if (size <= 0 || size > maxFileSizeBytes) continue;
+                    XmlIndexado indexado = indiceXml.get(name);
+                    if (tipo == VedacitSftpDocument.Tipo.XML_CTE && indexado != null
+                            && indexado.tamanho() == size && indexado.mtime() == mtime
+                            && !indexado.corresponde(cte, nfe)) continue;
                     byte[] bytes = read(sftp, directory + "/" + name, size);
                     if (bytes.length != size) continue;
                     var after = sftp.lstat(directory + "/" + name);
                     if (!arquivoRegular(after) || after.getSize() != size || after.getMtime() != mtime) continue;
                     if (tipo == VedacitSftpDocument.Tipo.XML_CTE) {
-                        if (!CteXmlValidator.corresponde(bytes, cte, nfe)) continue;
+                        indexado = new XmlIndexado(size, mtime, CteXmlValidator.identificar(bytes));
+                        indiceXml.put(name, indexado);
+                        if (!indexado.corresponde(cte, nfe)) continue;
                     }
                     return Optional.of(new VedacitSftpDocument(tipo, tipo == VedacitSftpDocument.Tipo.XML_CTE ? "xml/" + name : "comprovantes/" + name, cte, nfe, size, Instant.ofEpochSecond(mtime), bytes));
                 }
                 return Optional.empty();
             }
         } catch (IOException e) { throw new IllegalStateException("Falha controlada na leitura SFTP Vedacit", e); }
+    }
+    private record XmlIndexado(long tamanho, long mtime, Optional<CteXmlValidator.Identificacao> identificacao) {
+        boolean corresponde(String cte, String nfe) {
+            return identificacao.map(id -> id.chaveCte().equals(cte) && id.chavesNfe().contains(nfe)).orElse(false);
+        }
     }
     private byte[] read(SFTPClient sftp, String path, long size) throws IOException {
         var before = sftp.lstat(path);

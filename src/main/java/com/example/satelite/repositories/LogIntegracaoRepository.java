@@ -36,8 +36,8 @@ public interface LogIntegracaoRepository extends JpaRepository<LogIntegracaoMode
             String chaveCte
     );
 
-    Optional<LogIntegracaoModel> findTopBySistemaDestinoAndSftpClienteAndChaveCteOrderByDataProcessamentoDescIdDesc(
-            String sistemaDestino, String sftpCliente, String chaveCte
+    Optional<LogIntegracaoModel> findTopBySistemaDestinoAndSftpClienteAndChaveNfeAndChaveCteOrderByDataProcessamentoDescIdDesc(
+            String sistemaDestino, String sftpCliente, String chaveNfe, String chaveCte
     );
 
     @Query("""
@@ -53,6 +53,23 @@ public interface LogIntegracaoRepository extends JpaRepository<LogIntegracaoMode
             @Param("chaveNfe") String chaveNfe,
             @Param("chaveCte") String chaveCte
     );
+
+    @Query("""
+            SELECT l FROM LogIntegracaoModel l
+            WHERE l.sistemaDestino = 'VEDACIT' AND COALESCE(l.arquivado, false) = false
+              AND (l.sftpCliente IS NULL OR l.sftpCliente = :cliente)
+              AND l.chaveNfe = :chaveNfe AND l.chaveCte = :chaveCte
+              AND l.statusDados = 'SUCESSO'
+              AND (l.dataProcessamentoDados IS NOT NULL OR l.statusCanhoto = 'SUCESSO')
+            ORDER BY CASE WHEN l.statusCanhoto = 'SUCESSO' THEN 0
+                          WHEN l.canhotoClassificacaoOperacional IN ('TIMEOUT_AMBIGUO', 'BLOQUEADO_DESTINO') THEN 1 ELSE 2 END,
+                     l.dataProcessamento DESC, l.id DESC
+            """)
+    List<LogIntegracaoModel> findConfirmacaoVedacitAtivaPorPar(
+            @Param("cliente") String cliente, @Param("chaveNfe") String chaveNfe,
+            @Param("chaveCte") String chaveCte, Pageable pageable);
+
+    boolean existsBySistemaDestinoAndChaveCteAndStatusDados(String destino, String chaveCte, String statusDados);
 
     Optional<LogIntegracaoModel> findTopBySistemaDestinoAndSftpClienteAndCanhotoReferenciaOrderByDataProcessamentoDescIdDesc(
             String sistemaDestino, String sftpCliente, String canhotoReferencia

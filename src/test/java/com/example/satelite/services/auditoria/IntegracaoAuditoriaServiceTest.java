@@ -105,10 +105,10 @@ class IntegracaoAuditoriaServiceTest {
 
     @Test
     void historyIsLimitedAndDoesNotWriteAudit() {
-        when(work.buscarHistorico(any(),any(),any(),any(),anyInt(),anyInt()))
+        when(work.buscarHistorico(any(),any(),any(),any(),anyInt(),anyInt(),any()))
                 .thenReturn(new WorkSftpClientesAuditoriaRepository.PaginaCiclos(List.of(),501));
-        assertNotNull(service.consultarHistoricoWorkSftpClientes(-1,1000," VEDACIT ","FALHA","2026-09-01","2026-09-09"));
-        verify(work).buscarHistorico(eq("VEDACIT"),eq("FALHA"),any(),any(),eq(0),eq(500));
+        assertNotNull(service.consultarHistoricoWorkSftpClientes(-1,1000," VEDACIT ","FALHA","2026-09-01","2026-09-09", " SFTP "));
+        verify(work).buscarHistorico(eq("VEDACIT"),eq("FALHA"),any(),any(),eq(0),eq(500),eq("SFTP"));
         verify(work,never()).registrar(any());
     }
 }

@@ -47,7 +47,7 @@ public class EtlResilienciaService {
                 chaveNfe,
                 logIntegracao,
                 processamento,
-                tentativasConsumidas -> backoffTransitorioMs()
+                tentativasConsumidas -> backoffTransitorioMs(), false
         );
     }
 
@@ -61,7 +61,7 @@ public class EtlResilienciaService {
                 chaveNfe,
                 logIntegracao,
                 processamento,
-                this::backoffProgressivoXmlVedacitMs
+                this::backoffProgressivoXmlVedacitMs, true
         );
     }
 
@@ -70,10 +70,17 @@ public class EtlResilienciaService {
             String chaveNfe,
             LogIntegracaoModel logIntegracao,
             ProcessamentoRegistroTentativa processamento,
-            IntToLongFunction politicaDeEspera
+            IntToLongFunction politicaDeEspera,
+            boolean etapaXml
     ) {
         while (true) {
             ResultadoRegistro resultado = processamento.processar();
+
+            if (etapaXml && resultado.erro()) {
+                String mensagem = normalizarTextoErro(logIntegracao);
+                if (mensagem.contains("timeout") || mensagem.contains("timed out")
+                        || mensagem.contains("sem confirmação") || mensagem.contains("connection reset")) return resultado;
+            }
 
             if (!resultado.erro() || !erroTransitorioRegistrado(logIntegracao)) {
                 return resultado;

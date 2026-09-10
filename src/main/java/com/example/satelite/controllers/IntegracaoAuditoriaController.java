@@ -110,10 +110,11 @@ public class IntegracaoAuditoriaController {
             @RequestParam(required = false) String cliente,
             @RequestParam(required = false) String status,
             @RequestParam(required = false) String dataInicial,
-            @RequestParam(required = false) String dataFinal
+            @RequestParam(required = false) String dataFinal,
+            @RequestParam(required = false) String origem
     ) {
         return integracaoAuditoriaService.consultarHistoricoWorkSftpClientes(
-                pagina, tamanho, cliente, status, dataInicial, dataFinal
+                pagina, tamanho, cliente, status, dataInicial, dataFinal, origem
         );
     }
 

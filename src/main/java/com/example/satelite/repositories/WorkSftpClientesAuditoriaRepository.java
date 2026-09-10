@@ -81,10 +81,17 @@ public class WorkSftpClientesAuditoriaRepository {
             LocalDateTime inicio,
             LocalDateTime fimExclusivo,
             int pagina,
-            int tamanho
+            int tamanho,
+            String origem
     ) {
         List<String> filtros = new ArrayList<>();
         MapSqlParameterSource params = new MapSqlParameterSource();
+        // A tabela audita somente o worker SFTP, que não consulta a API ESL.
+        // A mesma restrição vale para a página e para sua contagem total.
+        if (origem != null) {
+            filtros.add(":origem = 'SFTP'");
+            params.addValue("origem", origem);
+        }
         if (cliente != null) {
             filtros.add("e.sftp_cliente = :cliente");
             params.addValue("cliente", cliente);

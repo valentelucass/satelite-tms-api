@@ -86,6 +86,9 @@ public class EtlRegistroService {
     private VedacitCteCanhotoReconciliationService vedacitCteCanhotoReconciliationService;
 
     @Autowired
+    private SftpDocumentoLockService xmlDocumentoLockService;
+
+    @Autowired
     void configurarReconciliacaoVedacit(VedacitCteCanhotoReconciliationService service) {
         this.vedacitCteCanhotoReconciliationService = service;
     }
@@ -461,6 +464,21 @@ public class EtlRegistroService {
             Long cursorNextId,
             EslOcorrenciaDTO ocorrencia
     ) {
+        if (!ehCteEmitido(ocorrencia)) return ResultadoRegistro.IGNORADO;
+        String cte = obterChaveCte(ocorrencia);
+        if (xmlDocumentoLockService != null && cte != null && cte.matches("\\d{44}")) {
+            // XML é único por CT-e mesmo quando há várias NF-es no mesmo documento.
+            return xmlDocumentoLockService.executarComLock("VEDACIT_XML", cte, cte,
+                    () -> processarEmissaoXmlVedacitComExclusao(cursorNextId, ocorrencia))
+                    .orElse(ResultadoRegistro.ERRO_INFRAESTRUTURA);
+        }
+        return processarEmissaoXmlVedacitComExclusao(cursorNextId, ocorrencia);
+    }
+
+    private ResultadoRegistro processarEmissaoXmlVedacitComExclusao(Long cursorNextId, EslOcorrenciaDTO ocorrencia) {
+        if (!ehCteEmitido(ocorrencia)) return ResultadoRegistro.IGNORADO;
+        if (etlEstadoIntegracaoService.xmlVedacitConfirmado(obterChaveCte(ocorrencia)))
+            return ResultadoRegistro.JA_PROCESSADO;
         Optional<LogIntegracaoModel> logExistente =
                 etlEstadoIntegracaoService.buscarLogIntegracaoExistente(DESTINO_VEDACIT, ocorrencia);
         if (logExistente.isPresent() && etlEstadoIntegracaoService.statusSucesso(logExistente.get().getStatusDados())) {
@@ -482,6 +500,10 @@ public class EtlRegistroService {
             );
             return ResultadoRegistro.PENDENTE_ORIGEM;
         }
+
+        // Recusas e resultados de envio desconhecidos precisam de conciliação, não de reenvio cego.
+        if (logExistente.isPresent() && STATUS_ERRO_DESTINO.equals(logExistente.get().getStatusDados()))
+            return ResultadoRegistro.ERRO;
 
         if (logExistente.isPresent()
                 && ResultadoIntegracao.STATUS_PENDENTE_ORIGEM.equals(logExistente.get().getStatusDados())) {

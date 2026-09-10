@@ -7,6 +7,7 @@ import java.time.LocalDateTime;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.CommandLineRunner;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.ExitCodeGenerator;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -32,6 +33,9 @@ public class WorkSftpClientesRunner implements CommandLineRunner, ExitCodeGenera
     private final WorkSftpClientesAuditoriaRepository auditoria;
     private int exitCode;
 
+    @Autowired
+    private OrquestradorEtlService orquestrador;
+
     public WorkSftpClientesRunner(VedacitSftpClientFactory clientes, EtlRepescagemService repescagem,
             Environment environment, ConfigurableApplicationContext context,
             WorkSftpClientesAuditoriaRepository auditoria) {
@@ -49,11 +53,22 @@ public class WorkSftpClientesRunner implements CommandLineRunner, ExitCodeGenera
             validarModoExclusivo();
             int limiteGlobal = inteiro("WORK_SFTP_CLIENTES_MAX_ITEMS", 100, 1, 500);
             long pausa = inteiro("WORK_SFTP_CLIENTES_INTERVAL_MS", 1000, 0, 60000);
-            for (VedacitSftpClientFactory.ClienteSftp perfil : clientes.criarClientesHabilitados()) {
+            var perfis = clientes.criarClientesHabilitados();
+            if (perfis.stream().anyMatch(perfil -> "VEDACIT".equals(perfil.identificador()))
+                    && Boolean.TRUE.equals(environment.getProperty("WORK_SFTP_CLIENTES_XML_ENABLED", Boolean.class, false))) {
+                if (!Boolean.TRUE.equals(environment.getProperty("SFTP_RODOGARCIA_ENABLED", Boolean.class, false)))
+                    throw new IllegalStateException("Etapa XML exige a fonte SFTP habilitada");
+                var xml = orquestrador.executarXmlVedacit();
+                if (xml.erroCritico() || xml.erros() > 0) falhas++;
+                log.info("[WORK-SFTP-CLIENTES][XML] paginas={} recebidos={} enviados={} ja_processados={} erros={}",
+                        xml.paginasProcessadas(), xml.recebidos(), xml.enviados(), xml.jaProcessados(), xml.erros());
+            }
+            for (VedacitSftpClientFactory.ClienteSftp perfil : perfis) {
                 Instant inicioCliente = Instant.now();
                 LocalDateTime inicioAuditoria = LocalDateTime.now();
                 boolean conectado = false;
                 try {
+                    // Limite de cada lote; o serviço continua até esgotar os elegíveis da passagem.
                     int limiteCliente = Math.min(limiteGlobal, perfil.limiteItensPorCiclo());
                     VedacitSftpClient sftp = perfil.cliente();
                     sftp.verificarDisponibilidade();

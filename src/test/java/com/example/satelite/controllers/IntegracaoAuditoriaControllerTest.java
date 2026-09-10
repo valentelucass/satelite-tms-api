@@ -29,6 +29,7 @@ class IntegracaoAuditoriaControllerTest {
                 .consultarStatusVedacitSftp();
 
         assertEquals(List.of(resumo), resposta);
+        assertEquals("SFTP", new tools.jackson.databind.ObjectMapper().valueToTree(resumo).get("origemComprovantes").asString());
         assertEquals(15, WorkSftpClienteStatusDTO.class.getRecordComponents().length);
     }
 
@@ -37,11 +38,11 @@ class IntegracaoAuditoriaControllerTest {
         IntegracaoAuditoriaService service = mock(IntegracaoAuditoriaService.class);
         WorkSftpClienteExecucoesPaginadasDTO pagina = new WorkSftpClienteExecucoesPaginadasDTO(
                 List.of(), new PaginacaoDTO(0, 25, 0, 0, true, true));
-        when(service.consultarHistoricoWorkSftpClientes(0, 25, "VEDACIT", "CONCLUIDO", "2026-08-01", "2026-08-02"))
+        when(service.consultarHistoricoWorkSftpClientes(0, 25, "VEDACIT", "CONCLUIDO", "2026-08-01", "2026-08-02", "SFTP"))
                 .thenReturn(pagina);
 
         WorkSftpClienteExecucoesPaginadasDTO resposta = new IntegracaoAuditoriaController(service)
-                .consultarExecucoesVedacitSftp(0, 25, "VEDACIT", "CONCLUIDO", "2026-08-01", "2026-08-02");
+                .consultarExecucoesVedacitSftp(0, 25, "VEDACIT", "CONCLUIDO", "2026-08-01", "2026-08-02", "SFTP");
 
         assertEquals(pagina, resposta);
         assertEquals(15, WorkSftpClienteStatusDTO.class.getRecordComponents().length);
