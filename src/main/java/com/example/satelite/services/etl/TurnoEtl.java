@@ -10,6 +10,18 @@ public final class TurnoEtl {
     private final LongSupplier relogio;
     private int avaliados;
     private long inicio;
+    private ResultadoPagina progressoXml = ResultadoPagina.vazio();
+    private java.util.function.Consumer<ResultadoPagina> observador = resultado -> { };
+
+    void observarProgresso(java.util.function.Consumer<ResultadoPagina> observador) {
+        this.observador = java.util.Objects.requireNonNull(observador);
+    }
+
+    void documentoAvaliado(ResultadoRegistro resultado) {
+        progressoXml = progressoXml.com(resultado);
+        observador.accept(progressoXml);
+        documentoAvaliado();
+    }
 
     public TurnoEtl(int limite, long duracaoMs, Runnable proximaFila) {
         this(limite, duracaoMs, proximaFila, System::nanoTime);

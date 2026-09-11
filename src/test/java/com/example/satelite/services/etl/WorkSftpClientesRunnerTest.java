@@ -53,7 +53,7 @@ class WorkSftpClientesRunnerTest {
         assertEquals(1, codigo);
         verify(saudavel).verificarDisponibilidade();
         verify(repescagem).processarClienteSftpVedacit(eq("VEDACIT"), eq(inventario), eq(saudavel), eq(10), eq(1000L), any(), eq(120000L));
-        verify(auditoria, org.mockito.Mockito.times(2)).registrar(any());
+        verify(auditoria, org.mockito.Mockito.times(2)).registrarProgresso(any(), org.mockito.ArgumentMatchers.argThat(c -> c.fim() != null));
     }
 
     @Test

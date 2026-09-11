@@ -503,7 +503,7 @@ public class EtlRegistroService {
                             .filter(atual -> atual.getDataProcessamentoDados() != null && !atual.getDataProcessamentoDados().isAfter(antes))
                             .map(this::reprocessarXmlCteVedacitPorChave).orElse(ResultadoRegistro.IGNORADO));
             resultado = resultado.com(tentativa.orElse(ResultadoRegistro.RETIDO));
-            if (turno != null) turno.documentoAvaliado();
+            if (turno != null) turno.documentoAvaliado(tentativa.orElse(ResultadoRegistro.RETIDO));
         }
         return resultado;
     }

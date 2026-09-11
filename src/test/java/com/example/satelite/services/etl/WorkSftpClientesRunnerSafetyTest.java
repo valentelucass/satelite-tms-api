@@ -63,7 +63,7 @@ class WorkSftpClientesRunnerSafetyTest {
     @Test
     void auditFailureCannotReturnSuccessfulExitCode() {
         setup(0);
-        doThrow(new IllegalStateException("unit audit unavailable")).when(auditoria).registrar(any());
+        doThrow(new IllegalStateException("unit audit unavailable")).when(auditoria).registrarProgresso(any(), argThat(c -> c.fim() != null));
         assertEquals(1, runner.executarCiclo());
     }
 
@@ -71,7 +71,7 @@ class WorkSftpClientesRunnerSafetyTest {
         doThrow(new IllegalStateException("MIGRACAO_V22_PENDENTE")).when(auditoria).validarEstrutura();
         assertEquals(2, runner.executarCiclo());
         verifyNoInteractions(factory, sftp, repescagem);
-        verify(auditoria, never()).registrar(any());
+        verify(auditoria, never()).registrarProgresso(any(), any());
     }
 
     @Test
@@ -100,6 +100,31 @@ class WorkSftpClientesRunnerSafetyTest {
         assertEquals(5, cycle().saldo());
     }
 
+    @Test void publicaInicioParcialEFechamentoNaMesmaExecucao() {
+        setup(0);
+        assertEquals(0, runner.executarCiclo());
+        var ids = ArgumentCaptor.forClass(java.util.UUID.class);
+        var registros = ArgumentCaptor.forClass(WorkSftpClientesAuditoriaRepository.Ciclo.class);
+        verify(auditoria, times(3)).registrarProgresso(ids.capture(), registros.capture());
+        assertEquals(1, ids.getAllValues().stream().distinct().count());
+        var etapas = registros.getAllValues();
+        assertEquals("EM_EXECUCAO", etapas.get(0).status());
+        assertNull(etapas.get(0).fim());
+        assertEquals("EM_EXECUCAO", etapas.get(1).status());
+        assertNull(etapas.get(1).fim());
+        assertEquals(1, etapas.get(1).enviados());
+        assertEquals("CONCLUIDO", etapas.get(2).status());
+        assertNotNull(etapas.get(2).fim());
+        assertEquals(etapas.get(1).enviados(), etapas.get(2).enviados());
+    }
+
+    @Test void falhaNaAberturaDaAuditoriaImpedeChamadaExterna() {
+        setup(0);
+        doThrow(new IllegalStateException("audit offline")).when(auditoria).registrarProgresso(any(), any());
+        assertEquals(2, runner.executarCiclo());
+        verifyNoInteractions(sftp, repescagem);
+    }
+
     private void setup(int erros) {
         when(factory.criarClientesHabilitados()).thenReturn(List.of(new VedacitSftpClientFactory.ClienteSftp("VEDACIT", sftp, 25)));
         var inventory = new VedacitSftpInventory(List.of(mock(VedacitSftpDocument.class), mock(VedacitSftpDocument.class)), List.of());
@@ -112,7 +137,7 @@ class WorkSftpClientesRunnerSafetyTest {
 
     private WorkSftpClientesAuditoriaRepository.Ciclo cycle() {
         var capture = ArgumentCaptor.forClass(WorkSftpClientesAuditoriaRepository.Ciclo.class);
-        verify(auditoria).registrar(capture.capture());
+        verify(auditoria, atLeastOnce()).registrarProgresso(any(), capture.capture());
         return capture.getValue();
     }
 }

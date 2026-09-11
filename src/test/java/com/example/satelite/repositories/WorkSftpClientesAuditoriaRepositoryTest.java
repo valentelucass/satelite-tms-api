@@ -62,9 +62,26 @@ class WorkSftpClientesAuditoriaRepositoryTest {
         assertTrue(sql.getValue().contains("e.status_ciclo = :status"));
         assertTrue(sql.getValue().contains("e.fim_em >= :inicio"));
         assertTrue(sql.getValue().contains("e.fim_em < :fimExclusivo"));
-        assertTrue(sql.getValue().contains("ORDER BY e.fim_em DESC, e.id DESC"));
+        assertTrue(sql.getValue().contains("ORDER BY e.inicio_em DESC, e.id DESC"));
+        assertTrue(sql.getValue().contains("e.fim_em IS NULL AND e.inicio_em >= :inicio"));
         assertFalse(sql.getValue().toLowerCase().contains("senha"));
         assertFalse(sql.getValue().toLowerCase().contains("chave_nfe"));
         assertFalse(sql.getValue().toLowerCase().contains("canhoto_referencia"));
+    }
+    @Test void parcialNaoFechaCicloNemReabreUmJaFinalizado() {
+        var jdbc = mock(NamedParameterJdbcTemplate.class);
+        var repository = new WorkSftpClientesAuditoriaRepository(jdbc);
+        var inicio = LocalDateTime.of(2026, 9, 11, 17, 12);
+        var id = java.util.UUID.randomUUID();
+        repository.registrarProgresso(id, new WorkSftpClientesAuditoriaRepository.Ciclo("VEDACIT", inicio,
+                null, "OK", "EM_EXECUCAO", 100, 2, 10, 9, 1, 30, 4, 3, 5000));
+        var sql = ArgumentCaptor.forClass(String.class);
+        var params = ArgumentCaptor.forClass(MapSqlParameterSource.class);
+        verify(jdbc).update(sql.capture(), params.capture());
+        org.junit.jupiter.api.Assertions.assertNull(params.getValue().getValue("fim"));
+        org.junit.jupiter.api.Assertions.assertEquals(id.toString(), params.getValue().getValue("execucaoId"));
+        assertTrue(sql.getValue().contains("WHERE execucao_id=:execucaoId AND fim_em IS NULL"));
+        assertTrue(sql.getValue().contains("IF NOT EXISTS"));
+        assertFalse(sql.getValue().toUpperCase().contains("DELETE"));
     }
 }

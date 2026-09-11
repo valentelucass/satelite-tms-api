@@ -6,6 +6,25 @@ import java.util.concurrent.atomic.AtomicLong;
 import org.junit.jupiter.api.Test;
 
 class TurnoEtlTest {
+    @Test void progressoXmlChegaAntesDaTrocaESomaSemDuplicarEntreTurnos() {
+        var parcial = new java.util.concurrent.atomic.AtomicReference<ResultadoPagina>();
+        var turnos = new AtomicInteger();
+        var turno = new TurnoEtl(2, 120000, () -> {
+            int n = turnos.incrementAndGet();
+            assertEquals(n * 2, parcial.get().recebidos());
+        });
+        turno.observarProgresso(parcial::set);
+        turno.documentoAvaliado(ResultadoRegistro.ENVIADO);
+        turno.documentoAvaliado(ResultadoRegistro.RETIDO);
+        turno.documentoAvaliado(ResultadoRegistro.JA_PROCESSADO);
+        turno.documentoAvaliado(ResultadoRegistro.PENDENTE_ORIGEM);
+        assertEquals(2, turnos.get());
+        assertEquals(1, parcial.get().enviados());
+        assertEquals(1, parcial.get().erros());
+        assertEquals(1, parcial.get().jaProcessados());
+        assertEquals(1, parcial.get().pendentesOrigem());
+    }
+
     @Test void alternaPorItensEPorTempoSemContarTempoDaOutraFila() {
         var relogio = new AtomicLong();
         var turnos = new AtomicInteger();

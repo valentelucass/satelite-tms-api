@@ -76,7 +76,7 @@ class WorkVedacitXmlTest {
         var runner = new WorkSftpClientesRunner(factory, repescagem, env, mock(ConfigurableApplicationContext.class), auditoria);
         ReflectionTestUtils.setField(runner, "orquestrador", xml);
         assertEquals(1, runner.executarCiclo());
-        verify(auditoria).registrar(argThat(c -> c.xmlHabilitado() && c.xmlErros() == 1 && c.xmlPendentes() == 1
+        verify(auditoria).registrarProgresso(any(), argThat(c -> c.xmlHabilitado() && c.xmlErros() == 1 && c.xmlPendentes() == 1
                 && c.errosComprovante() == 0 && c.status().equals("FALHA") && c.motivoFalha().startsWith("XML_RETIDO")));
     }
 }

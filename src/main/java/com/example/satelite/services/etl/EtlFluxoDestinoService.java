@@ -510,7 +510,7 @@ public class EtlFluxoDestinoService {
                             processadorDestino
                     );
             resultado = resultado.com(registro);
-            if (turno != null) turno.documentoAvaliado();
+            if (turno != null) turno.documentoAvaliado(registro);
 
             if (resultado.falhasInfraestruturaConsecutivas() >= limiteCircuitBreaker()) {
                 log.error(

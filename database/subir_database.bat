@@ -106,6 +106,8 @@ exit /b 0
 rem Atualizacao aditiva da base existente, sem repetir conciliacoes historicas.
 call :run_sql "%SCRIPT_ROOT%\migration\V22__auditoria_etapas_ciclo_rodizio.sql"
 if errorlevel 1 exit /b 1
+call :run_sql "%SCRIPT_ROOT%\migration\V23__progresso_ciclos_work_sftp.sql"
+if errorlevel 1 exit /b 1
 echo [OK] Auditoria do rodizio XML e comprovantes atualizada.
 exit /b 0
 
