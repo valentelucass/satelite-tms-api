@@ -137,6 +137,16 @@ public class OrquestradorEtlService {
         return executarXmlVedacit(obterExecucaoXmlVedacit(ExecucaoEtlRequest.incremental(maxPaginasPorCiclo)));
     }
 
+    ResultadoDestino executarXmlVedacit(TurnoEtl turno) {
+        if (!vedacitEnabled) return ResultadoDestino.desabilitado(DESTINO_VEDACIT);
+        if (tokenVedacitEsl == null || tokenVedacitEsl.isBlank())
+            throw new IllegalStateException("Token de ocorrências Vedacit não configurado");
+        return etlFluxoDestinoService.executarFluxoDestino(DESTINO_VEDACIT, "VEDACIT_XML", tokenVedacitEsl,
+                obterExecucaoXmlVedacit(ExecucaoEtlRequest.incremental(maxPaginasPorCiclo)),
+                EtapaVedacit.EMISSAO_XML.codigoOcorrencia(), false,
+                (ocorrencia, comprovante, registro) -> ResultadoIntegracao.ignorado(), turno);
+    }
+
     private ResultadoDestino executarXmlVedacit(ExecucaoEtlRequest request) {
         if (!vedacitEnabled) return ResultadoDestino.desabilitado(DESTINO_VEDACIT);
         if (tokenVedacitEsl == null || tokenVedacitEsl.isBlank())

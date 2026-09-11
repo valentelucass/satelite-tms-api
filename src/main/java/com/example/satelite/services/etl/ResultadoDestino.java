@@ -10,8 +10,13 @@ record ResultadoDestino(
         int jaProcessados,
         int erros,
         boolean erroCritico,
-        String mensagemEncerramento
+        String mensagemEncerramento, int pendentesOrigem
 ) {
+    ResultadoDestino(String destino, int paginasProcessadas, int recebidos, int enviados, int ignorados,
+            int pendentesFoto, int jaProcessados, int erros, boolean erroCritico, String mensagemEncerramento) {
+        this(destino, paginasProcessadas, recebidos, enviados, ignorados, pendentesFoto, jaProcessados,
+                erros, erroCritico, mensagemEncerramento, 0);
+    }
     static ResultadoDestino vazio(String destino) {
         return new ResultadoDestino(destino, 0, 0, 0, 0, 0, 0, 0, false, "Sem paginas processadas");
     }
@@ -35,7 +40,7 @@ record ResultadoDestino(
                 jaProcessados + pagina.jaProcessados(),
                 erros + pagina.erros(),
                 erroCritico,
-                mensagemEncerramento
+                mensagemEncerramento, pendentesOrigem + pagina.pendentesOrigem()
         );
     }
 
@@ -50,7 +55,7 @@ record ResultadoDestino(
                 jaProcessados + pagina.jaProcessados(),
                 erros + pagina.erros(),
                 erroCritico,
-                mensagemEncerramento
+                mensagemEncerramento, pendentesOrigem + pagina.pendentesOrigem()
         );
     }
 
@@ -65,7 +70,7 @@ record ResultadoDestino(
                 jaProcessados,
                 erros,
                 erroCritico,
-                mensagemEncerramento
+                mensagemEncerramento, pendentesOrigem
         );
     }
 
@@ -81,7 +86,7 @@ record ResultadoDestino(
                 jaProcessados,
                 erros + 1,
                 true,
-                "Erro critico: " + mensagemErro
+                "Erro critico: " + mensagemErro, pendentesOrigem
         );
     }
 
@@ -96,7 +101,7 @@ record ResultadoDestino(
                 jaProcessados,
                 erros + 1,
                 true,
-                mensagemErro
+                mensagemErro, pendentesOrigem
         );
     }
 
@@ -115,7 +120,7 @@ record ResultadoDestino(
                 jaProcessados + outro.jaProcessados,
                 erros + outro.erros,
                 erroCritico || outro.erroCritico,
-                mensagem
+                mensagem, pendentesOrigem + outro.pendentesOrigem
         );
     }
 }

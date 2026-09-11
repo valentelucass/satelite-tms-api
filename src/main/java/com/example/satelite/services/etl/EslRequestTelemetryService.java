@@ -1,7 +1,7 @@
 package com.example.satelite.services.etl;
 
 import java.time.LocalDateTime;
-import java.time.ZoneOffset;
+import java.time.ZoneId;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -25,7 +25,7 @@ public class EslRequestTelemetryService implements EslRequestTelemetryRecorder {
     public void registrar(EslRequestContext contexto, Integer statusHttp, int tentativa, boolean retry, long duracaoMs) {
         try {
             repository.save(EslRequestTelemetryModel.builder()
-                    .dataEvento(LocalDateTime.now(ZoneOffset.UTC))
+                    .dataEvento(LocalDateTime.now(ZoneId.of("America/Sao_Paulo")))
                     .origem(contexto.origem())
                     .destino(contexto.destino())
                     .rota(contexto.rota())

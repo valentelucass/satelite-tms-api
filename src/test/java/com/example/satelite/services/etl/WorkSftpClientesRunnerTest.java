@@ -43,7 +43,7 @@ class WorkSftpClientesRunnerTest {
                 new VedacitSftpClientFactory.ClienteSftp("FALHO", falho, 100),
                 new VedacitSftpClientFactory.ClienteSftp("VEDACIT", saudavel, 100)
         ));
-        when(repescagem.processarClienteSftpVedacit(eq("VEDACIT"), eq(inventario), eq(saudavel), eq(100), eq(1000L)))
+        when(repescagem.processarClienteSftpVedacit(eq("VEDACIT"), eq(inventario), eq(saudavel), eq(10), eq(1000L), any(), eq(120000L)))
                 .thenReturn(resultado);
         when(repescagem.contarClassificacaoCanhotoVedacit(any(), any())).thenReturn(0L);
 
@@ -52,7 +52,7 @@ class WorkSftpClientesRunnerTest {
 
         assertEquals(1, codigo);
         verify(saudavel).verificarDisponibilidade();
-        verify(repescagem).processarClienteSftpVedacit("VEDACIT", inventario, saudavel, 100, 1000L);
+        verify(repescagem).processarClienteSftpVedacit(eq("VEDACIT"), eq(inventario), eq(saudavel), eq(10), eq(1000L), any(), eq(120000L));
         verify(auditoria, org.mockito.Mockito.times(2)).registrar(any());
     }
 
@@ -68,17 +68,17 @@ class WorkSftpClientesRunnerTest {
                 new ResultadoReprocessamentoCanhotoVedacit(0, 0, 0, 0, 0), 0);
 
         when(factory.criarClientesHabilitados()).thenReturn(List.of(
-                new VedacitSftpClientFactory.ClienteSftp("VEDACIT", sftp, 25)
+                new VedacitSftpClientFactory.ClienteSftp("VEDACIT", sftp, 5)
         ));
         when(sftp.listarInventarioComprovantes()).thenReturn(inventario);
-        when(repescagem.processarClienteSftpVedacit("VEDACIT", inventario, sftp, 25, 1000L)).thenReturn(resultado);
+        when(repescagem.processarClienteSftpVedacit(eq("VEDACIT"), eq(inventario), eq(sftp), eq(5), eq(1000L), any(), eq(120000L))).thenReturn(resultado);
         when(repescagem.contarClassificacaoCanhotoVedacit(any(), any())).thenReturn(0L);
 
         int codigo = new WorkSftpClientesRunner(factory, repescagem, ambienteExclusivo(),
                 mock(ConfigurableApplicationContext.class), auditoria).executarCiclo();
 
         assertEquals(0, codigo);
-        verify(repescagem).processarClienteSftpVedacit("VEDACIT", inventario, sftp, 25, 1000L);
+        verify(repescagem).processarClienteSftpVedacit(eq("VEDACIT"), eq(inventario), eq(sftp), eq(5), eq(1000L), any(), eq(120000L));
     }
 
     private Environment ambienteExclusivo() {

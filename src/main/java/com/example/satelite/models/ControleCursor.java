@@ -42,11 +42,12 @@ public class ControleCursor {
     private Long cursorNextId;
 
     @Column(name = "data_atualizacao", nullable = false)
+    @org.hibernate.annotations.JdbcTypeCode(org.hibernate.type.SqlTypes.LOCAL_DATE_TIME)
     private LocalDateTime dataAtualizacao;
 
     @PrePersist
     @PreUpdate
     void atualizarDataAtualizacao() {
-        dataAtualizacao = LocalDateTime.now();
+        dataAtualizacao = LocalDateTime.now(java.time.ZoneId.of("America/Sao_Paulo"));
     }
 }

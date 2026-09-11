@@ -89,6 +89,42 @@ class VedacitFilaRecoveryTest {
         verify(repo, never()).findTecnicosSftpPorClienteENfes(any(), anyList(), any());
     }
 
+    @Test void rodizioAvaliaDezPorTurnoEDrenaMilSemRepeticao() {
+        var massa = prepararMil();
+        var passagem = new EtlRepescagemService.PassagemSftp();
+        passagem.limitada = true;
+        Set<Long> avaliados = new HashSet<>();
+        when(registros.reprocessarCanhotoVedacitPorCte(any(), eq(fonte))).thenAnswer(i -> {
+            LogIntegracaoModel r = i.getArgument(0);
+            assertTrue(avaliados.add(r.getId()));
+            if (r.getId() == 1L) return ResultadoRegistro.PENDENTE_FOTO;
+            r.setStatusCanhoto("SUCESSO"); return ResultadoRegistro.ENVIADO;
+        });
+        int total=0, turnos=0;
+        do {
+            var r = service.processarClienteSftpVedacit("VEDACIT", massa, fonte, 10, 0, passagem, 120000);
+            assertTrue(r.processamento().selecionados() <= 10);
+            total += r.processamento().selecionados();
+            assertTrue(++turnos < 120, "A passagem deve terminar mesmo com um arquivo ausente");
+        } while (passagem.temMais());
+        assertEquals(1000, total);
+        assertEquals(1000, avaliados.size());
+    }
+
+    @Test void inventarioSomenteRejeitadoContinuaEmPartesAteTerminar() {
+        var rejeitados = new ArrayList<VedacitSftpInventory.DocumentoRejeitado>();
+        for (int i=0;i<205;i++) rejeitados.add(new VedacitSftpInventory.DocumentoRejeitado("a"+i, null, null, "nome inválido"));
+        var passagem = new EtlRepescagemService.PassagemSftp(); passagem.limitada=true;
+        when(repo.save(any())).thenAnswer(i -> i.getArgument(0));
+        var inventario = new VedacitSftpInventory(List.of(), rejeitados);
+        service.processarClienteSftpVedacit("VEDACIT", inventario, fonte, 10, 0, passagem, 120000);
+        assertTrue(passagem.temMais()); assertEquals(100, passagem.indiceInventario);
+        service.processarClienteSftpVedacit("VEDACIT", inventario, fonte, 10, 0, passagem, 120000);
+        assertTrue(passagem.temMais()); assertEquals(200, passagem.indiceInventario);
+        service.processarClienteSftpVedacit("VEDACIT", inventario, fonte, 10, 0, passagem, 120000);
+        assertFalse(passagem.temMais()); assertEquals(205, passagem.indiceInventario);
+    }
+
     @Test void permitePrimeiroLoteSupervisionadoSemDreno() {
         var massa = prepararMil();
         ReflectionTestUtils.setField(service, "drenarFilaSftp", false);
@@ -145,6 +181,8 @@ class VedacitFilaRecoveryTest {
         when(repo.save(any())).thenAnswer(i -> i.getArgument(0));
         when(repo.findTopBySistemaDestinoAndSftpClienteAndChaveNfeAndChaveCteOrderByDataProcessamentoDescIdDesc(any(), any(), any(), any()))
                 .thenAnswer(i -> Optional.ofNullable(porCte.get(i.getArgument(3))));
+        when(repo.findById(anyLong())).thenAnswer(i -> porCte.values().stream()
+                .filter(r -> r.getId().equals(i.getArgument(0))).findFirst());
         when(repo.findCandidatosSftpPorClienteENfes(any(), anyList(), any())).thenAnswer(i -> {
             List<String> chaves = i.getArgument(1); Pageable pagina = i.getArgument(2);
             assertTrue(chaves.size() <= 500);

@@ -42,6 +42,14 @@ if "%DB_APP_USER%"=="" set "DB_APP_USER=%DB_USER%"
 
 set "SCRIPT_ROOT=%~dp0sql"
 
+set "RODIZIO_ONLY="
+if /I "%~1"=="--rodizio" (
+    set "RODIZIO_ONLY=1"
+) else if not "%~1"=="" (
+    echo [ERRO] Opcao invalida. Use sem argumentos ou --rodizio.
+    exit /b 1
+)
+
 where sqlcmd >nul 2>nul
 if errorlevel 1 (
     echo [ERRO] sqlcmd nao encontrado no PATH.
@@ -72,6 +80,8 @@ if "%SQLCMD_TLS_ARGS%"=="" (
 )
 echo.
 
+if defined RODIZIO_ONLY goto :rodizio_only
+
 call :run_sql "%SCRIPT_ROOT%\schema\00_create_database.sql"
 if errorlevel 1 exit /b 1
 
@@ -90,6 +100,13 @@ if errorlevel 1 exit /b 1
 echo.
 echo [OK] Database %DB_NAME% pronta para o Satelite TMS.
 echo.
+exit /b 0
+
+:rodizio_only
+rem Atualizacao aditiva da base existente, sem repetir conciliacoes historicas.
+call :run_sql "%SCRIPT_ROOT%\migration\V22__auditoria_etapas_ciclo_rodizio.sql"
+if errorlevel 1 exit /b 1
+echo [OK] Auditoria do rodizio XML e comprovantes atualizada.
 exit /b 0
 
 :run_migrations

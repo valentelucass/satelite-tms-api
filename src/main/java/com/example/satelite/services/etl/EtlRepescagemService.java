@@ -84,6 +84,9 @@ public class EtlRepescagemService {
     @Value("${WORK_SFTP_CLIENTES_MAX_CONSECUTIVE_ERRORS:3}")
     private int limiteErrosConsecutivosSftp = 3;
 
+    @Value("${WORK_SFTP_CLIENTES_INVENTORY_ITEMS_PER_TURN:100}")
+    private int limiteInventarioPorTurno = 100;
+
     @Autowired
     public EtlRepescagemService(
             LogIntegracaoRepository logIntegracaoRepository,
@@ -129,10 +132,41 @@ public class EtlRepescagemService {
             int limite,
             long intervaloEntreItensMs
     ) {
+        return processarClienteSftpVedacit(cliente, inventario, fonteSftp, limite, intervaloEntreItensMs,
+                new PassagemSftp(), Long.MAX_VALUE / 1_000_000L);
+    }
+
+    public static final class PassagemSftp {
+        final Set<String> tentadas = new HashSet<>();
+        int errosConsecutivos;
+        boolean suspensa;
+        boolean mais;
+        boolean limitada;
+        int indiceInventario;
+        boolean revisaoSolicitada;
+        String motivoFalha;
+        int totalAvaliados, totalEnviados, totalPendentes, totalErros;
+        void contabilizar(ResultadoRegistro resultado) {
+            if (resultado == ResultadoRegistro.ENVIADO) totalEnviados++;
+            else if (resultado == ResultadoRegistro.PENDENTE_FOTO) totalPendentes++;
+            else if (resultado.erro()) totalErros++;
+        }
+        public void revisarInventario() { revisaoSolicitada = true; }
+        public boolean temMais() { return mais && !suspensa; }
+    }
+
+    public ResultadoClienteSftpVedacit processarClienteSftpVedacit(String cliente, VedacitSftpInventory inventario,
+            VedacitSftpDocumentSource fonteSftp, int limite, long intervaloEntreItensMs,
+            PassagemSftp passagem, long duracaoMs) {
+        long inicioTurno = System.nanoTime();
         String clienteSeguro = cliente == null ? "" : cliente.trim().toUpperCase(Locale.ROOT);
         if (!clienteSeguro.matches("[A-Z0-9_]+")) throw new IllegalArgumentException("Cliente SFTP inválido");
         VedacitSftpInventory seguro = inventario == null ? new VedacitSftpInventory(List.of(), List.of()) : inventario;
-        ResultadoInventarioSftpVedacit materializacao = sincronizarInventarioSftpVedacit(clienteSeguro, seguro);
+        ResultadoInventarioSftpVedacit materializacao = passagem.limitada
+                ? sincronizarParteInventario(clienteSeguro, seguro, passagem, inicioTurno, duracaoMs)
+                : sincronizarInventarioSftpVedacit(clienteSeguro, seguro);
+        passagem.mais = passagem.limitada && (passagem.indiceInventario < seguro.documentosValidos().size() + seguro.rejeitados().size()
+                || passagem.revisaoSolicitada);
         Set<String> chavesNfe = new LinkedHashSet<>();
         for (VedacitSftpDocument documento : seguro.documentosValidos()) {
             if (documento != null && documento.chaveNfe() != null) {
@@ -143,11 +177,12 @@ public class EtlRepescagemService {
         if (nfes.isEmpty()) return new ResultadoClienteSftpVedacit(materializacao, new ResultadoReprocessamentoCanhotoVedacit(0,0,0,0,0), 0);
         int limiteSeguro = Math.max(1, limite);
         int enviados = 0, pendentes = 0, erros = 0, ignorados = 0;
-        int errosConsecutivos = 0;
-        Set<String> tentadas = new HashSet<>();
+        int errosConsecutivos = passagem.errosConsecutivos;
+        Set<String> tentadas = passagem.tentadas;
         boolean continuar = true;
         boolean filaNormalEsgotada = false;
-        while (continuar && !Thread.currentThread().isInterrupted()) {
+        passagem.mais = false;
+        while (continuar && !passagem.suspensa && !Thread.currentThread().isInterrupted()) {
             List<String> restantes = nfes.stream().filter(nfe -> !tentadas.contains(nfe)).toList();
             List<LogIntegracaoModel> registros = buscarRegistrosSftpEmLotes(restantes, limiteSeguro,
                     lote -> logIntegracaoRepository.findCandidatosSftpPorClienteENfes(
@@ -155,12 +190,18 @@ public class EtlRepescagemService {
                     .filter(registro -> !tentadas.contains(registro.getChaveNfe())).toList();
             if (registros.isEmpty()) { filaNormalEsgotada = true; break; }
             for (LogIntegracaoModel registro : registros) {
+                if (passagem.limitada && ((enviados + pendentes + erros + ignorados) >= limiteSeguro
+                        || System.nanoTime() - inicioTurno >= duracaoMs * 1_000_000L)) {
+                    passagem.mais = true; continuar = false; break;
+                }
                 // Uma passagem finita pelo inventário: ausência de arquivo ou lock não trava o dreno.
                 if (!tentadas.add(registro.getChaveNfe())) continue;
                 if (tentadas.size() > 1 && !pausarEntreRegistros(intervaloEntreItensMs)) {
                     continuar = false; break;
                 }
-                ResultadoRegistro resultado = processarComLockCliente(clienteSeguro, registro, fonteSftp);
+                passagem.totalAvaliados++;
+                ResultadoRegistro resultado = processarComLockCliente(clienteSeguro, registro, fonteSftp, passagem);
+                passagem.contabilizar(resultado);
                 if (resultado == ResultadoRegistro.ENVIADO) enviados++;
                 else if (resultado == ResultadoRegistro.PENDENTE_FOTO) pendentes++;
                 else if (resultado.erro()) erros++;
@@ -168,13 +209,14 @@ public class EtlRepescagemService {
                 errosConsecutivos = resultado.erro() ? errosConsecutivos + 1 : 0;
                 if (errosConsecutivos >= Math.max(1, limiteErrosConsecutivosSftp)) {
                     log.warn("[WORK-SFTP-CLIENTES] cliente={} dreno suspenso após {} erros consecutivos.", clienteSeguro, errosConsecutivos);
-                    continuar = false; break;
+                    passagem.suspensa = true; continuar = false; break;
                 }
             }
             if (!drenarFilaSftp) break;
         }
+        passagem.errosConsecutivos = errosConsecutivos;
         // A quarentena técnica só inicia quando a fila normal do cliente ficou ociosa.
-        if (filaNormalEsgotada && erros == 0 && !Thread.currentThread().isInterrupted()) {
+        if (filaNormalEsgotada && erros == 0 && !passagem.suspensa && !Thread.currentThread().isInterrupted()) {
             int limiteTecnicos = Math.min(10, limiteSeguro);
             List<LogIntegracaoModel> tecnicos = buscarRegistrosSftpEmLotes(
                     nfes.stream().filter(nfe -> !tentadas.contains(nfe)).toList(),
@@ -184,15 +226,28 @@ public class EtlRepescagemService {
                     )
             );
             int errosTecnicos = 0;
-            for (int indice = 0; indice < tecnicos.size() && errosTecnicos < 3; indice++) {
+            for (int indice = 0; indice < tecnicos.size() && errosTecnicos < Math.max(1, limiteErrosConsecutivosSftp); indice++) {
+                if (passagem.limitada && ((enviados + pendentes + erros + ignorados) >= limiteSeguro
+                        || System.nanoTime() - inicioTurno >= duracaoMs * 1_000_000L)) {
+                    passagem.mais = true; break;
+                }
+                tentadas.add(tecnicos.get(indice).getChaveNfe());
                 if ((!tentadas.isEmpty() || indice > 0) && !pausarEntreRegistros(intervaloEntreItensMs)) break;
-                ResultadoRegistro resultado = processarComLockCliente(clienteSeguro, tecnicos.get(indice), fonteSftp);
+                passagem.totalAvaliados++;
+                ResultadoRegistro resultado = processarComLockCliente(clienteSeguro, tecnicos.get(indice), fonteSftp, passagem);
+                passagem.contabilizar(resultado);
                 if (resultado == ResultadoRegistro.ENVIADO) enviados++;
                 else if (resultado == ResultadoRegistro.PENDENTE_FOTO) pendentes++;
                 else if (resultado.erro()) { erros++; errosTecnicos++; }
                 else ignorados++;
+                passagem.errosConsecutivos = resultado.erro() ? passagem.errosConsecutivos + 1 : 0;
+                if (passagem.errosConsecutivos >= Math.max(1, limiteErrosConsecutivosSftp)) {
+                    passagem.suspensa = true; break;
+                }
             }
         }
+        if (passagem.limitada && (passagem.indiceInventario < seguro.documentosValidos().size() + seguro.rejeitados().size()
+                || passagem.revisaoSolicitada)) passagem.mais = true;
         long saldo = contarNfesSftpEmLotes(
                 nfes,
                 lote -> logIntegracaoRepository.countNfesCandidatasSftpPorClienteENfes(clienteSeguro, lote)
@@ -201,15 +256,22 @@ public class EtlRepescagemService {
                 new ResultadoReprocessamentoCanhotoVedacit(enviados + pendentes + erros + ignorados, enviados, pendentes, erros, ignorados), saldo);
     }
 
-    private ResultadoRegistro processarComLockCliente(String cliente, LogIntegracaoModel registro, VedacitSftpDocumentSource fonteSftp) {
+    private ResultadoRegistro processarComLockCliente(String cliente, LogIntegracaoModel registro, VedacitSftpDocumentSource fonteSftp, PassagemSftp passagem) {
         if (sftpDocumentoLockService == null) {
             throw new IllegalStateException("Lock SFTP Vedacit indisponível");
         }
         Optional<ResultadoRegistro> resultadoComLock = sftpDocumentoLockService.executarComLock(
                 cliente, registro.getChaveNfe(), registro.getChaveCte(), () -> {
-            registro.setSftpCliente(cliente);
-            registrarOrigemSftpDoCanhoto(registro);
-            return etlRegistroService.reprocessarCanhotoVedacitPorCte(registro, fonteSftp);
+            var atual = etlEstadoIntegracaoService.buscarAtivoPorId(registro.getId());
+            if (atual.isEmpty() || !cliente.equals(atual.get().getSftpCliente())) return ResultadoRegistro.IGNORADO;
+            registrarOrigemSftpDoCanhoto(atual.get());
+            var resultado = etlRegistroService.reprocessarCanhotoVedacitPorCte(atual.get(), fonteSftp);
+            if (resultado.erro()) passagem.motivoFalha = switch (String.valueOf(atual.get().getCanhotoClassificacaoOperacional())) {
+                case "TIMEOUT_AMBIGUO" -> "TIMEOUT_COMPROVANTE: Destino não confirmou o envio; reenvio bloqueado";
+                case "BLOQUEADO_DESTINO" -> "RECUSA_DESTINO: Comprovante recusado pelo destino";
+                default -> "PROCESSAMENTO: Falha de comprovante; consulte a auditoria do documento";
+            };
+            return resultado;
         });
         if (resultadoComLock.isPresent()) {
             return resultadoComLock.get();
@@ -217,6 +279,27 @@ public class EtlRepescagemService {
         log.warn("[WORK-SFTP-CLIENTES] cliente={} NF={} CT-e={}: lock ocupado; mantendo pendente para nova tentativa.",
                 cliente, chaveResumida(registro.getChaveNfe()), chaveResumida(registro.getChaveCte()));
         return ResultadoRegistro.PENDENTE_FOTO;
+    }
+
+    private ResultadoInventarioSftpVedacit sincronizarParteInventario(String cliente, VedacitSftpInventory inventario,
+            PassagemSftp passagem, long inicio, long duracaoMs) {
+        int total = inventario.documentosValidos().size() + inventario.rejeitados().size();
+        if (passagem.indiceInventario >= total && passagem.revisaoSolicitada) {
+            passagem.indiceInventario = 0;
+            passagem.revisaoSolicitada = false;
+        }
+        int novos = 0, enviados = 0, existentes = 0;
+        for (int n = 0; n < Math.max(1, limiteInventarioPorTurno) && passagem.indiceInventario < total; n++) {
+            if (n > 0 && System.nanoTime() - inicio >= duracaoMs * 1_000_000L) break;
+            int i = passagem.indiceInventario;
+            var parte = i < inventario.documentosValidos().size()
+                    ? new VedacitSftpInventory(List.of(inventario.documentosValidos().get(i)), List.of())
+                    : new VedacitSftpInventory(List.of(), List.of(inventario.rejeitados().get(i - inventario.documentosValidos().size())));
+            var resultado = sincronizarInventarioSftpVedacit(cliente, parte);
+            novos += resultado.novos(); enviados += resultado.jaEnviados(); existentes += resultado.existentes();
+            passagem.indiceInventario++;
+        }
+        return new ResultadoInventarioSftpVedacit(inventario.documentosValidos().size(), novos, enviados, existentes);
     }
 
     private ResultadoInventarioSftpVedacit sincronizarInventarioSftpVedacit(String cliente, VedacitSftpInventory inventario) {
@@ -228,7 +311,8 @@ public class EtlRepescagemService {
                     .findTopBySistemaDestinoAndSftpClienteAndChaveNfeAndChaveCteOrderByDataProcessamentoDescIdDesc(
                             DESTINO_VEDACIT, cliente, documento.chaveNfe(), documento.chaveCte());
             if (existente.isPresent()) {
-                if (ResultadoIntegracao.STATUS_PENDENTE_ORIGEM.equals(existente.get().getStatusDados())) {
+                if (ResultadoIntegracao.STATUS_PENDENTE_ORIGEM.equals(existente.get().getStatusDados())
+                        || (ResultadoIntegracao.STATUS_SUCESSO.equals(existente.get().getStatusDados()) && existente.get().getDataProcessamentoDados() == null)) {
                     Optional<LogIntegracaoModel> legado = buscarConfirmacaoDados(cliente, documento);
                     if (legado.isPresent()) {
                         reconciliarRegistroSftpComLegado(existente.get(), documento, legado.get());
@@ -485,6 +569,9 @@ public class EtlRepescagemService {
                 || ClassificacaoOperacionalCanhotoVedacit.TIMEOUT_AMBIGUO.name().equals(classificacao)) return;
         if (!ResultadoIntegracao.STATUS_SUCESSO.equals(registro.getStatusDados())) {
             if (ResultadoIntegracao.STATUS_PENDENTE_ORIGEM.equals(registro.getStatusDados())) {
+                if (ResultadoIntegracao.STATUS_PENDENTE_FOTO.equals(registro.getStatusCanhoto())
+                        && ClassificacaoOperacionalCanhotoVedacit.BLOQUEADO_ORIGEM.name().equals(classificacao)
+                        && java.util.Objects.equals(registro.getCanhotoReferencia(), documento.caminhoRelativo())) return;
                 registro.setStatusCanhoto(ResultadoIntegracao.STATUS_PENDENTE_FOTO);
                 registro.setCanhotoReferencia(documento.caminhoRelativo());
                 etlEstadoIntegracaoService.classificarCanhotoVedacit(registro, ClassificacaoOperacionalCanhotoVedacit.BLOQUEADO_ORIGEM);
@@ -521,6 +608,8 @@ public class EtlRepescagemService {
 
     private void registrarRejeicaoSftp(LogIntegracaoModel registro, VedacitSftpInventory.DocumentoRejeitado rejeitado) {
         String classificacao = registro.getCanhotoClassificacaoOperacional();
+        if (registro.getId() != null && java.util.Objects.equals(registro.getMensagemErroCanhoto(), rejeitado.motivo())
+                && ResultadoIntegracao.STATUS_ERRO_DESTINO.equals(registro.getStatusCanhoto())) return;
         if (ResultadoIntegracao.STATUS_SUCESSO.equals(registro.getStatusCanhoto())
                 || ClassificacaoOperacionalCanhotoVedacit.TIMEOUT_AMBIGUO.name().equals(classificacao)
                 || ClassificacaoOperacionalCanhotoVedacit.BLOQUEADO_DESTINO.name().equals(classificacao)) return;

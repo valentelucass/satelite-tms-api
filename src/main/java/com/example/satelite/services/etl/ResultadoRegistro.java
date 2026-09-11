@@ -7,6 +7,7 @@ public enum ResultadoRegistro {
     PENDENTE_FOTO(false, false),
     PENDENTE_ORIGEM(false, false),
     ERRO(true, false),
+    RETIDO(true, false),
     ERRO_INFRAESTRUTURA(true, true);
 
     private final boolean erro;

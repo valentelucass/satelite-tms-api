@@ -25,6 +25,7 @@ public class EslRequestTelemetryModel {
     private Long id;
 
     @Column(name = "data_evento", nullable = false)
+    @org.hibernate.annotations.JdbcTypeCode(org.hibernate.type.SqlTypes.LOCAL_DATE_TIME)
     private LocalDateTime dataEvento;
 
     @Column(nullable = false, length = 30)

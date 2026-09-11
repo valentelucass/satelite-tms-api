@@ -574,6 +574,11 @@ public class VedacitIntegrationService {
         return baixarXmlCte(chaveCte, chaveNfe);
     }
 
+    @Value("${VEDACIT_XML_SOURCE_RETRY_COOLDOWN_MS:1800000}")
+    private long xmlSourceCooldownMs = 1800000;
+    private volatile long xmlEslLiberadoEm;
+    private static final java.util.concurrent.Semaphore SOAP_EM_CURSO = new java.util.concurrent.Semaphore(1);
+
     private byte[] baixarXmlCte(String chaveCte, String chaveNfe) {
         Optional<byte[]> xmlSftp = buscarXmlCteSftp(chaveCte, chaveNfe);
         if (xmlSftp.isPresent()) {
@@ -581,7 +586,20 @@ public class VedacitIntegrationService {
             return xmlSftp.get();
         }
 
-        return baixarXmlCteEsl(chaveCte, chaveNfe);
+        if (System.currentTimeMillis() < xmlEslLiberadoEm) throw new IllegalStateException("ORIGEM_XML_AUTENTICACAO_EM_ESPERA");
+        try {
+            byte[] xml = baixarXmlCteEsl(chaveCte, chaveNfe);
+            if (!com.example.satelite.utils.CteXmlValidator.corresponde(xml, chaveCte, chaveNfe))
+                throw new IllegalStateException("ORIGEM_XML_CORRELACAO_INVALIDA");
+            return xml;
+        } catch (XmlCteIndisponivelNaOrigemException e) { throw e;
+        } catch (feign.FeignException e) {
+            if (e.status() == 401 || e.status() == 403)
+                xmlEslLiberadoEm = System.currentTimeMillis() + Math.max(1000, xmlSourceCooldownMs);
+            throw new IllegalStateException("ORIGEM_XML_HTTP_" + e.status());
+        } catch (EslRequestTransientException e) {
+            throw new IllegalStateException("ORIGEM_XML_HTTP_" + e.status());
+        }
     }
 
     private Optional<byte[]> buscarXmlCteSftp(String chaveCte, String chaveNfe) {
@@ -592,10 +610,7 @@ public class VedacitIntegrationService {
             return vedacitSftpDocumentSource.buscarXmlCte(chaveCte, chaveNfe)
                     .map(documento -> documento.conteudo())
                     .filter(xml -> xml.length > 0)
-                    .filter(xml -> {
-                        String texto = new String(xml, StandardCharsets.UTF_8);
-                        return texto.contains(chaveCte) && texto.contains(chaveNfe);
-                    });
+                    .filter(xml -> com.example.satelite.utils.CteXmlValidator.corresponde(xml, chaveCte, chaveNfe));
         } catch (RuntimeException e) {
             logDetalheSftpVedacit.warn("[VEDACIT][DETALHE] SFTP indisponível para XML CT-e; usando fallback ESL. CTe={} motivo={}", chaveCte, e.getMessage());
             return Optional.empty();
@@ -864,12 +879,24 @@ public class VedacitIntegrationService {
             return thread;
         };
         ExecutorService executor = Executors.newSingleThreadExecutor(threadFactory);
-        Future<T> future = executor.submit(chamada);
+        Future<T> future;
+        try {
+            future = executor.submit(() -> {
+                if (!SOAP_EM_CURSO.tryAcquire())
+                    throw new IOException("SOAP_ANTERIOR_EM_ANDAMENTO: envio anterior sem confirmação");
+                try { return chamada.call(); }
+                finally { SOAP_EM_CURSO.release(); }
+            });
+        } catch (RuntimeException e) { executor.shutdownNow(); throw e; }
         try {
             return future.get(soapInvocationTimeoutMs, TimeUnit.MILLISECONDS);
         } catch (TimeoutException e) {
             future.cancel(true);
             throw new IOException("Timeout total da Vedacit na etapa " + etapa + " após " + soapInvocationTimeoutMs + " ms", e);
+        } catch (InterruptedException e) {
+            future.cancel(true);
+            Thread.currentThread().interrupt();
+            throw new IOException("Interrompido durante envio Vedacit; sem confirmação", e);
         } catch (ExecutionException e) {
             Throwable causa = e.getCause();
             if (causa instanceof Exception exception) {

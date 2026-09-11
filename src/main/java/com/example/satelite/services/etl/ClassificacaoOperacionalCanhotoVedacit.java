@@ -26,7 +26,10 @@ public enum ClassificacaoOperacionalCanhotoVedacit {
 
     public static ClassificacaoOperacionalCanhotoVedacit paraErro(String mensagem) {
         String texto = normalizar(mensagem);
+        if (texto.contains("soap_anterior_em_andamento")) return PENDENTE_TECNICO;
         if (texto.contains("read timed out") || texto.contains("sockettimeoutexception")
+                || texto.contains("timeout total da vedacit")
+                || texto.contains("interrompido durante envio")
                 || texto.contains("sem confirmação") || texto.contains("sem confirmacao")) {
             return TIMEOUT_AMBIGUO;
         }

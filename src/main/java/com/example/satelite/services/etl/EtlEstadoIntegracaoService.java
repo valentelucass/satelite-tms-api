@@ -69,7 +69,8 @@ public class EtlEstadoIntegracaoService {
             String chaveCte = obterChaveCte(ocorrencia);
             if (chaveCte != null) {
                 Optional<LogIntegracaoModel> porCte = logIntegracaoRepository
-                        .findTopBySistemaDestinoAndChaveCteOrderByDataProcessamentoDescIdDesc(destino, chaveCte);
+                        .findTopBySistemaDestinoAndChaveNfeAndChaveCteAndArquivadoFalseOrderByDataProcessamentoDescIdDesc(
+                                destino, obterChaveNfe(ocorrencia), chaveCte);
                 if (porCte.isPresent()) {
                     return porCte;
                 }
@@ -84,12 +85,21 @@ public class EtlEstadoIntegracaoService {
         return logIntegracaoRepository.findTopBySistemaDestinoAndOccurrenceIdOrderByDataProcessamentoDescIdDesc(
                 destino,
                 occurrenceId
-        );
+        ).filter(l -> !Boolean.TRUE.equals(l.getArquivado()));
+    }
+
+    public Optional<LogIntegracaoModel> buscarAtivoPorId(Long id) {
+        return id == null ? Optional.empty() : logIntegracaoRepository.findById(id)
+                .filter(l -> !Boolean.TRUE.equals(l.getArquivado()));
     }
 
     public boolean xmlVedacitConfirmado(String chaveCte) {
         return chaveCte != null && logIntegracaoRepository
                 .existsBySistemaDestinoAndChaveCteAndStatusDados("VEDACIT", chaveCte, "SUCESSO");
+    }
+
+    public boolean xmlVedacitSucessoSemData(String chaveCte) {
+        return chaveCte != null && logIntegracaoRepository.existsXmlVedacitSucessoSemData(chaveCte);
     }
 
     public boolean finalizadoSemReenvio(LogIntegracaoModel logIntegracao) {
@@ -197,6 +207,10 @@ public class EtlEstadoIntegracaoService {
         );
     }
 
+    public boolean canhotoVedacitSucessoRegistradoPorPar(String chaveNfe, String chaveCte) {
+        return logIntegracaoRepository.existsCanhotoVedacitSucessoPorPar(chaveNfe, chaveCte);
+    }
+
     /** Propaga somente o resultado do mesmo canhoto; não altera chave CT-e histórica. */
     public void marcarCanhotosVedacitRelacionadosComoSucesso(
             String chaveNfe, String chaveCteEfetiva, String tipo, String motivo
@@ -204,6 +218,9 @@ public class EtlEstadoIntegracaoService {
         List<LogIntegracaoModel> relacionados = logIntegracaoRepository
                 .findBySistemaDestinoAndChaveNfeOrderByDataProcessamentoAscIdAsc("VEDACIT", chaveNfe);
         for (LogIntegracaoModel relacionado : relacionados) {
+            if (Boolean.TRUE.equals(relacionado.getArquivado())) continue;
+            if (!java.util.Objects.equals(chaveCteEfetiva, relacionado.getChaveCte())
+                    && !java.util.Objects.equals(chaveCteEfetiva, relacionado.getCanhotoChaveCteEfetiva())) continue;
             if (!ResultadoIntegracao.STATUS_SUCESSO.equals(relacionado.getStatusDados())
                     || ResultadoIntegracao.STATUS_SUCESSO.equals(relacionado.getStatusCanhoto())) {
                 continue;
@@ -216,6 +233,21 @@ public class EtlEstadoIntegracaoService {
             ));
             salvar(relacionado);
         }
+    }
+
+    public List<LogIntegracaoModel> buscarXmlFalhaOrigem(LocalDateTime antes, int limite) {
+        return logIntegracaoRepository.findXmlFalhaOrigemParaRecuperacao(antes,
+                org.springframework.data.domain.PageRequest.of(0, limite));
+    }
+
+    public void aplicarResultadoXml(LogIntegracaoModel registro, ResultadoIntegracao resultado) {
+        String status = resultado.status();
+        if (STATUS_SUCESSO.equals(resultado.statusDados()) && !STATUS_SUCESSO.equals(registro.getStatusCanhoto()))
+            status = ResultadoIntegracao.STATUS_PARCIAL;
+        boolean ausente = ResultadoIntegracao.STATUS_PENDENTE_ORIGEM.equals(resultado.statusDados());
+        aplicarResultadoIntegracao(registro, new ResultadoIntegracao(status, resultado.statusDados(),
+                registro.getStatusCanhoto(), ausente ? "ORIGEM_XML_AUSENTE" : resultado.mensagemErroDados(), registro.getMensagemErroCanhoto()));
+        if (ausente) registro.setDataProcessamentoDados(agoraAuditoria());
     }
 
     public ResultadoIntegracao criarResultadoErroGenerico(String destino, Exception e) {

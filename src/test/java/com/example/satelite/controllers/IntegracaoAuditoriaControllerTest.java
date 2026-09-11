@@ -40,7 +40,10 @@ class IntegracaoAuditoriaControllerTest {
 
         assertEquals(List.of(resumo), resposta);
         assertEquals("SFTP", new tools.jackson.databind.ObjectMapper().valueToTree(resumo).get("origemComprovantes").asString());
-        assertEquals(15, WorkSftpClienteStatusDTO.class.getRecordComponents().length);
+        var json = new tools.jackson.databind.ObjectMapper().valueToTree(resumo);
+        org.junit.jupiter.api.Assertions.assertTrue(json.get("xmlHabilitado").isNull());
+        org.junit.jupiter.api.Assertions.assertFalse(json.has("chaveNfe"));
+        org.junit.jupiter.api.Assertions.assertFalse(json.has("canhotoReferencia"));
     }
 
     @Test
@@ -55,6 +58,5 @@ class IntegracaoAuditoriaControllerTest {
                 .consultarExecucoesVedacitSftp(0, 25, "VEDACIT", "CONCLUIDO", "2026-08-01", "2026-08-02", "SFTP");
 
         assertEquals(pagina, resposta);
-        assertEquals(15, WorkSftpClienteStatusDTO.class.getRecordComponents().length);
     }
 }

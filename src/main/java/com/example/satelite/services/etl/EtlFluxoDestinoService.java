@@ -80,6 +80,9 @@ public class EtlFluxoDestinoService {
     @Value("${APP_ETL_PENDENCIAS_ENABLED:true}")
     private boolean processarPendenciasEnabled = true;
 
+    @Value("${VEDACIT_XML_SOURCE_RETRY_ITEMS:10}")
+    private int xmlSourceRetryItems = 10;
+
     public EtlFluxoDestinoService(
             RodogarciaClient rodogarciaClient,
             ControleCursorRepository controleCursorRepository,
@@ -118,10 +121,21 @@ public class EtlFluxoDestinoService {
             boolean processarPendencias,
             ProcessadorDestino processadorDestino
     ) {
+        return executarFluxoDestino(destino, identificadorCursor, tokenEsl, request, codigoOcorrencia,
+                processarPendencias, processadorDestino, null);
+    }
+
+    ResultadoDestino executarFluxoDestino(String destino, String identificadorCursor, String tokenEsl,
+            ExecucaoEtlRequest request, Integer codigoOcorrencia, boolean processarPendencias,
+            ProcessadorDestino processadorDestino, TurnoEtl turno) {
         ResultadoDestino resultadoDestino = ResultadoDestino.vazio(destino);
         log.info("🚀 [DESTINO: {}] Iniciando varredura de ocorrências. cursor={} codigo_ocorrencia={}", destino, identificadorCursor, codigoOcorrencia);
 
         try {
+            if ("VEDACIT_XML".equals(identificadorCursor)) {
+                var recuperacao = etlRegistroService.recuperarXmlFalhasOrigem(turno, Math.max(1, xmlSourceRetryItems));
+                if (recuperacao != null) resultadoDestino = resultadoDestino.comRegistros(recuperacao);
+            }
             String headerAuth = "Bearer " + tokenEsl;
             Long cursorAtual = request.buscarCursorInicial() ? buscarUltimoCursor(identificadorCursor) : null;
             if (processarPendencias && request.processarPendencias() && processarPendenciasEnabled) {
@@ -140,7 +154,7 @@ public class EtlFluxoDestinoService {
             int falhasInfraestruturaConsecutivas = 0;
             AssinaturaPagina assinaturaPaginaAnterior = null;
 
-            while (true) {
+            while (!Thread.currentThread().isInterrupted()) {
                 String invoiceKeyParam = request.retroativo() ? null : obterInvoiceKeyParam(destino);
                 String sinceParam = invoiceKeyParam == null && cursorAtual == null
                         ? obterSinceParam(request)
@@ -187,6 +201,7 @@ public class EtlFluxoDestinoService {
                     return resultadoDestino;
                 }
 
+                if (turno != null) turno.verificarTempo();
                 if (loteVazio(lote)) {
                     log.info("📭 [DESTINO: {}] Nenhuma ocorrência encontrada a partir do cursor {}.", destino, cursorAtual);
                     resultadoDestino = resultadoDestino.encerrar("Nenhuma ocorrencia encontrada");
@@ -205,7 +220,7 @@ public class EtlFluxoDestinoService {
                         request,
                         falhasInfraestruturaConsecutivas,
                         processadorDestino,
-                        codigoOcorrencia
+                        codigoOcorrencia, turno
                 );
                 resultadoDestino = resultadoDestino.comPagina(resultado);
                 falhasInfraestruturaConsecutivas = resultado.falhasInfraestruturaConsecutivas();
@@ -236,11 +251,12 @@ public class EtlFluxoDestinoService {
                 }
 
                 if (resultado.interromperCiclo()) {
-                    resultadoDestino = resultadoDestino.encerrar("Modo E2E processou a primeira nota forcada");
+                    resultadoDestino = resultadoDestino.encerrar(Thread.currentThread().isInterrupted()
+                            ? "Execucao interrompida; cursor da pagina preservado" : "Modo E2E processou a primeira nota forcada");
                     return resultadoDestino;
                 }
 
-                if (resultado.erros() > 0 && !request.retroativo()) {
+                if (resultado.erros() > resultado.retidos() && !request.retroativo()) {
                     log.warn(
                             "⚠️ [DESTINO: {}] Cursor não avançado: {} erro(s) na página. Próximo ciclo tentará novamente a partir de {}.",
                             destino,
@@ -251,7 +267,7 @@ public class EtlFluxoDestinoService {
                     return resultadoDestino;
                 }
 
-                if (resultado.erros() > 0) {
+                if (resultado.erros() > 0 && request.retroativo()) {
                     log.warn(
                             "⚠️ [DESTINO: {}] Página retroativa teve {} erro(s), já registrados em ERRO_DESTINO. A carga retroativa continuará avançando em memória para não interromper o histórico.",
                             destino,
@@ -333,6 +349,7 @@ public class EtlFluxoDestinoService {
                     paginasDesdeUltimaPausa = 0;
                 }
             }
+            return resultadoDestino.encerrar("Execucao interrompida; cursor preservado");
         } catch (EslRequestTransientException e) {
             if (falhaPaginaNaoCritica(e)) {
                 log.warn(
@@ -447,6 +464,13 @@ public class EtlFluxoDestinoService {
             ProcessadorDestino processadorDestino,
             Integer codigoOcorrencia
     ) {
+        return processarPagina(destino, headerAuth, cursorNextId, lote, request,
+                falhasInfraestruturaConsecutivasInicial, processadorDestino, codigoOcorrencia, null);
+    }
+
+    ResultadoPagina processarPagina(String destino, String headerAuth, Long cursorNextId, EslLoteResponseDTO lote,
+            ExecucaoEtlRequest request, int falhasInfraestruturaConsecutivasInicial,
+            ProcessadorDestino processadorDestino, Integer codigoOcorrencia, TurnoEtl turno) {
         ResultadoPagina resultado = ResultadoPagina.vazio(falhasInfraestruturaConsecutivasInicial);
         int indice = 0;
 
@@ -486,6 +510,7 @@ public class EtlFluxoDestinoService {
                             processadorDestino
                     );
             resultado = resultado.com(registro);
+            if (turno != null) turno.documentoAvaliado();
 
             if (resultado.falhasInfraestruturaConsecutivas() >= limiteCircuitBreaker()) {
                 log.error(
@@ -507,6 +532,7 @@ public class EtlFluxoDestinoService {
                 return resultado.comInterrupcaoDeCiclo();
             }
 
+            if (Thread.currentThread().isInterrupted()) return resultado.comInterrupcaoDeCiclo();
             indice++;
         }
 

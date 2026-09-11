@@ -179,7 +179,7 @@ class VedacitIntegrationServiceTest {
         when(rodogarciaClient.buscarXmlCte(
                 "Bearer token-cte",
                 "35260612345678000123570010000012341000012345"
-        )).thenReturn(new CteResponseDTO(List.of(new CteDataDTO(new CteItemDTO(1L, "autorizado", "<cte/>")))));
+        )).thenReturn(new CteResponseDTO(List.of(new CteDataDTO(new CteItemDTO(1L, "autorizado", xmlValido("35260612345678000123570010000012341000012345", "35260612345678000123550010000012341000012345"))))));
         when(portaCte.enviarArquivoXMLCTe(any(byte[].class)))
                 .thenThrow(criarErroSoap("Carga já existe"));
 
@@ -218,7 +218,7 @@ class VedacitIntegrationServiceTest {
         when(rodogarciaClient.buscarXmlCte(
                 "Bearer token-cte",
                 "35260612345678000123570010000012341000012345"
-        )).thenReturn(new CteResponseDTO(List.of(new CteDataDTO(new CteItemDTO(1L, "autorizado", "<cte/>")))));
+        )).thenReturn(new CteResponseDTO(List.of(new CteDataDTO(new CteItemDTO(1L, "autorizado", xmlValido("35260612345678000123570010000012341000012345", "35260612345678000123550010000012341000012345"))))));
 
         VedacitIntegrationService service = new VedacitIntegrationService(
                 mock(ImageDownloader.class),
@@ -253,7 +253,7 @@ class VedacitIntegrationServiceTest {
         String chaveNfe = "35260760642774001209550010002329831546555019";
         String chaveCte = "35260760960473000758570030000521491971250456";
         when(rodogarciaClient.buscarXmlCte("Bearer token-cte", chaveCte))
-                .thenReturn(new CteResponseDTO(List.of(new CteDataDTO(new CteItemDTO(1L, "autorizado", "<cte/>")))));
+                .thenReturn(new CteResponseDTO(List.of(new CteDataDTO(new CteItemDTO(1L, "autorizado", xmlValido(chaveCte, chaveNfe))))));
 
         VedacitIntegrationService service = new VedacitIntegrationService(
                 mock(ImageDownloader.class), rodogarciaClient, politicaEsl
@@ -333,8 +333,7 @@ class VedacitIntegrationServiceTest {
         aceite.setStatus(true);
         when(portaCte.enviarArquivoXMLCTe(any(byte[].class))).thenReturn(aceite);
         EslOcorrenciaDTO ocorrencia = criarOcorrencia();
-        byte[] xml = "<cte>35260612345678000123570010000012341000012345"
-                .concat("35260612345678000123550010000012341000012345</cte>").getBytes();
+        byte[] xml = xmlValido("35260612345678000123570010000012341000012345", "35260612345678000123550010000012341000012345").getBytes();
         when(sftp.buscarXmlCte("35260612345678000123570010000012341000012345",
                 "35260612345678000123550010000012341000012345"))
                 .thenReturn(Optional.of(new VedacitSftpDocument(
@@ -501,7 +500,7 @@ class VedacitIntegrationServiceTest {
         if (tipo.equals("RECUSADO")) retorno.setStatus(false);
         when(porta.enviarArquivoXMLCTe(any(byte[].class))).thenReturn(tipo.equals("AUSENTE") ? null : retorno);
         var origem = mock(RodogarciaClient.class);
-        when(origem.buscarXmlCte(any(), any())).thenReturn(new CteResponseDTO(List.of(new CteDataDTO(new CteItemDTO(1L, "autorizado", "<cte/>")))));
+        when(origem.buscarXmlCte(any(), any())).thenReturn(new CteResponseDTO(List.of(new CteDataDTO(new CteItemDTO(1L, "autorizado", xmlValido("35260612345678000123570010000012341000012345", "35260612345678000123550010000012341000012345"))))));
         var service = new VedacitIntegrationService(mock(ImageDownloader.class), origem, criarPoliticaEslExecutora()) {
             @Override protected ICTe criarPortaCte() { return porta; }
         };
@@ -571,5 +570,27 @@ class VedacitIntegrationServiceTest {
         ByteArrayOutputStream baos = new ByteArrayOutputStream();
         ImageIO.write(imagem, "jpg", baos);
         return baos.toByteArray();
+    }
+    private static String xmlValido(String cte, String nfe) {
+        return "<CTe xmlns=\"http://www.portalfiscal.inf.br/cte\"><infCte Id=\"CTe" + cte
+                + "\"><infCTeNorm><infDoc><infNFe><chave>" + nfe
+                + "</chave></infNFe></infDoc></infCTeNorm></infCte></CTe>";
+    }
+
+    @Test void falha401SuspendeNovosDownloadsEslSemExporResposta() {
+        var esl = mock(RodogarciaClient.class);
+        var request = feign.Request.create(feign.Request.HttpMethod.GET, "https://example.invalid/xml",
+                java.util.Map.of(), null, java.nio.charset.StandardCharsets.UTF_8, new feign.RequestTemplate());
+        var response = feign.Response.builder().request(request).status(401).reason("Unauthorized")
+                .headers(java.util.Map.of()).body("segredo-na-resposta", java.nio.charset.StandardCharsets.UTF_8).build();
+        when(esl.buscarXmlCte(any(), any())).thenThrow(feign.FeignException.errorStatus("download", response));
+        var service = new VedacitIntegrationService(mock(ImageDownloader.class), esl, criarPoliticaEslExecutora());
+        ReflectionTestUtils.setField(service, "tokenCteXmlEsl", "teste");
+        ReflectionTestUtils.setField(service, "envioXmlCteHabilitado", true);
+        var primeiro = service.processarXmlCteEmitido(criarOcorrencia(), null);
+        var segundo = service.processarXmlCteEmitido(criarOcorrencia(), null);
+        assertEquals("ORIGEM_XML_HTTP_401", primeiro.mensagemErroDados());
+        assertEquals("ORIGEM_XML_AUTENTICACAO_EM_ESPERA", segundo.mensagemErroDados());
+        verify(esl, org.mockito.Mockito.times(1)).buscarXmlCte(any(), any());
     }
 }

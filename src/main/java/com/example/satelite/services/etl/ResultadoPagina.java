@@ -10,8 +10,14 @@ record ResultadoPagina(
         int falhasInfraestruturaConsecutivas,
         boolean interromperCiclo,
         boolean fimJanelaRetroativa,
-        boolean circuitoAberto
+        boolean circuitoAberto, int retidos, int pendentesOrigem
 ) {
+    ResultadoPagina(int recebidos, int enviados, int ignorados, int pendentesFoto, int jaProcessados,
+            int erros, int falhasInfraestruturaConsecutivas, boolean interromperCiclo,
+            boolean fimJanelaRetroativa, boolean circuitoAberto) {
+        this(recebidos, enviados, ignorados, pendentesFoto, jaProcessados, erros,
+                falhasInfraestruturaConsecutivas, interromperCiclo, fimJanelaRetroativa, circuitoAberto, 0, 0);
+    }
     static ResultadoPagina vazio() {
         return vazio(0);
     }
@@ -46,7 +52,8 @@ record ResultadoPagina(
                 registro.falhaInfraestrutura() ? falhasInfraestruturaConsecutivas + 1 : 0,
                 interromperCiclo,
                 fimJanelaRetroativa,
-                circuitoAberto
+                circuitoAberto, retidos + (registro == ResultadoRegistro.RETIDO ? 1 : 0),
+                pendentesOrigem + (registro == ResultadoRegistro.PENDENTE_ORIGEM ? 1 : 0)
         );
     }
 
@@ -61,7 +68,7 @@ record ResultadoPagina(
                 falhasInfraestruturaConsecutivas,
                 true,
                 fimJanelaRetroativa,
-                circuitoAberto
+                circuitoAberto, retidos, pendentesOrigem
         );
     }
 
@@ -76,7 +83,7 @@ record ResultadoPagina(
                 falhasInfraestruturaConsecutivas,
                 interromperCiclo,
                 true,
-                circuitoAberto
+                circuitoAberto, retidos, pendentesOrigem
         );
     }
 
@@ -91,7 +98,7 @@ record ResultadoPagina(
                 falhasInfraestruturaConsecutivas,
                 interromperCiclo,
                 fimJanelaRetroativa,
-                true
+                true, retidos, pendentesOrigem
         );
     }
 }

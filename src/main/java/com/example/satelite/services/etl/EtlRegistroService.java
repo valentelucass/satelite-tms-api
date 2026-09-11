@@ -77,6 +77,9 @@ public class EtlRegistroService {
     @Value("${RODOGARCIA_MASTER_API_REST:}")
     private String tokenMasterEsl;
 
+    @Value("${VEDACIT_XML_SOURCE_RETRY_COOLDOWN_MS:1800000}")
+    private long xmlSourceRetryCooldownMs = 1800000;
+
     @Value("${SFTP_RODOGARCIA_ENABLED:false}")
     private boolean sftpRodogarciaHabilitado;
 
@@ -280,11 +283,6 @@ public class EtlRegistroService {
             // No worker multi-cliente, a auditoria e o documento pertencem ao perfil atual;
             // nunca usa reconciliação global de outra fila.
             boolean reconciliacaoIsolada = fonteSftp == null && reconciliacaoSftpVedacitHabilitada;
-            if (reconciliacaoIsolada
-                    && etlEstadoIntegracaoService.jaExisteCanhotoVedacitEnviado(chaveNfe)) {
-                logDetalheSftpVedacit.info("⏭️ [VEDACIT] NF {}: canhoto já conciliado em CT-e relacionado; evitando reenvio.", chaveNfe);
-                return ResultadoRegistro.IGNORADO;
-            }
             VedacitCteCanhotoReconciliationService.Decisao decisao = null;
             if (reconciliacaoIsolada) {
                 if (vedacitCteCanhotoReconciliationService == null) {
@@ -307,6 +305,9 @@ public class EtlRegistroService {
                 logIntegracao.setCanhotoReconciliacaoMotivo(decisao.motivo());
                 ocorrencia = comChaveCte(ocorrencia, decisao.chaveCteEfetiva());
             }
+            // Sucesso histórico, mesmo sem data, impede novo envio; não gera aceite datado artificial.
+            if (etlEstadoIntegracaoService.canhotoVedacitSucessoRegistradoPorPar(chaveNfe, obterChaveCte(ocorrencia)))
+                return ResultadoRegistro.JA_PROCESSADO;
             logDetalheSftpVedacit.info(
                     "🎯 [VEDACIT] NF {}: reprocessamento cirúrgico do canhoto. CTe={}",
                     chaveNfe,
@@ -379,10 +380,12 @@ public class EtlRegistroService {
      * que pode ter saído da janela historica de consulta.
      */
     public ResultadoRegistro reprocessarXmlCteVedacitPorChave(LogIntegracaoModel logIntegracao) {
-        if (!ehCandidatoXmlCteVedacit(logIntegracao)) {
+        if (!ehCandidatoXmlCteVedacit(logIntegracao) || !erroObtencaoXml(logIntegracao.getMensagemErroDados())) {
             return ResultadoRegistro.IGNORADO;
         }
 
+        if (etlEstadoIntegracaoService.xmlVedacitConfirmado(logIntegracao.getChaveCte())) return ResultadoRegistro.JA_PROCESSADO;
+        if (etlEstadoIntegracaoService.xmlVedacitSucessoSemData(logIntegracao.getChaveCte())) return ResultadoRegistro.RETIDO;
         String chaveNfe = logIntegracao.getChaveNfe();
         try {
             ResultadoIntegracao resultado = vedacitIntegrationService.reprocessarXmlCtePorChaves(
@@ -390,16 +393,18 @@ public class EtlRegistroService {
                     logIntegracao.getChaveCte(),
                     logIntegracao.getStatusCanhoto()
             );
-            etlEstadoIntegracaoService.aplicarResultadoIntegracao(logIntegracao, resultado);
+            etlEstadoIntegracaoService.aplicarResultadoXml(logIntegracao, resultado);
             etlEstadoIntegracaoService.salvar(logIntegracao);
-            return etlEstadoIntegracaoService.converterResultadoRegistro(resultado);
+            return STATUS_SUCESSO.equals(resultado.statusDados()) ? ResultadoRegistro.ENVIADO
+                    : ResultadoIntegracao.STATUS_PENDENTE_ORIGEM.equals(resultado.statusDados())
+                    ? ResultadoRegistro.PENDENTE_ORIGEM : reterXmlAuditado(logIntegracao);
         } catch (Exception e) {
             if (e instanceof InterruptedException) {
                 Thread.currentThread().interrupt();
             }
 
             ResultadoIntegracao erro = ResultadoIntegracao.erroDados(e.getMessage());
-            etlEstadoIntegracaoService.aplicarResultadoIntegracao(logIntegracao, erro);
+            etlEstadoIntegracaoService.aplicarResultadoXml(logIntegracao, erro);
             etlEstadoIntegracaoService.salvar(logIntegracao);
             log.error("❌ [VEDACIT] NF {}: erro na repescagem técnica do XML - {}", chaveNfe, e.getMessage());
             return ResultadoRegistro.ERRO;
@@ -475,10 +480,42 @@ public class EtlRegistroService {
         return processarEmissaoXmlVedacitComExclusao(cursorNextId, ocorrencia);
     }
 
+    static boolean erroObtencaoXml(String mensagem) {
+        return mensagem != null && (mensagem.startsWith("ORIGEM_XML_")
+                || mensagem.startsWith("SOAP_ANTERIOR_EM_ANDAMENTO")
+                || (mensagem.contains("401") && mensagem.contains("RodogarciaClient#buscarXmlCte")));
+    }
+
+    private ResultadoRegistro reterXmlAuditado(LogIntegracaoModel registro) {
+        return registro.getId() != null && registro.getChaveCte() != null && registro.getChaveCte().matches("\\d{44}")
+                && registro.getChaveNfe() != null && registro.getChaveNfe().matches("\\d{44}")
+                ? ResultadoRegistro.RETIDO : ResultadoRegistro.ERRO;
+    }
+
+    ResultadoPagina recuperarXmlFalhasOrigem(TurnoEtl turno, int limite) {
+        ResultadoPagina resultado = ResultadoPagina.vazio();
+        var antes = etlEstadoIntegracaoService.agoraAuditoria().minusNanos(Math.max(1000, xmlSourceRetryCooldownMs) * 1_000_000L);
+        for (var registro : etlEstadoIntegracaoService.buscarXmlFalhaOrigem(antes, limite)) {
+            if (Thread.currentThread().isInterrupted()) break;
+            if (xmlDocumentoLockService == null) throw new IllegalStateException("Lock XML indisponível");
+            var tentativa = xmlDocumentoLockService.executarComLock("VEDACIT_XML", registro.getChaveCte(), registro.getChaveCte(),
+                    () -> etlEstadoIntegracaoService.buscarAtivoPorId(registro.getId())
+                            .filter(atual -> atual.getDataProcessamentoDados() != null && !atual.getDataProcessamentoDados().isAfter(antes))
+                            .map(this::reprocessarXmlCteVedacitPorChave).orElse(ResultadoRegistro.IGNORADO));
+            resultado = resultado.com(tentativa.orElse(ResultadoRegistro.RETIDO));
+            if (turno != null) turno.documentoAvaliado();
+        }
+        return resultado;
+    }
+
     private ResultadoRegistro processarEmissaoXmlVedacitComExclusao(Long cursorNextId, EslOcorrenciaDTO ocorrencia) {
         if (!ehCteEmitido(ocorrencia)) return ResultadoRegistro.IGNORADO;
         if (etlEstadoIntegracaoService.xmlVedacitConfirmado(obterChaveCte(ocorrencia)))
             return ResultadoRegistro.JA_PROCESSADO;
+        // Um sucesso antigo sem data exige conferência, inclusive quando arquivado.
+        // Não é prova datada, mas tampouco autoriza transmitir novamente o XML.
+        if (etlEstadoIntegracaoService.xmlVedacitSucessoSemData(obterChaveCte(ocorrencia)))
+            return ResultadoRegistro.RETIDO;
         Optional<LogIntegracaoModel> logExistente =
                 etlEstadoIntegracaoService.buscarLogIntegracaoExistente(DESTINO_VEDACIT, ocorrencia);
         if (logExistente.isPresent() && etlEstadoIntegracaoService.statusSucesso(logExistente.get().getStatusDados())) {
@@ -487,12 +524,12 @@ public class EtlRegistroService {
                     obterChaveNfe(ocorrencia),
                     obterChaveCte(ocorrencia)
             );
-            return ResultadoRegistro.JA_PROCESSADO;
+            return logExistente.get().getDataProcessamentoDados() == null ? ResultadoRegistro.RETIDO : ResultadoRegistro.JA_PROCESSADO;
         }
 
         if (logExistente.isPresent()
                 && ResultadoIntegracao.STATUS_PENDENTE_ORIGEM.equals(logExistente.get().getStatusDados())
-                && !sftpRodogarciaHabilitado) {
+                && (!sftpRodogarciaHabilitado || erroObtencaoXml(logExistente.get().getMensagemErroDados()))) {
             log.info(
                     "⏸️ [VEDACIT] NF {}: XML do CT-e permanece pendente de disponibilização na ESL. CTe={}",
                     obterChaveNfe(ocorrencia),
@@ -503,7 +540,7 @@ public class EtlRegistroService {
 
         // Recusas e resultados de envio desconhecidos precisam de conciliação, não de reenvio cego.
         if (logExistente.isPresent() && STATUS_ERRO_DESTINO.equals(logExistente.get().getStatusDados()))
-            return ResultadoRegistro.ERRO;
+            return reterXmlAuditado(logExistente.get());
 
         if (logExistente.isPresent()
                 && ResultadoIntegracao.STATUS_PENDENTE_ORIGEM.equals(logExistente.get().getStatusDados())) {
@@ -550,7 +587,7 @@ public class EtlRegistroService {
             etlEstadoIntegracaoService.salvar(logIntegracao);
 
             if (!ehCteEmitido(ocorrencia)) {
-                etlEstadoIntegracaoService.aplicarResultadoIntegracao(logIntegracao, ResultadoIntegracao.ignorado());
+                etlEstadoIntegracaoService.aplicarResultadoXml(logIntegracao, ResultadoIntegracao.ignorado());
                 etlEstadoIntegracaoService.salvar(logIntegracao);
                 log.info("⏭️ [VEDACIT] NF {}: XML ignorado (Código diferente de 110).", obterChaveNfe(ocorrencia));
                 return ResultadoRegistro.IGNORADO;
@@ -564,11 +601,12 @@ public class EtlRegistroService {
                     ocorrencia,
                     logIntegracao.getStatusCanhoto()
             );
-            etlEstadoIntegracaoService.aplicarResultadoIntegracao(logIntegracao, resultado);
+            etlEstadoIntegracaoService.aplicarResultadoXml(logIntegracao, resultado);
             etlEstadoIntegracaoService.salvar(logIntegracao);
 
-            ResultadoRegistro resultadoRegistro = etlEstadoIntegracaoService.converterResultadoRegistro(resultado);
-            if (resultadoRegistro.erro()) {
+            ResultadoRegistro resultadoRegistro = STATUS_SUCESSO.equals(resultado.statusDados()) ? ResultadoRegistro.ENVIADO
+                    : resultado.erro() ? reterXmlAuditado(logIntegracao) : etlEstadoIntegracaoService.converterResultadoRegistro(resultado);
+            if (resultadoRegistro.erro() && resultadoRegistro != ResultadoRegistro.RETIDO) {
                 return etlResilienciaService.resultadoErroAposTentativa(
                         DESTINO_VEDACIT,
                         obterChaveNfe(ocorrencia),
@@ -579,7 +617,7 @@ public class EtlRegistroService {
         } catch (EslRequestTransientException e) {
             throw e;
         } catch (Exception e) {
-            etlEstadoIntegracaoService.aplicarResultadoIntegracao(
+            etlEstadoIntegracaoService.aplicarResultadoXml(
                     logIntegracao,
                     etlEstadoIntegracaoService.criarResultadoErroGenerico(DESTINO_VEDACIT, e)
             );
@@ -803,8 +841,12 @@ public class EtlRegistroService {
 
     private boolean ehCandidatoCanhotoVedacit(LogIntegracaoModel logIntegracao) {
         return logIntegracao != null
+                && !Boolean.TRUE.equals(logIntegracao.getArquivado())
+                && !ClassificacaoOperacionalCanhotoVedacit.TIMEOUT_AMBIGUO.name().equals(logIntegracao.getCanhotoClassificacaoOperacional())
+                && !ClassificacaoOperacionalCanhotoVedacit.BLOQUEADO_DESTINO.name().equals(logIntegracao.getCanhotoClassificacaoOperacional())
                 && DESTINO_VEDACIT.equals(logIntegracao.getSistemaDestino())
                 && STATUS_SUCESSO.equals(logIntegracao.getStatusDados())
+                && (logIntegracao.getDataProcessamentoDados() != null || etlEstadoIntegracaoService.xmlVedacitConfirmado(logIntegracao.getChaveCte()))
                 && (STATUS_ERRO_DESTINO.equals(logIntegracao.getStatusCanhoto())
                         || ResultadoIntegracao.STATUS_PENDENTE_FOTO.equals(logIntegracao.getStatusCanhoto())
                         || ResultadoIntegracao.STATUS_NAO_APLICAVEL.equals(logIntegracao.getStatusCanhoto()))
@@ -817,8 +859,9 @@ public class EtlRegistroService {
     private boolean ehCandidatoXmlCteVedacit(LogIntegracaoModel logIntegracao) {
         return logIntegracao != null
                 && DESTINO_VEDACIT.equals(logIntegracao.getSistemaDestino())
-                && STATUS_ERRO_DESTINO.equals(logIntegracao.getStatus())
-                && STATUS_ERRO_DESTINO.equals(logIntegracao.getStatusDados())
+                && !Boolean.TRUE.equals(logIntegracao.getArquivado())
+                && (STATUS_ERRO_DESTINO.equals(logIntegracao.getStatusDados())
+                        || ResultadoIntegracao.STATUS_PENDENTE_ORIGEM.equals(logIntegracao.getStatusDados()))
                 && logIntegracao.getChaveNfe() != null
                 && logIntegracao.getChaveNfe().length() == 44
                 && logIntegracao.getChaveCte() != null

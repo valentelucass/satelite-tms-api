@@ -48,66 +48,117 @@ public class WorkSftpClientesRunner implements CommandLineRunner, ExitCodeGenera
     }
 
     int executarCiclo() {
-        Instant inicio = Instant.now(); int falhas = 0, arquivos = 0, enviados = 0, pendentes = 0, bloqueios = 0, timeouts = 0;
         try {
             validarModoExclusivo();
-            int limiteGlobal = inteiro("WORK_SFTP_CLIENTES_MAX_ITEMS", 100, 1, 500);
+            int maximo = inteiro("WORK_SFTP_CLIENTES_MAX_ITEMS", 100, 1, 500);
+            int limite = inteiro("WORK_SFTP_CLIENTES_TURN_ITEMS", 10, 1, 100);
+            long duracao = inteiro("WORK_SFTP_CLIENTES_TURN_MS", 120000, 1000, 600000);
             long pausa = inteiro("WORK_SFTP_CLIENTES_INTERVAL_MS", 1000, 0, 60000);
-            var perfis = clientes.criarClientesHabilitados();
-            if (perfis.stream().anyMatch(perfil -> "VEDACIT".equals(perfil.identificador()))
-                    && Boolean.TRUE.equals(environment.getProperty("WORK_SFTP_CLIENTES_XML_ENABLED", Boolean.class, false))) {
-                if (!Boolean.TRUE.equals(environment.getProperty("SFTP_RODOGARCIA_ENABLED", Boolean.class, false)))
+            auditoria.validarEstrutura();
+            var ciclos = clientes.criarClientesHabilitados().stream().map(CicloCliente::new).toList();
+            Runnable rodada = () -> ciclos.forEach(ciclo -> ciclo.processar(Math.min(limite, maximo), duracao, pausa));
+            ResultadoDestino xml = ResultadoDestino.vazio("VEDACIT");
+            boolean xmlHabilitado = ciclos.stream().anyMatch(c -> "VEDACIT".equals(c.perfil.identificador()))
+                    && Boolean.TRUE.equals(environment.getProperty("WORK_SFTP_CLIENTES_XML_ENABLED", Boolean.class, false));
+            if (xmlHabilitado) {
+                if (!environment.getProperty("SFTP_RODOGARCIA_ENABLED", Boolean.class, false))
                     throw new IllegalStateException("Etapa XML exige a fonte SFTP habilitada");
-                var xml = orquestrador.executarXmlVedacit();
-                if (xml.erroCritico() || xml.erros() > 0) falhas++;
+                TurnoEtl turno = new TurnoEtl(limite, duracao, () -> {
+                    ciclos.forEach(c -> c.passagem.revisarInventario());
+                    rodada.run();
+                });
+                try { xml = orquestrador.executarXmlVedacit(turno); }
+                catch (Exception e) { xml = xml.comErroCritico("XML: " + resumir(e)); }
+                ciclos.forEach(c -> c.passagem.revisarInventario());
                 log.info("[WORK-SFTP-CLIENTES][XML] paginas={} recebidos={} enviados={} ja_processados={} erros={}",
                         xml.paginasProcessadas(), xml.recebidos(), xml.enviados(), xml.jaProcessados(), xml.erros());
             }
-            for (VedacitSftpClientFactory.ClienteSftp perfil : perfis) {
-                Instant inicioCliente = Instant.now();
-                LocalDateTime inicioAuditoria = LocalDateTime.now();
-                boolean conectado = false;
-                try {
-                    // Limite de cada lote; o serviço continua até esgotar os elegíveis da passagem.
-                    int limiteCliente = Math.min(limiteGlobal, perfil.limiteItensPorCiclo());
-                    VedacitSftpClient sftp = perfil.cliente();
-                    sftp.verificarDisponibilidade();
-                    conectado = true;
-                    var inventario = sftp.listarInventarioComprovantes();
-                    var resultado = repescagem.processarClienteSftpVedacit(perfil.identificador(), inventario, sftp, limiteCliente, pausa);
-                    arquivos += resultado.inventario().arquivos(); enviados += resultado.processamento().enviados(); pendentes += resultado.processamento().pendentes();
-                    long bloqueiosCliente = repescagem.contarClassificacaoCanhotoVedacit(perfil.identificador(), "BLOQUEADO_ORIGEM")
-                            + repescagem.contarClassificacaoCanhotoVedacit(perfil.identificador(), "BLOQUEADO_DESTINO");
-                    long timeoutsCliente = repescagem.contarClassificacaoCanhotoVedacit(perfil.identificador(), "TIMEOUT_AMBIGUO");
-                    bloqueios += bloqueiosCliente; timeouts += timeoutsCliente;
-                    boolean processamentoFalhou = resultado.processamento().erros() > 0;
-                    boolean auditoriaRegistrada = registrarCiclo(perfil.identificador(), inicioAuditoria, "OK", processamentoFalhou ? "FALHA" : "CONCLUIDO",
-                            resultado.inventario().arquivos(), inventario.rejeitados().size(), resultado.processamento().selecionados(),
-                            resultado.processamento().enviados(), resultado.processamento().pendentes(), resultado.saldo(), bloqueiosCliente,
-                            timeoutsCliente, Duration.between(inicioCliente, Instant.now()).toMillis());
-                    if (processamentoFalhou || !auditoriaRegistrada) falhas++;
-                    log.info("[WORK-SFTP-CLIENTES] cliente={} conexao=OK arquivos_validos={} rejeitados_auditados={} selecionados={} enviados={} pendentes={} erros={} saldo={} duracao_ms={}",
-                            perfil.identificador(), resultado.inventario().arquivos(), inventario.rejeitados().size(), resultado.processamento().selecionados(), resultado.processamento().enviados(),
-                            resultado.processamento().pendentes(), resultado.processamento().erros(), resultado.saldo(), Duration.between(inicioCliente, Instant.now()).toMillis());
-                } catch (Exception e) {
-                    falhas++;
-                    String conexao = conectado ? "OK" : "FALHA";
-                    registrarCiclo(perfil.identificador(), inicioAuditoria, conexao, "FALHA", 0, 0, 0, 0, 0, 0, 0, 0,
-                            Duration.between(inicioCliente, Instant.now()).toMillis());
-                    log.error("[WORK-SFTP-CLIENTES] cliente={} conexao={} duracao_ms={} motivo={}", perfil.identificador(), conexao,
-                            Duration.between(inicioCliente, Instant.now()).toMillis(), resumir(e));
+            do {
+                rodada.run();
+            } while (!Thread.currentThread().isInterrupted() && ciclos.stream().anyMatch(c -> !c.falhou && c.passagem.temMais()));
+            int falhos = 0;
+            for (CicloCliente ciclo : ciclos) {
+                ciclo.xmlHabilitado = "VEDACIT".equals(ciclo.perfil.identificador()) && xmlHabilitado;
+                if (ciclo.xmlHabilitado) ciclo.xml = xml;
+                if ("VEDACIT".equals(ciclo.perfil.identificador()) && (xml.erroCritico() || xml.erros() > 0)) {
+                    ciclo.falhou = true;
+                    if (ciclo.motivo == null) ciclo.motivo = "XML_RETIDO: Há falhas XML auditadas; consulte a etapa XML";
                 }
+                if (!ciclo.registrar() || ciclo.falhou) falhos++;
             }
-            exitCode = falhas == 0 ? 0 : 1;
-            log.info("[WORK-SFTP-CLIENTES][RESUMO] clientes_falhos={} arquivos_validos={} enviados={} pendentes={} bloqueios={} timeouts_ambiguos={} duracao_ms={} proximo_ciclo=PM2_30_MIN",
-                    falhas, arquivos, enviados, pendentes, bloqueios, timeouts, Duration.between(inicio, Instant.now()).toMillis());
+            log.info("[WORK-SFTP-CLIENTES][RESUMO] clientes_falhos={} clientes={} xml_enviados={} xml_erros={}",
+                    falhos, ciclos.size(), xml.enviados(), xml.erros());
+            return exitCode = falhos == 0 && !Thread.currentThread().isInterrupted() ? 0 : 1;
         } catch (Exception e) {
-            exitCode = 2;
             log.error("[WORK-SFTP-CLIENTES] falha crítica: {}", resumir(e));
+            return exitCode = 2;
         }
-        return exitCode;
     }
 
+    private final class CicloCliente {
+        final VedacitSftpClientFactory.ClienteSftp perfil;
+        final EtlRepescagemService.PassagemSftp passagem = new EtlRepescagemService.PassagemSftp();
+        final Instant inicio = Instant.now();
+        final LocalDateTime inicioAuditoria = LocalDateTime.now();
+        com.example.satelite.services.origem.sftp.vedacit.VedacitSftpInventory inventario;
+        boolean conectado, conexaoTentada, falhou;
+        int selecionados, enviados, pendentes, errosComprovante;
+        boolean xmlHabilitado;
+        ResultadoDestino xml = ResultadoDestino.vazio("VEDACIT");
+        long saldo, bloqueios, timeouts;
+        String motivo;
+        CicloCliente(VedacitSftpClientFactory.ClienteSftp perfil) {
+            this.perfil = perfil; passagem.limitada = true;
+        }
+        void processar(int limite, long duracao, long pausa) {
+            if (falhou || passagem.suspensa || Thread.currentThread().isInterrupted()) return;
+            try {
+                if (!"VEDACIT".equals(perfil.identificador())) {
+                    falhou = true;
+                    motivo = "ADAPTADOR_AUSENTE: Cliente sem adaptador de destino neste worker";
+                    return;
+                }
+                if (inventario == null) {
+                    conexaoTentada = true;
+                    perfil.cliente().verificarDisponibilidade(); conectado = true;
+                    inventario = perfil.cliente().listarInventarioComprovantes();
+                }
+                int teto = Math.min(limite, perfil.limiteItensPorCiclo());
+                var resultado = repescagem.processarClienteSftpVedacit(perfil.identificador(), inventario,
+                        perfil.cliente(), teto, pausa, passagem, duracao);
+                selecionados += resultado.processamento().selecionados();
+                enviados += resultado.processamento().enviados();
+                pendentes += resultado.processamento().pendentes();
+                errosComprovante += resultado.processamento().erros();
+                saldo = resultado.saldo();
+                if (resultado.processamento().erros() > 0) motivo = passagem.motivoFalha == null
+                        ? "PROCESSAMENTO: Falha de comprovante; consulte a auditoria do documento" : passagem.motivoFalha;
+                // Erros individuais ficam auditados; só a proteção da passagem suspende novos itens.
+                bloqueios = repescagem.contarClassificacaoCanhotoVedacit(perfil.identificador(), "BLOQUEADO_ORIGEM")
+                        + repescagem.contarClassificacaoCanhotoVedacit(perfil.identificador(), "BLOQUEADO_DESTINO");
+                timeouts = repescagem.contarClassificacaoCanhotoVedacit(perfil.identificador(), "TIMEOUT_AMBIGUO");
+                log.info("[WORK-SFTP-CLIENTES][TURNO] cliente={} avaliados={} enviados={} pendentes={} erros={} saldo={}",
+                        perfil.identificador(), resultado.processamento().selecionados(), resultado.processamento().enviados(),
+                        resultado.processamento().pendentes(), resultado.processamento().erros(), saldo);
+            } catch (Exception e) {
+                falhou = true;
+                selecionados = Math.max(selecionados, passagem.totalAvaliados);
+                enviados = Math.max(enviados, passagem.totalEnviados);
+                pendentes = Math.max(pendentes, passagem.totalPendentes);
+                errosComprovante = Math.max(errosComprovante, passagem.totalErros);
+                motivo = (conectado ? inventario == null ? "INVENTARIO: " : "BANCO_FILA_PROCESSAMENTO: " : "CONEXAO: ") + resumir(e);
+                log.error("[WORK-SFTP-CLIENTES] cliente={} motivo={}", perfil.identificador(), motivo);
+            }
+        }
+        boolean registrar() {
+            falhou |= motivo != null || Thread.currentThread().isInterrupted();
+            return registrarCiclo(perfil.identificador(), inicioAuditoria, conectado ? "OK" : conexaoTentada ? "FALHA" : "NAO_EXECUTADA",
+                    falhou ? "FALHA" : "CONCLUIDO", inventario == null ? 0 : inventario.documentosValidos().size(),
+                    inventario == null ? 0 : inventario.rejeitados().size(), selecionados, enviados, pendentes,
+                    saldo, bloqueios, timeouts, Duration.between(inicio, Instant.now()).toMillis(),
+                    xmlHabilitado, xml, errosComprovante, motivo);
+        }
+    }
     @Override public int getExitCode() { return exitCode; }
     private void validarModoExclusivo() {
         if (!environment.getProperty("VEDACIT_SFTP_RECEIPT_ONLY", Boolean.class, false))
@@ -118,12 +169,15 @@ public class WorkSftpClientesRunner implements CommandLineRunner, ExitCodeGenera
         if (valor < minimo || valor > maximo) throw new IllegalArgumentException("Configuração fora do limite: " + chave);
         return valor;
     }
-    private String resumir(Exception e) { return e.getClass().getSimpleName() + (e.getMessage() == null ? "" : ": " + e.getMessage()); }
+    private String resumir(Exception e) { return com.example.satelite.utils.FalhaIntegracaoSanitizada.resumir(e); }
     private boolean registrarCiclo(String cliente, LocalDateTime inicio, String conexao, String status, int validos, int rejeitados,
-            int selecionados, int enviados, int pendentes, long saldo, long bloqueios, long timeouts, long duracao) {
+            int selecionados, int enviados, int pendentes, long saldo, long bloqueios, long timeouts, long duracao,
+            boolean xmlHabilitado, ResultadoDestino xml, int errosComprovante, String motivo) {
         try {
             auditoria.registrar(new WorkSftpClientesAuditoriaRepository.Ciclo(cliente, inicio, LocalDateTime.now(), conexao, status,
-                    validos, rejeitados, selecionados, enviados, pendentes, saldo, bloqueios, timeouts, duracao));
+                    validos, rejeitados, selecionados, enviados, pendentes, saldo, bloqueios, timeouts, duracao,
+                    xmlHabilitado, xml.recebidos(), xml.enviados(), xml.jaProcessados(), xml.pendentesOrigem(), xml.erros(),
+                    errosComprovante, motivo == null && Thread.currentThread().isInterrupted() ? "INTERROMPIDO: Ciclo interrompido" : motivo));
             return true;
         } catch (Exception e) {
             log.error("[WORK-SFTP-CLIENTES] cliente={} falha ao registrar auditoria do ciclo: {}", cliente, resumir(e));

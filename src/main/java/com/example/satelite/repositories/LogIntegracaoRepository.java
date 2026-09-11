@@ -36,6 +36,9 @@ public interface LogIntegracaoRepository extends JpaRepository<LogIntegracaoMode
             String chaveCte
     );
 
+    Optional<LogIntegracaoModel> findTopBySistemaDestinoAndChaveNfeAndChaveCteAndArquivadoFalseOrderByDataProcessamentoDescIdDesc(
+            String sistemaDestino, String chaveNfe, String chaveCte);
+
     Optional<LogIntegracaoModel> findTopBySistemaDestinoAndSftpClienteAndChaveNfeAndChaveCteOrderByDataProcessamentoDescIdDesc(
             String sistemaDestino, String sftpCliente, String chaveNfe, String chaveCte
     );
@@ -46,13 +49,18 @@ public interface LogIntegracaoRepository extends JpaRepository<LogIntegracaoMode
               AND l.arquivado = true
               AND l.chaveNfe = :chaveNfe
               AND l.chaveCte = :chaveCte
-              AND l.statusDados = 'SUCESSO'
+              AND l.statusDados = 'SUCESSO' AND l.dataProcessamentoDados IS NOT NULL
             ORDER BY l.dataProcessamento DESC, l.id DESC
             """)
-    Optional<LogIntegracaoModel> findLegadoVedacitArquivadoComDadosSucesso(
+    List<LogIntegracaoModel> findLegadoVedacitArquivadoComDadosSucessoLimitado(
             @Param("chaveNfe") String chaveNfe,
-            @Param("chaveCte") String chaveCte
+            @Param("chaveCte") String chaveCte, Pageable pageable
     );
+
+    default Optional<LogIntegracaoModel> findLegadoVedacitArquivadoComDadosSucesso(String chaveNfe, String chaveCte) {
+        return findLegadoVedacitArquivadoComDadosSucessoLimitado(chaveNfe, chaveCte,
+                org.springframework.data.domain.PageRequest.of(0, 1)).stream().findFirst();
+    }
 
     @Query("""
             SELECT l FROM LogIntegracaoModel l
@@ -60,7 +68,7 @@ public interface LogIntegracaoRepository extends JpaRepository<LogIntegracaoMode
               AND (l.sftpCliente IS NULL OR l.sftpCliente = :cliente)
               AND l.chaveNfe = :chaveNfe AND l.chaveCte = :chaveCte
               AND l.statusDados = 'SUCESSO'
-              AND (l.dataProcessamentoDados IS NOT NULL OR l.statusCanhoto = 'SUCESSO')
+              AND l.dataProcessamentoDados IS NOT NULL
             ORDER BY CASE WHEN l.statusCanhoto = 'SUCESSO' THEN 0
                           WHEN l.canhotoClassificacaoOperacional IN ('TIMEOUT_AMBIGUO', 'BLOQUEADO_DESTINO') THEN 1 ELSE 2 END,
                      l.dataProcessamento DESC, l.id DESC
@@ -69,7 +77,37 @@ public interface LogIntegracaoRepository extends JpaRepository<LogIntegracaoMode
             @Param("cliente") String cliente, @Param("chaveNfe") String chaveNfe,
             @Param("chaveCte") String chaveCte, Pageable pageable);
 
+    @Query("SELECT CASE WHEN COUNT(l) > 0 THEN true ELSE false END FROM LogIntegracaoModel l "
+            + "WHERE l.sistemaDestino = :destino AND l.chaveCte = :chaveCte AND l.statusDados = :statusDados "
+            + "AND l.dataProcessamentoDados IS NOT NULL")
     boolean existsBySistemaDestinoAndChaveCteAndStatusDados(String destino, String chaveCte, String statusDados);
+
+    @Query("SELECT CASE WHEN COUNT(l) > 0 THEN true ELSE false END FROM LogIntegracaoModel l "
+            + "WHERE l.sistemaDestino = 'VEDACIT' AND l.chaveCte = :chaveCte AND l.statusDados = 'SUCESSO' "
+            + "AND l.dataProcessamentoDados IS NULL")
+    boolean existsXmlVedacitSucessoSemData(String chaveCte);
+
+    @Query("""
+            SELECT CASE WHEN COUNT(l) > 0 THEN true ELSE false END FROM LogIntegracaoModel l
+            WHERE l.sistemaDestino = 'VEDACIT' AND l.chaveNfe = :chaveNfe
+              AND (l.canhotoChaveCteEfetiva = :chaveCte OR (l.canhotoChaveCteEfetiva IS NULL AND l.chaveCte = :chaveCte))
+              AND l.statusCanhoto = 'SUCESSO'
+            """)
+    boolean existsCanhotoVedacitSucessoPorPar(String chaveNfe, String chaveCte);
+
+    @Query("""
+            SELECT l FROM LogIntegracaoModel l WHERE l.sistemaDestino = 'VEDACIT'
+              AND COALESCE(l.arquivado, false) = false AND l.statusDados IN ('ERRO_DESTINO', 'PENDENTE_ORIGEM')
+              AND l.chaveCte IS NOT NULL AND l.chaveNfe IS NOT NULL
+              AND l.dataProcessamentoDados <= :antes
+              AND (l.mensagemErroDados LIKE 'ORIGEM_XML_%'
+                   OR l.mensagemErroDados LIKE 'SOAP_ANTERIOR_EM_ANDAMENTO%'
+                   OR (l.mensagemErroDados LIKE '%401%' AND l.mensagemErroDados LIKE '%RodogarciaClient#buscarXmlCte%'))
+              AND NOT EXISTS (SELECT p.id FROM LogIntegracaoModel p WHERE p.sistemaDestino = 'VEDACIT'
+                  AND p.chaveCte = l.chaveCte AND p.statusDados = 'SUCESSO')
+            ORDER BY l.dataProcessamentoDados, l.id
+            """)
+    List<LogIntegracaoModel> findXmlFalhaOrigemParaRecuperacao(LocalDateTime antes, Pageable pageable);
 
     Optional<LogIntegracaoModel> findTopBySistemaDestinoAndSftpClienteAndCanhotoReferenciaOrderByDataProcessamentoDescIdDesc(
             String sistemaDestino, String sftpCliente, String canhotoReferencia

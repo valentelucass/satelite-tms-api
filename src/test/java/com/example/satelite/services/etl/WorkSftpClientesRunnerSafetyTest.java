@@ -45,11 +45,33 @@ class WorkSftpClientesRunnerSafetyTest {
         assertEquals("FALHA", cycle().status());
     }
 
+    @Test void preservaResultadosParciaisQuandoBancoFalhaNoMeioDoTurno() {
+        setup(0);
+        when(repescagem.processarClienteSftpVedacit(any(), any(), any(), anyInt(), anyLong(), any(), anyLong()))
+                .thenAnswer(i -> {
+                    EtlRepescagemService.PassagemSftp passagem = i.getArgument(5);
+                    passagem.totalAvaliados=2; passagem.totalEnviados=1;
+                    throw new IllegalStateException("SQL com dados privados", new java.sql.SQLException("privado", "state", 1205));
+                });
+        assertEquals(1, runner.executarCiclo());
+        var c=cycle();
+        assertEquals(2, c.selecionados()); assertEquals(1, c.enviados());
+        assertEquals(2, c.arquivosValidos()); assertEquals("OK", c.conexao());
+        assertEquals("BANCO_FILA_PROCESSAMENTO: SQL_1205", c.motivoFalha());
+    }
+
     @Test
     void auditFailureCannotReturnSuccessfulExitCode() {
         setup(0);
         doThrow(new IllegalStateException("unit audit unavailable")).when(auditoria).registrar(any());
         assertEquals(1, runner.executarCiclo());
+    }
+
+    @Test void migrationAusenteImpedeConectarOuEnviar() {
+        doThrow(new IllegalStateException("MIGRACAO_V22_PENDENTE")).when(auditoria).validarEstrutura();
+        assertEquals(2, runner.executarCiclo());
+        verifyNoInteractions(factory, sftp, repescagem);
+        verify(auditoria, never()).registrar(any());
     }
 
     @Test
@@ -80,9 +102,9 @@ class WorkSftpClientesRunnerSafetyTest {
 
     private void setup(int erros) {
         when(factory.criarClientesHabilitados()).thenReturn(List.of(new VedacitSftpClientFactory.ClienteSftp("VEDACIT", sftp, 25)));
-        var inventory = new VedacitSftpInventory(List.of(), List.of());
+        var inventory = new VedacitSftpInventory(List.of(mock(VedacitSftpDocument.class), mock(VedacitSftpDocument.class)), List.of());
         when(sftp.listarInventarioComprovantes()).thenReturn(inventory);
-        when(repescagem.processarClienteSftpVedacit("VEDACIT", inventory, sftp, 25, 1000L))
+        when(repescagem.processarClienteSftpVedacit(eq("VEDACIT"), eq(inventory), eq(sftp), eq(10), eq(1000L), any(), eq(120000L)))
                 .thenReturn(new EtlRepescagemService.ResultadoClienteSftpVedacit(
                         new EtlRepescagemService.ResultadoInventarioSftpVedacit(2, 0, 0, 2),
                         new EtlRepescagemService.ResultadoReprocessamentoCanhotoVedacit(2, 1, 1 - erros, erros, 0), 5));

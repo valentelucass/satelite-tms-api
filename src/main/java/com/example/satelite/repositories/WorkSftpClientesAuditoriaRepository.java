@@ -20,16 +20,27 @@ public class WorkSftpClientesAuditoriaRepository {
         this.jdbc = jdbc;
     }
 
+    /** Falha antes de qualquer envio quando o pacote foi trocado sem a migration. */
+    public void validarEstrutura() {
+        Integer colunas = jdbc.queryForObject("""
+                SELECT COUNT(*) FROM sys.columns
+                WHERE object_id = OBJECT_ID(N'dbo.tb_work_sftp_cliente_execucao')
+                  AND name IN ('xml_habilitado', 'xml_avaliados', 'xml_enviados', 'xml_ja_processados',
+                               'xml_pendentes', 'xml_erros', 'erros_comprovante', 'motivo_falha')
+                """, new MapSqlParameterSource(), Integer.class);
+        if (colunas == null || colunas != 8) throw new IllegalStateException("MIGRACAO_V22_PENDENTE");
+    }
+
     public void registrar(Ciclo ciclo) {
         String sql = """
                 INSERT INTO dbo.tb_work_sftp_cliente_execucao (
                     sftp_cliente, inicio_em, fim_em, conexao, status_ciclo,
                     arquivos_validos, arquivos_rejeitados, selecionados, enviados, pendentes,
-                    saldo, bloqueios, timeouts_ambiguos, duracao_ms
+                    saldo, bloqueios, timeouts_ambiguos, duracao_ms, xml_habilitado, xml_avaliados, xml_enviados, xml_ja_processados, xml_pendentes, xml_erros, erros_comprovante, motivo_falha
                 ) VALUES (
                     :cliente, :inicio, :fim, :conexao, :status,
                     :validos, :rejeitados, :selecionados, :enviados, :pendentes,
-                    :saldo, :bloqueios, :timeouts, :duracao
+                    :saldo, :bloqueios, :timeouts, :duracao, :xmlHabilitado, :xmlAvaliados, :xmlEnviados, :xmlJaProcessados, :xmlPendentes, :xmlErros, :errosComprovante, :motivoFalha
                 )
                 """;
         jdbc.update(sql, new MapSqlParameterSource()
@@ -46,7 +57,15 @@ public class WorkSftpClientesAuditoriaRepository {
                 .addValue("saldo", ciclo.saldo())
                 .addValue("bloqueios", ciclo.bloqueios())
                 .addValue("timeouts", ciclo.timeoutsAmbiguos())
-                .addValue("duracao", ciclo.duracaoMs()));
+                .addValue("duracao", ciclo.duracaoMs())
+                .addValue("xmlHabilitado", ciclo.xmlHabilitado())
+                .addValue("xmlAvaliados", ciclo.xmlAvaliados())
+                .addValue("xmlEnviados", ciclo.xmlEnviados())
+                .addValue("xmlJaProcessados", ciclo.xmlJaProcessados())
+                .addValue("xmlPendentes", ciclo.xmlPendentes())
+                .addValue("xmlErros", ciclo.xmlErros())
+                .addValue("errosComprovante", ciclo.errosComprovante())
+                .addValue("motivoFalha", ciclo.motivoFalha()));
     }
 
     public List<WorkSftpClienteStatusDTO> buscarUltimosCiclos() {
@@ -59,7 +78,7 @@ public class WorkSftpClientesAuditoriaRepository {
                 )
                 SELECT sftp_cliente, inicio_em, fim_em, conexao, status_ciclo,
                        arquivos_validos, arquivos_rejeitados, selecionados, enviados, pendentes,
-                       saldo, bloqueios, timeouts_ambiguos, duracao_ms,
+                       saldo, bloqueios, timeouts_ambiguos, duracao_ms, xml_habilitado, xml_avaliados, xml_enviados, xml_ja_processados, xml_pendentes, xml_erros, erros_comprovante, motivo_falha,
                        DATEADD(MINUTE, 30, fim_em) AS proxima_execucao_estimada
                 FROM ultimo_ciclo
                 WHERE posicao = 1
@@ -71,7 +90,8 @@ public class WorkSftpClientesAuditoriaRepository {
                 rs.getInt("arquivos_validos"), rs.getInt("arquivos_rejeitados"),
                 rs.getInt("selecionados"), rs.getInt("enviados"), rs.getInt("pendentes"),
                 rs.getLong("saldo"), rs.getLong("bloqueios"), rs.getLong("timeouts_ambiguos"),
-                rs.getLong("duracao_ms"), data(rs, "proxima_execucao_estimada")
+                rs.getLong("duracao_ms"), data(rs, "proxima_execucao_estimada"),
+                (Boolean) rs.getObject("xml_habilitado"), (Integer) rs.getObject("xml_avaliados"), (Integer) rs.getObject("xml_enviados"), (Integer) rs.getObject("xml_ja_processados"), (Integer) rs.getObject("xml_pendentes"), (Integer) rs.getObject("xml_erros"), (Integer) rs.getObject("erros_comprovante"), rs.getString("motivo_falha")
         ));
     }
 
@@ -86,7 +106,7 @@ public class WorkSftpClientesAuditoriaRepository {
     ) {
         List<String> filtros = new ArrayList<>();
         MapSqlParameterSource params = new MapSqlParameterSource();
-        // A tabela audita somente o worker SFTP, que não consulta a API ESL.
+        // A origem abaixo identifica somente comprovantes; a etapa XML pode usar fallback ESL.
         // A mesma restrição vale para a página e para sua contagem total.
         if (origem != null) {
             filtros.add(":origem = 'SFTP'");
@@ -113,7 +133,7 @@ public class WorkSftpClientesAuditoriaRepository {
         String sql = """
                 SELECT e.sftp_cliente, e.inicio_em, e.fim_em, e.conexao, e.status_ciclo,
                        e.arquivos_validos, e.arquivos_rejeitados, e.selecionados, e.enviados, e.pendentes,
-                       e.saldo, e.bloqueios, e.timeouts_ambiguos, e.duracao_ms,
+                       e.saldo, e.bloqueios, e.timeouts_ambiguos, e.duracao_ms, e.xml_habilitado, e.xml_avaliados, e.xml_enviados, e.xml_ja_processados, e.xml_pendentes, e.xml_erros, e.erros_comprovante, e.motivo_falha,
                        DATEADD(MINUTE, 30, e.fim_em) AS proxima_execucao_estimada
                 FROM dbo.tb_work_sftp_cliente_execucao e
                 WHERE %s
@@ -126,7 +146,8 @@ public class WorkSftpClientesAuditoriaRepository {
                 rs.getInt("arquivos_validos"), rs.getInt("arquivos_rejeitados"),
                 rs.getInt("selecionados"), rs.getInt("enviados"), rs.getInt("pendentes"),
                 rs.getLong("saldo"), rs.getLong("bloqueios"), rs.getLong("timeouts_ambiguos"),
-                rs.getLong("duracao_ms"), data(rs, "proxima_execucao_estimada")
+                rs.getLong("duracao_ms"), data(rs, "proxima_execucao_estimada"),
+                (Boolean) rs.getObject("xml_habilitado"), (Integer) rs.getObject("xml_avaliados"), (Integer) rs.getObject("xml_enviados"), (Integer) rs.getObject("xml_ja_processados"), (Integer) rs.getObject("xml_pendentes"), (Integer) rs.getObject("xml_erros"), (Integer) rs.getObject("erros_comprovante"), rs.getString("motivo_falha")
         )), total);
     }
 
@@ -138,8 +159,16 @@ public class WorkSftpClientesAuditoriaRepository {
     public record Ciclo(
             String cliente, LocalDateTime inicio, LocalDateTime fim, String conexao, String status,
             int arquivosValidos, int arquivosRejeitados, int selecionados, int enviados, int pendentes,
-            long saldo, long bloqueios, long timeoutsAmbiguos, long duracaoMs
-    ) { }
+            long saldo, long bloqueios, long timeoutsAmbiguos, long duracaoMs,
+            Boolean xmlHabilitado, Integer xmlAvaliados, Integer xmlEnviados, Integer xmlJaProcessados, Integer xmlPendentes, Integer xmlErros, Integer errosComprovante, String motivoFalha
+    ) {
+        public Ciclo(String cliente, LocalDateTime inicio, LocalDateTime fim, String conexao, String status,
+                int arquivosValidos, int arquivosRejeitados, int selecionados, int enviados, int pendentes,
+                long saldo, long bloqueios, long timeoutsAmbiguos, long duracaoMs) {
+            this(cliente, inicio, fim, conexao, status, arquivosValidos, arquivosRejeitados, selecionados, enviados,
+                    pendentes, saldo, bloqueios, timeoutsAmbiguos, duracaoMs, null, null, null, null, null, null, null, null);
+        }
+    }
 
     public record PaginaCiclos(List<WorkSftpClienteStatusDTO> itens, long totalElementos) { }
 }

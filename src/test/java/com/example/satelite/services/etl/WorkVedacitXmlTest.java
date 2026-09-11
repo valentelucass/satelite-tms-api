@@ -31,7 +31,7 @@ class WorkVedacitXmlTest {
         verifyNoInteractions(ppg, vedacit, repescagem);
     }
 
-    @Test void workerConcluiEtapaXmlAntesDeMaterializarEDrenarCanhotos() {
+    @Test void workerIntercalaCanhotosDuranteEtapaXml() {
         var xml = mock(OrquestradorEtlService.class);
         var factory = mock(VedacitSftpClientFactory.class);
         var sftp = mock(VedacitSftpClient.class);
@@ -39,18 +39,44 @@ class WorkVedacitXmlTest {
         var env = new MockEnvironment().withProperty("VEDACIT_SFTP_RECEIPT_ONLY", "true")
                 .withProperty("WORK_SFTP_CLIENTES_XML_ENABLED", "true").withProperty("SFTP_RODOGARCIA_ENABLED", "true");
         var inventario = new VedacitSftpInventory(List.of(), List.of());
-        when(xml.executarXmlVedacit()).thenReturn(ResultadoDestino.vazio("VEDACIT"));
+        var ordemReal = new java.util.ArrayList<String>();
+        when(xml.executarXmlVedacit(any(TurnoEtl.class))).thenAnswer(inv -> {
+            ordemReal.add("XML-inicio");
+            TurnoEtl turno = inv.getArgument(0);
+            for (int i=0;i<20;i++) turno.documentoAvaliado();
+            ordemReal.add("XML-fim");
+            return ResultadoDestino.vazio("VEDACIT");
+        });
         when(factory.criarClientesHabilitados()).thenReturn(List.of(new VedacitSftpClientFactory.ClienteSftp("VEDACIT", sftp, 10)));
         when(sftp.listarInventarioComprovantes()).thenReturn(inventario);
-        when(repescagem.processarClienteSftpVedacit("VEDACIT", inventario, sftp, 10, 1000L)).thenReturn(
-                new EtlRepescagemService.ResultadoClienteSftpVedacit(new EtlRepescagemService.ResultadoInventarioSftpVedacit(0,0,0,0),
-                        new EtlRepescagemService.ResultadoReprocessamentoCanhotoVedacit(0,0,0,0,0), 0));
+        when(repescagem.processarClienteSftpVedacit(eq("VEDACIT"), eq(inventario), eq(sftp), eq(10), eq(1000L), any(), eq(120000L))).thenAnswer(inv -> { ordemReal.add("POD"); return new EtlRepescagemService.ResultadoClienteSftpVedacit(new EtlRepescagemService.ResultadoInventarioSftpVedacit(0,0,0,0),
+                        new EtlRepescagemService.ResultadoReprocessamentoCanhotoVedacit(0,0,0,0,0), 0); });
         var runner = new WorkSftpClientesRunner(factory, repescagem, env, mock(ConfigurableApplicationContext.class),
                 mock(WorkSftpClientesAuditoriaRepository.class));
         ReflectionTestUtils.setField(runner, "orquestrador", xml);
         assertEquals(0, runner.executarCiclo());
-        var ordem = inOrder(xml, repescagem);
-        ordem.verify(xml).executarXmlVedacit();
-        ordem.verify(repescagem).processarClienteSftpVedacit("VEDACIT", inventario, sftp, 10, 1000L);
+        assertEquals(List.of("XML-inicio", "POD", "POD", "XML-fim", "POD"), ordemReal);
+    }
+
+    @Test void erroXmlTambemMarcaCicloComoFalhaMesmoSemErroDeComprovante() {
+        var xml = mock(OrquestradorEtlService.class);
+        var factory = mock(VedacitSftpClientFactory.class);
+        var sftp = mock(VedacitSftpClient.class);
+        var repescagem = mock(EtlRepescagemService.class);
+        var auditoria = mock(WorkSftpClientesAuditoriaRepository.class);
+        var env = new MockEnvironment().withProperty("VEDACIT_SFTP_RECEIPT_ONLY", "true")
+                .withProperty("WORK_SFTP_CLIENTES_XML_ENABLED", "true").withProperty("SFTP_RODOGARCIA_ENABLED", "true");
+        when(factory.criarClientesHabilitados()).thenReturn(List.of(new VedacitSftpClientFactory.ClienteSftp("VEDACIT", sftp, 10)));
+        when(sftp.listarInventarioComprovantes()).thenReturn(new VedacitSftpInventory(List.of(), List.of()));
+        when(xml.executarXmlVedacit(any(TurnoEtl.class))).thenReturn(ResultadoDestino.vazio("VEDACIT")
+                .comRegistros(ResultadoPagina.vazio().com(ResultadoRegistro.RETIDO).com(ResultadoRegistro.PENDENTE_ORIGEM)));
+        when(repescagem.processarClienteSftpVedacit(any(), any(), any(), anyInt(), anyLong(), any(), anyLong()))
+                .thenReturn(new EtlRepescagemService.ResultadoClienteSftpVedacit(new EtlRepescagemService.ResultadoInventarioSftpVedacit(0,0,0,0),
+                        new EtlRepescagemService.ResultadoReprocessamentoCanhotoVedacit(0,0,0,0,0), 0));
+        var runner = new WorkSftpClientesRunner(factory, repescagem, env, mock(ConfigurableApplicationContext.class), auditoria);
+        ReflectionTestUtils.setField(runner, "orquestrador", xml);
+        assertEquals(1, runner.executarCiclo());
+        verify(auditoria).registrar(argThat(c -> c.xmlHabilitado() && c.xmlErros() == 1 && c.xmlPendentes() == 1
+                && c.errosComprovante() == 0 && c.status().equals("FALHA") && c.motivoFalha().startsWith("XML_RETIDO")));
     }
 }

@@ -23,6 +23,14 @@ BEGIN
         bloqueios BIGINT NOT NULL,
         timeouts_ambiguos BIGINT NOT NULL,
         duracao_ms BIGINT NOT NULL,
+        xml_habilitado BIT NULL,
+        xml_avaliados INT NULL,
+        xml_enviados INT NULL,
+        xml_ja_processados INT NULL,
+        xml_pendentes INT NULL,
+        xml_erros INT NULL,
+        erros_comprovante INT NULL,
+        motivo_falha NVARCHAR(240) NULL,
         CONSTRAINT PK_tb_work_sftp_cliente_execucao PRIMARY KEY CLUSTERED (id)
     );
 END;

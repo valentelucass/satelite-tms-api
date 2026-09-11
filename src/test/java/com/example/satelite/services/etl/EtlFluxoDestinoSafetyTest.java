@@ -59,6 +59,63 @@ class EtlFluxoDestinoSafetyTest {
         assertTrue(fluxo.diagnosticarLoopPaginacao("PPG", 2, 10L, 9L, 11L, null, current).detectado());
     }
 
+    @Test void xmlRetidoEmAuditoriaPermiteAvancarMasErroSemRetencaoPreservaCursor() {
+        ReflectionTestUtils.setField(fluxo, "pausaPacingPaginacaoMs", 0L);
+        var evento = event(101L, "2026-09-11T08:00:00-03:00", "2026-09-11T08:00:00-03:00");
+        when(esl.buscarOcorrencias(anyString(), any(), any(), any(), eq(110)))
+                .thenReturn(new EslLoteResponseDTO(List.of(evento), new EslPagingDTO(102L, 1)))
+                .thenReturn(new EslLoteResponseDTO(List.of(), null));
+        when(registros.processarEmissaoXmlVedacit(anyString(), any(), any())).thenReturn(ResultadoRegistro.RETIDO);
+        var result = fluxo.executarFluxoDestino("VEDACIT", "VEDACIT_XML", "teste", ExecucaoEtlRequest.incremental(1),
+                110, false, (o,c,l) -> ResultadoIntegracao.enviado(), new TurnoEtl(10, 120000, () -> {}));
+        assertEquals(1, result.erros());
+        verify(cursors).save(argThat(c -> c.getCursorNextId().equals(102L)));
+        clearInvocations(cursors);
+        when(esl.buscarOcorrencias(anyString(), any(), any(), any(), eq(110)))
+                .thenReturn(new EslLoteResponseDTO(List.of(evento), new EslPagingDTO(102L, 1)));
+        when(registros.processarEmissaoXmlVedacit(anyString(), any(), any())).thenReturn(ResultadoRegistro.ERRO);
+        fluxo.executarFluxoDestino("VEDACIT", "VEDACIT_XML", "teste", ExecucaoEtlRequest.incremental(1),
+                110, false, (o,c,l) -> ResultadoIntegracao.enviado(), null);
+        verify(cursors, never()).save(any());
+    }
+
+    @Test void interrupcaoDuranteTurnoNaoPersistePaginaParcial() {
+        var evento = event(101L, "2026-09-11T08:00:00-03:00", "2026-09-11T08:00:00-03:00");
+        when(esl.buscarOcorrencias(anyString(), any(), any(), any(), eq(110)))
+                .thenReturn(new EslLoteResponseDTO(List.of(evento, evento), new EslPagingDTO(102L, 2)));
+        when(registros.processarEmissaoXmlVedacit(anyString(), any(), any())).thenReturn(ResultadoRegistro.ENVIADO);
+        try {
+            var resultado = fluxo.executarFluxoDestino("VEDACIT", "VEDACIT_XML", "teste", ExecucaoEtlRequest.incremental(1),
+                    110, false, (o,c,l) -> ResultadoIntegracao.enviado(), new TurnoEtl(1, 120000, () -> Thread.currentThread().interrupt()));
+            assertEquals(1, resultado.enviados());
+            assertTrue(Thread.currentThread().isInterrupted());
+            verify(cursors, never()).save(any());
+        } finally { Thread.interrupted(); }
+    }
+
+    @Test void maisDeDezPaginasMantemTurnosDeDezSemPerderCursorOuDocumentos() {
+        ReflectionTestUtils.setField(fluxo, "pausaPacingPaginacaoMs", 0L);
+        var paginas = new java.util.concurrent.atomic.AtomicInteger();
+        var turnos = new java.util.concurrent.atomic.AtomicInteger();
+        var documentos = new java.util.concurrent.atomic.AtomicInteger();
+        when(esl.buscarOcorrencias(anyString(), any(), any(), any(), eq(110))).thenAnswer(i -> {
+            int pagina = paginas.incrementAndGet();
+            if (pagina > 12) return new EslLoteResponseDTO(List.of(), null);
+            var lote = java.util.stream.LongStream.range(pagina * 20L, pagina * 20L + 20)
+                    .mapToObj(id -> event(id, "2026-09-11T08:00:00-03:00", "2026-09-11T08:00:00-03:00")).toList();
+            return new EslLoteResponseDTO(lote, new EslPagingDTO(pagina * 20L + 20, 20));
+        });
+        when(registros.processarEmissaoXmlVedacit(anyString(), any(), any())).thenAnswer(i -> {
+            assertEquals(documentos.get() / 10, turnos.get()); documentos.incrementAndGet(); return ResultadoRegistro.ENVIADO;
+        });
+        var resultado = fluxo.executarFluxoDestino("VEDACIT", "VEDACIT_XML", "teste", ExecucaoEtlRequest.incremental(10),
+                110, false, (o,c,l) -> ResultadoIntegracao.enviado(), new TurnoEtl(10, 120000, turnos::incrementAndGet));
+        assertEquals(240, resultado.enviados()); assertEquals(24, turnos.get());
+        assertEquals(12, resultado.paginasProcessadas());
+        verify(cursors, times(12)).save(any());
+        verify(cursors).save(argThat(c -> c.getCursorNextId() == 260L));
+    }
+
     @Test
     void seliaRetroactivePageStillProcessesEligibleItemAfterOutOfWindowCreatedDate() {
         var outside = event(1L, "2026-09-01T08:00:00-03:00", "2026-09-10T10:00:00-03:00");

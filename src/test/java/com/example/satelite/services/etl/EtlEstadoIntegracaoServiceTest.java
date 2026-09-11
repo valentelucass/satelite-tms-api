@@ -48,14 +48,14 @@ class EtlEstadoIntegracaoServiceTest {
         EtlEstadoIntegracaoService service = new EtlEstadoIntegracaoService(repository);
         LogIntegracaoModel log = LogIntegracaoModel.builder().id(1L).chaveCte("cte-10").build();
 
-        when(repository.findTopBySistemaDestinoAndChaveCteOrderByDataProcessamentoDescIdDesc("VEDACIT", "cte-10"))
+        when(repository.findTopBySistemaDestinoAndChaveNfeAndChaveCteAndArquivadoFalseOrderByDataProcessamentoDescIdDesc("VEDACIT", "35260612345678000123550010000012341000012345", "cte-10"))
                 .thenReturn(Optional.of(log));
 
         Optional<LogIntegracaoModel> resultado = service.buscarLogIntegracaoExistente("VEDACIT", criarOcorrencia());
 
         assertTrue(resultado.isPresent());
         assertSame(log, resultado.get());
-        verify(repository).findTopBySistemaDestinoAndChaveCteOrderByDataProcessamentoDescIdDesc("VEDACIT", "cte-10");
+        verify(repository).findTopBySistemaDestinoAndChaveNfeAndChaveCteAndArquivadoFalseOrderByDataProcessamentoDescIdDesc("VEDACIT", "35260612345678000123550010000012341000012345", "cte-10");
     }
 
     @Test
