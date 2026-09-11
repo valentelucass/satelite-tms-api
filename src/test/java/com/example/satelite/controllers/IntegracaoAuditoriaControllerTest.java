@@ -17,6 +17,16 @@ import com.example.satelite.services.auditoria.IntegracaoAuditoriaService;
 class IntegracaoAuditoriaControllerTest {
 
     @Test
+    void indicadoresSeparadosPreservamContratoEDatas() {
+        IntegracaoAuditoriaService service = mock(IntegracaoAuditoriaService.class);
+        var resposta = new com.example.satelite.dto.auditoria.IndicadoresEtapasDTO(1,
+                java.time.LocalDate.parse("2026-09-01"), java.time.LocalDate.parse("2026-09-10"), List.of(), List.of());
+        when(service.consultarIndicadoresEtapas("2026-09-01", "2026-09-10", List.of("VEDACIT"))).thenReturn(resposta);
+        assertEquals(resposta, new IntegracaoAuditoriaController(service)
+                .consultarIndicadoresEtapas("2026-09-01", "2026-09-10", List.of("VEDACIT")));
+    }
+
+    @Test
     void deveExporSomenteResumoAgregadoDoSftp() {
         IntegracaoAuditoriaService service = mock(IntegracaoAuditoriaService.class);
         WorkSftpClienteStatusDTO resumo = new WorkSftpClienteStatusDTO(

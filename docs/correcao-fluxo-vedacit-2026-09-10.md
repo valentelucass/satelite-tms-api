@@ -2,6 +2,8 @@
 
 O candidato recupera a sequência **XML confirmado → comprovante**, continua lotes enquanto houver itens elegíveis e impede novas confirmações falsas. A instalação e o aceite real da Vedacit ainda precisam ser validados na operação.
 
+Atualização posterior: o candidato mais recente é `target/indicadores-etapas-20260910/satelite-0.0.1-SNAPSHOT.jar`, SHA-256 `45CEF40A497725004A4F141C7E42DF34AD83C809A41A438B817EDF12579ED550`. Inclui este fluxo e o contrato de indicadores separados para o Dashboard. A rodada adicional aprovou 42 testes direcionados, SQL somente leitura e equivalência dos 1.249 arquivos de aplicação do pacote. Publicação conjunta documentada em `../etl-dash/dashboards/docs/correcao-indicadores-etapas-2026-09-10.md` a partir da raiz do repositório. Os pacotes abaixo permanecem como evidências das rodadas anteriores.
+
 ## Mudanças
 
 - `EtlRepescagemService`: rejeição de comprovante não atribui sucesso ao XML. Arquivo que estabiliza sem XML continua bloqueado na origem. Confirmações anteriores, recusas e resultados ambíguos são preservados.
@@ -39,13 +41,23 @@ Foi confirmada localmente a igualdade dos sete campos de conexão/pasta/host key
 
 A suíte final teve **327 testes: 324 aprovados, zero falhas/erros e três manuais não executados**, com rede bloqueada. Java 17, compilação dos 1.105 fontes e empacotamento offline concluídos. Os 1.245 arquivos de aplicação dentro do JAR são idênticos por SHA-256 à saída testada; os 273 arquivos de fontes/testes/recursos conferidos permaneceram iguais. Os três proxies SOAP também foram testados com os WSDLs locais, sem modificar classes geradas. Isso não equivale ao aceite remoto da Vedacit.
 
-Pacote pronto: `target/vedacit-correcao-20260910/satelite-0.0.1-SNAPSHOT.jar`.
+Pacote anterior, preservado como baseline da suíte completa: `target/vedacit-correcao-20260910/satelite-0.0.1-SNAPSHOT.jar`.
 
 SHA-256: `CD02D0FAF287B6EAE5078290FCF032CF5A1E6E7793BD033C5D735CCEC9B5F940`.
 
 Evidências finais na mesma pasta: `tests-summary.json`, `package-verification.json`, `package.log`, `source-hashes.json`, `sql-readonly-final.json` e `runtime-preservado.json`. A sonda SQL foi repetida com as classes finais e manteve as mesmas contagens e paridade. Saída completa da suíte: `target/unit-tests/coverage-20260910-190115-951/`. Os scripts PowerShell e a configuração PM2 passaram na verificação de sintaxe; os três manifestos foram efetivamente gerados e conferidos.
 
 O JAR operacional continua com SHA-256 `EBC700C71B264A50EC933FDD290B3761DBB915152420AE5D6626746ADB7F60E2`. Às 19:03, a API passiva permanecia no PID 23208, iniciado em 09/09; não havia JVM do worker naquele instante, o que não significa que seu agendamento PM2 esteja parado. Nenhum processo foi iniciado, interrompido ou reiniciado por esta entrega.
+
+## Atualização dos avisos Java
+
+Os cinco avisos informados pelo IDE foram corrigidos: guarda explícita de página nula na recuperação dirigida, coleta dos nomes SFTP com verificação de nulidade e remoção dos três imports redundantes de `ArgumentMatchers`. A compilação Java 17 e os **38 testes direcionados passaram**, sem falhas/erros e com rede bloqueada. A suíte completa citada acima é o baseline anterior; não foi repetida nesta limpeza.
+
+**Candidato atualizado para instalação:** `target/vedacit-correcao-20260910/avisos-java/satelite-0.0.1-SNAPSHOT.jar`.
+
+SHA-256: `8976BDACF3BB3C111C7EA5547C7CC79B4A253B8A7D86A269C19317D4743AD1DD`.
+
+Os 1.245 arquivos de aplicação coincidem com a saída testada `target/unit-tests/coverage-20260910-190928-884/`. Evidências em `avisos-java/`: `tests-summary.json`, `package-verification.json`, `package.log` e `source-hashes.json`. O JAR operacional manteve o hash `EBC700C7...`; nenhum processo foi gerenciado nem houve envio real nesta atualização.
 
 ## Aplicação pelo operador
 

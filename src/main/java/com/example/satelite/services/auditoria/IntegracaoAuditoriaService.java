@@ -23,6 +23,8 @@ import org.springframework.web.server.ResponseStatusException;
 
 import com.example.satelite.dto.auditoria.AuditoriaIntegracoesClientesResponseDTO;
 import com.example.satelite.dto.auditoria.IntegracaoEvolucaoDiariaDTO;
+import com.example.satelite.dto.auditoria.IndicadoresEtapasDTO;
+import com.example.satelite.repositories.IntegracaoIndicadoresEtapasRepository;
 import com.example.satelite.dto.auditoria.MetricaConsolidadaDTO;
 import com.example.satelite.dto.auditoria.PaginacaoDTO;
 import com.example.satelite.dto.auditoria.PendenciasPaginadasDTO;
@@ -73,15 +75,18 @@ public class IntegracaoAuditoriaService {
     private final LogIntegracaoRepository logIntegracaoRepository;
     private final IntegracaoAuditoriaQueryRepository integracaoAuditoriaQueryRepository;
     private final WorkSftpClientesAuditoriaRepository workSftpClientesAuditoriaRepository;
+    private final IntegracaoIndicadoresEtapasRepository indicadoresEtapasRepository;
 
     public IntegracaoAuditoriaService(
             LogIntegracaoRepository logIntegracaoRepository,
             IntegracaoAuditoriaQueryRepository integracaoAuditoriaQueryRepository,
-            WorkSftpClientesAuditoriaRepository workSftpClientesAuditoriaRepository
+            WorkSftpClientesAuditoriaRepository workSftpClientesAuditoriaRepository,
+            IntegracaoIndicadoresEtapasRepository indicadoresEtapasRepository
     ) {
         this.logIntegracaoRepository = logIntegracaoRepository;
         this.integracaoAuditoriaQueryRepository = integracaoAuditoriaQueryRepository;
         this.workSftpClientesAuditoriaRepository = workSftpClientesAuditoriaRepository;
+        this.indicadoresEtapasRepository = indicadoresEtapasRepository;
     }
 
     public List<WorkSftpClienteStatusDTO> consultarStatusWorkSftpClientes() {
@@ -171,6 +176,12 @@ public class IntegracaoAuditoriaService {
                 .stream()
                 .map(this::mapearEvolucaoDiaria)
                 .toList();
+    }
+
+    public IndicadoresEtapasDTO consultarIndicadoresEtapas(String dataInicial, String dataFinal, List<String> destinos) {
+        PeriodoFiltro periodo = lerPeriodoObrigatorio(dataInicial, dataFinal);
+        return indicadoresEtapasRepository.consultar(periodo.dataInicialSql().toLocalDate(),
+                periodo.dataFinalLimitSql().toLocalDate().minusDays(1), normalizarDestinos(destinos));
     }
 
     public List<ResumoTabelaIntegracaoDTO> consultarResumoTabelas(

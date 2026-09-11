@@ -17,6 +17,7 @@ import org.springframework.web.servlet.mvc.method.annotation.StreamingResponseBo
 
 import com.example.satelite.dto.auditoria.AuditoriaIntegracoesClientesResponseDTO;
 import com.example.satelite.dto.auditoria.IntegracaoEvolucaoDiariaDTO;
+import com.example.satelite.dto.auditoria.IndicadoresEtapasDTO;
 import com.example.satelite.dto.auditoria.ResumoTabelaIntegracaoDTO;
 import com.example.satelite.dto.auditoria.WorkSftpClienteStatusDTO;
 import com.example.satelite.dto.auditoria.WorkSftpClienteExecucoesPaginadasDTO;
@@ -87,6 +88,14 @@ public class IntegracaoAuditoriaController {
             @RequestParam(required = false) List<String> destino
     ) {
         return integracaoAuditoriaService.consultarEvolucaoDiaria(dataInicial, dataFinal, destino);
+    }
+
+    @GetMapping("/integracoes-clientes/indicadores-etapas")
+    public IndicadoresEtapasDTO consultarIndicadoresEtapas(
+            @RequestParam String dataInicial, @RequestParam String dataFinal,
+            @RequestParam(required = false) List<String> destino
+    ) {
+        return integracaoAuditoriaService.consultarIndicadoresEtapas(dataInicial, dataFinal, destino);
     }
 
     @GetMapping("/integracoes-clientes/resumo-tabelas")

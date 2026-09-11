@@ -76,6 +76,9 @@ class SateliteApplicationTests {
 	private IntegracaoAuditoriaQueryRepository integracaoAuditoriaQueryRepository;
 
 	@MockitoBean
+	private com.example.satelite.repositories.IntegracaoIndicadoresEtapasRepository indicadoresEtapasRepository;
+
+	@MockitoBean
 	private QuarentenaEventoRepository quarentenaEventoRepository;
 
 	@MockitoBean

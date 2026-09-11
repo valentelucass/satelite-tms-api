@@ -126,5 +126,6 @@ scripts/*
 !scripts/validacao/
 scripts/validacao/*
 !scripts/validacao/SqlSftpReadOnlyProbe.java
+!scripts/validacao/SqlIndicadoresEtapasReadOnlyProbe.java
 
 /docs/contexto

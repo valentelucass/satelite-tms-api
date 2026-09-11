@@ -22,7 +22,22 @@ class IntegracaoAuditoriaServiceTest {
     private final LogIntegracaoRepository logs = mock(LogIntegracaoRepository.class);
     private final IntegracaoAuditoriaQueryRepository query = mock(IntegracaoAuditoriaQueryRepository.class);
     private final WorkSftpClientesAuditoriaRepository work = mock(WorkSftpClientesAuditoriaRepository.class);
-    private final IntegracaoAuditoriaService service = new IntegracaoAuditoriaService(logs, query, work);
+    private final IntegracaoIndicadoresEtapasRepository etapas = mock(IntegracaoIndicadoresEtapasRepository.class);
+    private final IntegracaoAuditoriaService service = new IntegracaoAuditoriaService(logs, query, work, etapas);
+
+    @Test
+    void indicadoresUsamPeriodoInclusivoEDestinosNormalizados() {
+        service.consultarIndicadoresEtapas("2026-09-01", "2026-09-10", List.of("vedacit"));
+        verify(etapas).consultar(LocalDate.parse("2026-09-01"), LocalDate.parse("2026-09-10"), List.of("VEDACIT"));
+        verifyNoInteractions(logs, query, work);
+    }
+
+    @Test
+    void indicadoresNaoConsultamBancoComPeriodoInvertido() {
+        assertThrows(ResponseStatusException.class,
+                () -> service.consultarIndicadoresEtapas("2026-09-10", "2026-09-01", List.of("VEDACIT")));
+        verifyNoInteractions(etapas);
+    }
 
     @Test
     void paginatesAndNormalizesFiltersBeforeQuerying() {
