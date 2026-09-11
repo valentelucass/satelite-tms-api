@@ -16,7 +16,6 @@ import org.springframework.core.annotation.Order;
 import org.springframework.core.env.Environment;
 import org.springframework.stereotype.Component;
 
-import com.example.satelite.services.origem.sftp.vedacit.VedacitSftpClient;
 import com.example.satelite.services.origem.sftp.vedacit.VedacitSftpClientFactory;
 import com.example.satelite.repositories.WorkSftpClientesAuditoriaRepository;
 
@@ -68,7 +67,7 @@ public class WorkSftpClientesRunner implements CommandLineRunner, ExitCodeGenera
                 if (!environment.getProperty("SFTP_RODOGARCIA_ENABLED", Boolean.class, false))
                     throw new IllegalStateException("Etapa XML exige a fonte SFTP habilitada");
                 TurnoEtl turno = new TurnoEtl(limite, duracao, () -> {
-                    ciclos.forEach(CicloCliente::publicarProgresso);
+                    for (CicloCliente ciclo : ciclos) ciclo.publicarProgresso();
                     ciclos.forEach(c -> c.passagem.revisarInventario());
                     rodada.run();
                 });

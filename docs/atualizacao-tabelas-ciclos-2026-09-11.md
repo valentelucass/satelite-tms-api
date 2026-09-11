@@ -25,11 +25,13 @@ Backend: **365 testes executados, 362 aprovados e três manuais ignorados**, sem
 
 Frontend: **18 testes aprovados**, TypeScript, lint e build aprovados. O teste com relógio controlado confirma nova consulta dos dois quadros após 60 segundos e substituição das contagens, sem finalização/agenda inventadas. Seis cenários visuais (390/1265/1920 px, claro/escuro) passaram sem transbordamento ou exceções. Evidência: `../etl-dash/dashboards/frontend/.tmp/progresso-visual/`.
 
+Revisão dos avisos Java: removido o import sem uso no runner e substituída a referência de método de publicação por laço explícito, sem alterar a ordem das publicações. Compilação Java 17 e dois testes do runner aprovados novamente; candidato reempacotado com as classes dessa revisão. Evidência: `target/unit-tests/coverage-20260911-185237-876/summary.json`.
+
 Migration **V23 aplicada** exclusivamente em `SATELITE_TMS_AUDITORIA` via `database/subir_database.bat --rodizio`, com segunda execução sem erro. Baseline V16 alinhado. SQL real confirmou `fim_em` anulável e as novas colunas `execucao_id`/`atualizado_em`. O JAR anterior continua compatível com a alteração aditiva; a nova escrita de parciais depende de publicar o novo pacote.
 
 Pacotes prontos, ainda sem substituir os processos em execução:
 
-- Satélite: `target/progresso-ciclos-20260911/satelite-0.0.1-SNAPSHOT.jar`, SHA-256 `E185881B02CA8E1E59A10B5C381F60E49D01E99ECDB8719F60863BF61ED85A45`. 1.253 classes/recursos comparados com a saída testada.
+- Satélite: `target/progresso-ciclos-20260911/satelite-0.0.1-SNAPSHOT.jar`, SHA-256 `4FD9D952C4982106B3CB27A717833F117FC5B095B7336E9D47307E22C7BE4A99`. 1.253 classes/recursos comparados com a saída testada.
 - UI: `../etl-dash/dashboards/frontend/.tmp/quality-build/20260911-progresso/dist`, build `20260911-progresso-final`, incluindo `build-info.json` e sem sourcemaps. Substitui o candidato anterior de rodízio.
 - A API do Dashboard não requer alteração para encaminhar os novos campos. Publicar a UI também é necessário para o polling de um minuto e os rótulos de progresso.
 
