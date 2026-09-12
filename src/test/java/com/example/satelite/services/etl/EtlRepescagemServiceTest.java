@@ -35,13 +35,19 @@ import com.example.satelite.services.origem.sftp.vedacit.VedacitSftpInventory;
 import com.example.satelite.services.origem.sftp.vedacit.VedacitSftpDocumentSource;
 
 class EtlRepescagemServiceTest {
+    private static SftpDocumentoLockService lockLivre() {
+        var lock = mock(SftpDocumentoLockService.class);
+        when(lock.executarComLock(any(), any(), any(), any()))
+                .thenAnswer(i -> Optional.ofNullable(i.<java.util.function.Supplier<?>>getArgument(3).get()));
+        return lock;
+    }
 
     @Test
     void deveMaterializarInventarioDoClienteSemCruzarAuditoriaDeOutroPerfil() {
         LogIntegracaoRepository repository = mock(LogIntegracaoRepository.class);
         EtlEstadoIntegracaoService estado = new EtlEstadoIntegracaoService(repository);
         EtlRepescagemService service = new EtlRepescagemService(repository, mock(EtlRegistroService.class), estado,
-                mock(PpgIntegrationService.class), mock(VedacitIntegrationService.class), null, mock(SftpDocumentoLockService.class));
+                mock(PpgIntegrationService.class), mock(VedacitIntegrationService.class), null, lockLivre());
         String nfe = "35260860642774001209550010002365771266072428";
         String cte = "35260860960473000758570030000541141709521720";
         VedacitSftpDocument documento = new VedacitSftpDocument(VedacitSftpDocument.Tipo.COMPROVANTE,
@@ -67,7 +73,7 @@ class EtlRepescagemServiceTest {
         LogIntegracaoRepository repository = mock(LogIntegracaoRepository.class);
         EtlEstadoIntegracaoService estado = mock(EtlEstadoIntegracaoService.class);
         EtlRepescagemService service = new EtlRepescagemService(repository, mock(EtlRegistroService.class), estado,
-                mock(PpgIntegrationService.class), mock(VedacitIntegrationService.class), null, mock(SftpDocumentoLockService.class));
+                mock(PpgIntegrationService.class), mock(VedacitIntegrationService.class), null, lockLivre());
         String nfe = "35260860642774001209550010002365771266072428";
         String cte = "35260860960473000758570030000541141709521720";
         VedacitSftpDocument documento = new VedacitSftpDocument(VedacitSftpDocument.Tipo.COMPROVANTE,
@@ -96,7 +102,7 @@ class EtlRepescagemServiceTest {
         LogIntegracaoRepository repository = mock(LogIntegracaoRepository.class);
         EtlEstadoIntegracaoService estado = mock(EtlEstadoIntegracaoService.class);
         EtlRepescagemService service = new EtlRepescagemService(repository, mock(EtlRegistroService.class), estado,
-                mock(PpgIntegrationService.class), mock(VedacitIntegrationService.class), null, mock(SftpDocumentoLockService.class));
+                mock(PpgIntegrationService.class), mock(VedacitIntegrationService.class), null, lockLivre());
         String nfe = "35260860642774001209550010002365771266072428";
         String cte = "35260860960473000758570030000541141709521720";
         VedacitSftpDocument documento = new VedacitSftpDocument(VedacitSftpDocument.Tipo.COMPROVANTE,

@@ -147,13 +147,18 @@ public class EtlEstadoIntegracaoService {
         String statusCanhotoAnterior = logIntegracao.getStatusCanhoto();
         String statusDadosNovo = resultado.statusDados() != null ? resultado.statusDados() : statusDadosAnterior;
         String statusCanhotoNovo = resultado.statusCanhoto() != null ? resultado.statusCanhoto() : statusCanhotoAnterior;
+        boolean preservarComprovante = "VEDACIT".equals(logIntegracao.getSistemaDestino())
+                && STATUS_SUCESSO.equals(statusCanhotoAnterior);
+        if (preservarComprovante) statusCanhotoNovo = statusCanhotoAnterior;
 
-        logIntegracao.setStatus(resultado.status());
+        logIntegracao.setStatus(preservarComprovante && STATUS_SUCESSO.equals(statusDadosNovo)
+                ? ResultadoIntegracao.STATUS_ENVIADO : resultado.status());
         logIntegracao.setStatusDados(statusDadosNovo);
         logIntegracao.setStatusCanhoto(statusCanhotoNovo);
         logIntegracao.setMensagemErroDados(resultado.mensagemErroDados());
-        logIntegracao.setMensagemErroCanhoto(resultado.mensagemErroCanhoto());
-        logIntegracao.setErro(montarMensagemErroGeral(resultado));
+        if (!preservarComprovante && resultado.statusCanhoto() != null)
+            logIntegracao.setMensagemErroCanhoto(resultado.mensagemErroCanhoto());
+        logIntegracao.setErro(preservarComprovante ? resultado.mensagemErroDados() : montarMensagemErroGeral(resultado));
         logIntegracao.setDataProcessamento(agora);
 
         if (deveAtualizarDataProcessamento(statusDadosAnterior, statusDadosNovo)) {
@@ -161,7 +166,8 @@ public class EtlEstadoIntegracaoService {
             logIntegracao.setTentativasDados(incrementar(logIntegracao.getTentativasDados()));
         }
 
-        if (deveAtualizarDataProcessamento(statusCanhotoAnterior, statusCanhotoNovo)) {
+        if (!preservarComprovante && resultado.statusCanhoto() != null
+                && deveAtualizarDataProcessamento(statusCanhotoAnterior, statusCanhotoNovo)) {
             logIntegracao.setDataProcessamentoCanhoto(agora);
             logIntegracao.setTentativasCanhoto(incrementar(logIntegracao.getTentativasCanhoto()));
         }
@@ -197,6 +203,8 @@ public class EtlEstadoIntegracaoService {
         if (logIntegracao == null || classificacao == null) {
             return;
         }
+        if (STATUS_SUCESSO.equals(logIntegracao.getStatusCanhoto())
+                && classificacao != ClassificacaoOperacionalCanhotoVedacit.SUCESSO) return;
         logIntegracao.setCanhotoClassificacaoOperacional(classificacao.name());
         logIntegracao.setCanhotoClassificadoEm(agoraAuditoria());
     }
@@ -208,7 +216,21 @@ public class EtlEstadoIntegracaoService {
     }
 
     public boolean canhotoVedacitSucessoRegistradoPorPar(String chaveNfe, String chaveCte) {
-        return logIntegracaoRepository.existsCanhotoVedacitSucessoPorPar(chaveNfe, chaveCte);
+        return logIntegracaoRepository.existsConfirmacaoDuravelComprovante(chaveNfe, chaveCte)
+                || logIntegracaoRepository.existsCanhotoVedacitSucessoPorPar(chaveNfe, chaveCte);
+    }
+
+    public boolean canhotoVedacitRetidoPorPar(String chaveNfe, String chaveCte) {
+        return logIntegracaoRepository.existsCanhotoVedacitRetidoPorPar(chaveNfe, chaveCte);
+    }
+
+    /** Antes do efeito remoto: uma queda do processo exige conferência, nunca reenvio cego. */
+    public void registrarInicioEnvioCanhoto(LogIntegracaoModel registro) {
+        registro.setStatusCanhoto("EM_PROCESSAMENTO");
+        registro.setMensagemErroCanhoto("ENVIO_INICIADO_SEM_RESULTADO: conferir destino se o processo for interrompido.");
+        registro.setCanhotoClassificacaoOperacional(ClassificacaoOperacionalCanhotoVedacit.TIMEOUT_AMBIGUO.name());
+        registro.setCanhotoClassificadoEm(agoraAuditoria());
+        salvar(registro);
     }
 
     /** Propaga somente o resultado do mesmo canhoto; não altera chave CT-e histórica. */
@@ -245,8 +267,9 @@ public class EtlEstadoIntegracaoService {
         if (STATUS_SUCESSO.equals(resultado.statusDados()) && !STATUS_SUCESSO.equals(registro.getStatusCanhoto()))
             status = ResultadoIntegracao.STATUS_PARCIAL;
         boolean ausente = ResultadoIntegracao.STATUS_PENDENTE_ORIGEM.equals(resultado.statusDados());
+        // Etapa ausente no resultado não recebe data, tentativa ou mensagem nova.
         aplicarResultadoIntegracao(registro, new ResultadoIntegracao(status, resultado.statusDados(),
-                registro.getStatusCanhoto(), ausente ? "ORIGEM_XML_AUSENTE" : resultado.mensagemErroDados(), registro.getMensagemErroCanhoto()));
+                null, ausente ? "ORIGEM_XML_AUSENTE" : resultado.mensagemErroDados(), registro.getMensagemErroCanhoto()));
         if (ausente) registro.setDataProcessamentoDados(agoraAuditoria());
     }
 

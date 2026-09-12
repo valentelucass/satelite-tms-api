@@ -8,6 +8,7 @@ import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.times;
 
 import java.sql.Connection;
 import java.sql.PreparedStatement;
@@ -24,9 +25,31 @@ class SftpDocumentoLockServiceTest {
     @Test
     void criaRecursoDeterministicoPorClienteENotas() {
         assertEquals(
-                "SATELITE_TMS:VEDACIT:SFTP:CLIENTE_A:" + NFE + ":" + CTE,
+                "SATELITE_TMS:VEDACIT:COMPROVANTE:" + NFE + ":" + CTE,
                 SftpDocumentoLockService.recurso("cliente_a", NFE, CTE)
         );
+        assertEquals(SftpDocumentoLockService.recurso("CLIENTE_A",NFE,CTE),
+                SftpDocumentoLockService.recurso("CLIENTE_B",NFE,CTE));
+        assertEquals(SftpDocumentoLockService.recurso("VEDACIT_XML",NFE,CTE),
+                SftpDocumentoLockService.recurso("VEDACIT_XML","3".repeat(44),CTE));
+    }
+
+    @Test
+    void mesmoDocumentoAninhadoUsaUmaSessaoELiberaAposFalha() throws Exception {
+        var jdbc=mock(JdbcTemplate.class);
+        var conn=mock(Connection.class);
+        var statement=mock(PreparedStatement.class);
+        var rs=mock(ResultSet.class);
+        doAnswer(i -> i.<ConnectionCallback<Object>>getArgument(0).doInConnection(conn))
+                .when(jdbc).execute(org.mockito.ArgumentMatchers.<ConnectionCallback<Object>>any());
+        when(conn.prepareStatement(anyString())).thenReturn(statement);
+        when(statement.executeQuery()).thenReturn(rs);
+        when(rs.next()).thenReturn(true); when(rs.getInt(1)).thenReturn(0);
+        var service=new SftpDocumentoLockService(jdbc);
+        assertThrows(IllegalStateException.class, () -> service.executarComLock("A",NFE,CTE,
+                () -> service.executarComLock("B",NFE,CTE, () -> { throw new IllegalStateException("falha"); })));
+        assertEquals("ok",service.executarComLock("B",NFE,CTE,() -> "ok").orElseThrow());
+        verify(conn,times(4)).prepareStatement(anyString()); // dois acquire/release; aninhado reutiliza a sessão.
     }
 
     @Test

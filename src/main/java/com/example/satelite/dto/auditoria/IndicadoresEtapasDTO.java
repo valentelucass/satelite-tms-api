@@ -10,7 +10,8 @@ public record IndicadoresEtapasDTO(
         List<Etapa> etapas, List<Dia> evolucao
 ) {
     public record Etapa(String sistemaDestino, String etapa, long sucessosPeriodo,
-            long falhasPeriodo, long pendentesAtuais, long bloqueadosAtuais, long semConfirmacaoDatada) {}
+            long falhasPeriodo, long pendentesAtuais, long bloqueadosAtuais, long semConfirmacaoDatada,
+            long confirmadosSemDataConfiavel) {}
 
     public record Dia(LocalDate data, String etapa, long sucessos, long falhas) {}
 }

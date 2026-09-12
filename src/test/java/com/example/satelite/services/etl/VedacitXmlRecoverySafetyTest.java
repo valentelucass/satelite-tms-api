@@ -91,9 +91,21 @@ class VedacitXmlRecoverySafetyTest {
 
     @Test void comprovanteHistoricoDoParNaoEReenviadoNemRecebeDataArtificial() {
         var registro = erro(null); registro.setStatusDados("SUCESSO");
+        when(repo.findById(1L)).thenReturn(Optional.of(registro));
         when(repo.existsCanhotoVedacitSucessoPorPar(NFE, CTE)).thenReturn(true);
         assertEquals(ResultadoRegistro.JA_PROCESSADO, service.reprocessarCanhotoVedacitPorCte(registro));
         assertNull(registro.getDataProcessamentoCanhoto());
+        verifyNoInteractions(vedacit);
+    }
+
+    @Test void xmlSemNotaFiscalMantemLockPorCteSemCriarParInvalidoDeComprovante() {
+        var ocorrencia=new com.example.satelite.dto.rodogarcia.EslOcorrenciaDTO(1L,null,null,null,
+                new com.example.satelite.dto.rodogarcia.EslFreightDTO(2L,CTE),
+                new com.example.satelite.dto.rodogarcia.EslOccurrenceDefDTO(3L,110,"Emissao"));
+        when(repo.existsBySistemaDestinoAndChaveCteAndStatusDados("VEDACIT",CTE,"SUCESSO")).thenReturn(true);
+        assertEquals(ResultadoRegistro.JA_PROCESSADO,service.processarEmissaoXmlVedacit(null,null,ocorrencia));
+        verify(locks).executarComLock(eq("VEDACIT_XML"),eq(CTE),eq(CTE),any());
+        verify(locks,never()).executarComLock(eq("VEDACIT"),any(),any(),any());
         verifyNoInteractions(vedacit);
     }
     private void selecionar(LogIntegracaoModel r) {

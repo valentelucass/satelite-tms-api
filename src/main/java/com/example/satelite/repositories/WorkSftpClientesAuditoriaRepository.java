@@ -30,6 +30,12 @@ public class WorkSftpClientesAuditoriaRepository {
                                'xml_pendentes', 'xml_erros', 'erros_comprovante', 'motivo_falha', 'execucao_id', 'atualizado_em')
                 """, new MapSqlParameterSource(), Integer.class);
         if (colunas == null || colunas != 10) throw new IllegalStateException("MIGRACAO_V23_PENDENTE");
+        Integer protecao = jdbc.queryForObject("""
+                SELECT COUNT(*) FROM sys.triggers
+                WHERE object_id=OBJECT_ID(N'dbo.tr_log_preserva_confirmacao_comprovante') AND is_disabled=0
+                    AND OBJECT_ID(N'dbo.tb_confirmacao_comprovante','U') IS NOT NULL
+                """, new MapSqlParameterSource(), Integer.class);
+        if (protecao == null || protecao != 1) throw new IllegalStateException("MIGRACAO_V24_PENDENTE");
     }
 
     public void registrar(Ciclo ciclo) {

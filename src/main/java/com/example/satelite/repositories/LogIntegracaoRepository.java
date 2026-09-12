@@ -90,10 +90,23 @@ public interface LogIntegracaoRepository extends JpaRepository<LogIntegracaoMode
     @Query("""
             SELECT CASE WHEN COUNT(l) > 0 THEN true ELSE false END FROM LogIntegracaoModel l
             WHERE l.sistemaDestino = 'VEDACIT' AND l.chaveNfe = :chaveNfe
-              AND (l.canhotoChaveCteEfetiva = :chaveCte OR (l.canhotoChaveCteEfetiva IS NULL AND l.chaveCte = :chaveCte))
+              AND COALESCE(NULLIF(l.canhotoChaveCteEfetiva, ''), l.chaveCte) = :chaveCte
               AND l.statusCanhoto = 'SUCESSO'
             """)
     boolean existsCanhotoVedacitSucessoPorPar(String chaveNfe, String chaveCte);
+
+    @Query(value = "SELECT CAST(CASE WHEN EXISTS (SELECT 1 FROM dbo.tb_confirmacao_comprovante "
+            + "WHERE chave_nfe = :chaveNfe AND chave_cte = :chaveCte) THEN 1 ELSE 0 END AS BIT)", nativeQuery = true)
+    boolean existsConfirmacaoDuravelComprovante(String chaveNfe, String chaveCte);
+
+    @Query("""
+            SELECT CASE WHEN COUNT(l)>0 THEN true ELSE false END FROM LogIntegracaoModel l
+            WHERE l.sistemaDestino='VEDACIT' AND l.chaveNfe=:chaveNfe
+              AND COALESCE(NULLIF(l.canhotoChaveCteEfetiva,''),l.chaveCte)=:chaveCte
+              AND l.canhotoClassificacaoOperacional IN ('TIMEOUT_AMBIGUO','BLOQUEADO_DESTINO')
+              AND l.statusCanhoto <> 'SUCESSO'
+            """)
+    boolean existsCanhotoVedacitRetidoPorPar(String chaveNfe, String chaveCte);
 
     @Query("""
             SELECT l FROM LogIntegracaoModel l WHERE l.sistemaDestino = 'VEDACIT'

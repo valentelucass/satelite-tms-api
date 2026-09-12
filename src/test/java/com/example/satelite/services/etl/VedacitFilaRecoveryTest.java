@@ -28,6 +28,12 @@ class VedacitFilaRecoveryTest {
     private final VedacitSftpDocumentSource fonte = mock(VedacitSftpDocumentSource.class);
     private static final String NFE = "1".repeat(44), CTE = "2".repeat(44);
 
+    @org.junit.jupiter.api.BeforeEach
+    void lockLivre() {
+        when(locks.executarComLock(any(), any(), any(), any()))
+                .thenAnswer(i -> Optional.ofNullable(i.<Supplier<?>>getArgument(3).get()));
+    }
+
     @ParameterizedTest @ValueSource(booleans = {false, true})
     void uploadInstavelNuncaLiberaComprovanteSemXml(boolean porCliente) {
         var atual = LogIntegracaoModel.builder().sistemaDestino("VEDACIT").sftpCliente("VEDACIT")
@@ -45,7 +51,7 @@ class VedacitFilaRecoveryTest {
         assertEquals("PENDENTE_ORIGEM", atual.getStatusDados());
         assertNull(atual.getDataProcessamentoDados());
         assertNotEquals("PENDENTE_ENVIO", atual.getCanhotoClassificacaoOperacional());
-        verifyNoInteractions(registros, locks, fonte);
+        verifyNoInteractions(registros, fonte);
     }
 
     @ParameterizedTest @ValueSource(strings = {"SUCESSO", "TIMEOUT_AMBIGUO", "BLOQUEADO_DESTINO"})
@@ -188,10 +194,6 @@ class VedacitFilaRecoveryTest {
             assertTrue(chaves.size() <= 500);
             return porCte.values().stream().filter(r -> chaves.contains(r.getChaveNfe()))
                     .filter(r -> !"SUCESSO".equals(r.getStatusCanhoto())).limit(pagina.getPageSize()).toList();
-        });
-        when(locks.executarComLock(any(), any(), any(), any())).thenAnswer(i -> {
-            Supplier<ResultadoRegistro> operacao = i.getArgument(3);
-            return Optional.of(operacao.get());
         });
         return new VedacitSftpInventory(docs, List.of());
     }

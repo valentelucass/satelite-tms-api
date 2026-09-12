@@ -127,5 +127,10 @@ scripts/*
 scripts/validacao/*
 !scripts/validacao/SqlSftpReadOnlyProbe.java
 !scripts/validacao/SqlIndicadoresEtapasReadOnlyProbe.java
+!scripts/probes/
+scripts/probes/*
+!scripts/probes/ConfirmacaoSqlServerProbe.java
+!scripts/probes/IndicadoresSqlServerProbe.java
+!scripts/probes/DocumentoLockSqlServerProbe.java
 
 /docs/contexto

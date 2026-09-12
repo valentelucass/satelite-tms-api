@@ -273,6 +273,25 @@ public class EtlRegistroService {
             LogIntegracaoModel logIntegracao,
             VedacitSftpDocumentSource fonteSftp
     ) {
+        if (xmlDocumentoLockService != null && logIntegracao != null && logIntegracao.getId() != null
+                && chaveFiscalValida(logIntegracao.getChaveNfe()) && chaveFiscalValida(logIntegracao.getChaveCte())) {
+            String cte = logIntegracao.getCanhotoChaveCteEfetiva();
+            if (!chaveFiscalValida(cte)) cte = logIntegracao.getChaveCte();
+            return xmlDocumentoLockService.executarComLock(DESTINO_VEDACIT, logIntegracao.getChaveNfe(), cte,
+                    () -> etlEstadoIntegracaoService.buscarAtivoPorId(logIntegracao.getId())
+                            .map(atual -> reprocessarCanhotoVedacitComExclusao(atual, fonteSftp))
+                            .orElse(ResultadoRegistro.IGNORADO))
+                    .orElse(ResultadoRegistro.PENDENTE_FOTO);
+        }
+        return reprocessarCanhotoVedacitComExclusao(logIntegracao, fonteSftp);
+    }
+
+    private static boolean chaveFiscalValida(String chave) {
+        return chave != null && chave.matches("\\d{44}");
+    }
+
+    private ResultadoRegistro reprocessarCanhotoVedacitComExclusao(
+            LogIntegracaoModel logIntegracao, VedacitSftpDocumentSource fonteSftp) {
         if (!ehCandidatoCanhotoVedacit(logIntegracao)) {
             return ResultadoRegistro.IGNORADO;
         }
@@ -305,9 +324,44 @@ public class EtlRegistroService {
                 logIntegracao.setCanhotoReconciliacaoMotivo(decisao.motivo());
                 ocorrencia = comChaveCte(ocorrencia, decisao.chaveCteEfetiva());
             }
+            final EslOcorrenciaDTO ocorrenciaEnvio = ocorrencia;
+            final VedacitCteCanhotoReconciliationService.Decisao decisaoEnvio = decisao;
+            if (xmlDocumentoLockService != null) {
+                return xmlDocumentoLockService.executarComLock(DESTINO_VEDACIT, chaveNfe, obterChaveCte(ocorrenciaEnvio),
+                        () -> enviarCanhotoComDocumentoProtegido(logIntegracao, fonteSftp, ocorrenciaEnvio, decisaoEnvio))
+                        .orElse(ResultadoRegistro.PENDENTE_FOTO);
+            }
+            return enviarCanhotoComDocumentoProtegido(logIntegracao, fonteSftp, ocorrenciaEnvio, decisaoEnvio);
+        } catch (Exception e) {
+            if (e instanceof InterruptedException) {
+                Thread.currentThread().interrupt();
+            }
+
+            ResultadoIntegracao erro = ResultadoIntegracao.erroCanhoto(STATUS_SUCESSO, e.getMessage());
+            etlEstadoIntegracaoService.aplicarResultadoIntegracao(logIntegracao, erro);
+            etlEstadoIntegracaoService.classificarCanhotoVedacit(
+                    logIntegracao, ClassificacaoOperacionalCanhotoVedacit.paraErro(e.getMessage())
+            );
+            etlEstadoIntegracaoService.salvar(logIntegracao);
+            logDetalheSftpVedacit.error(
+                    "❌ [VEDACIT] NF {}: erro no reprocessamento cirúrgico do canhoto - {}",
+                    chaveNfe,
+                    e.getMessage()
+            );
+            return ResultadoRegistro.ERRO;
+        }
+    }
+
+    private ResultadoRegistro enviarCanhotoComDocumentoProtegido(LogIntegracaoModel logIntegracao,
+            VedacitSftpDocumentSource fonteSftp, EslOcorrenciaDTO ocorrencia,
+            VedacitCteCanhotoReconciliationService.Decisao decisao) {
+        String chaveNfe = obterChaveNfe(ocorrencia);
             // Sucesso histórico, mesmo sem data, impede novo envio; não gera aceite datado artificial.
             if (etlEstadoIntegracaoService.canhotoVedacitSucessoRegistradoPorPar(chaveNfe, obterChaveCte(ocorrencia)))
                 return ResultadoRegistro.JA_PROCESSADO;
+            if (etlEstadoIntegracaoService.canhotoVedacitRetidoPorPar(chaveNfe, obterChaveCte(ocorrencia)))
+                return ResultadoRegistro.RETIDO;
+            etlEstadoIntegracaoService.registrarInicioEnvioCanhoto(logIntegracao);
             logDetalheSftpVedacit.info(
                     "🎯 [VEDACIT] NF {}: reprocessamento cirúrgico do canhoto. CTe={}",
                     chaveNfe,
@@ -328,24 +382,6 @@ public class EtlRegistroService {
                 );
             }
             return etlEstadoIntegracaoService.converterResultadoRegistro(resultado);
-        } catch (Exception e) {
-            if (e instanceof InterruptedException) {
-                Thread.currentThread().interrupt();
-            }
-
-            ResultadoIntegracao erro = ResultadoIntegracao.erroCanhoto(STATUS_SUCESSO, e.getMessage());
-            etlEstadoIntegracaoService.aplicarResultadoIntegracao(logIntegracao, erro);
-            etlEstadoIntegracaoService.classificarCanhotoVedacit(
-                    logIntegracao, ClassificacaoOperacionalCanhotoVedacit.paraErro(e.getMessage())
-            );
-            etlEstadoIntegracaoService.salvar(logIntegracao);
-            logDetalheSftpVedacit.error(
-                    "❌ [VEDACIT] NF {}: erro no reprocessamento cirúrgico do canhoto - {}",
-                    chaveNfe,
-                    e.getMessage()
-            );
-            return ResultadoRegistro.ERRO;
-        }
     }
 
     private EslOcorrenciaDTO comChaveCte(EslOcorrenciaDTO ocorrencia, String chaveCteEfetiva) {
@@ -474,7 +510,11 @@ public class EtlRegistroService {
         if (xmlDocumentoLockService != null && cte != null && cte.matches("\\d{44}")) {
             // XML é único por CT-e mesmo quando há várias NF-es no mesmo documento.
             return xmlDocumentoLockService.executarComLock("VEDACIT_XML", cte, cte,
-                    () -> processarEmissaoXmlVedacitComExclusao(cursorNextId, ocorrencia))
+                    () -> chaveFiscalValida(obterChaveNfe(ocorrencia))
+                            ? xmlDocumentoLockService.executarComLock(DESTINO_VEDACIT, obterChaveNfe(ocorrencia), cte,
+                            () -> processarEmissaoXmlVedacitComExclusao(cursorNextId, ocorrencia))
+                            .orElse(ResultadoRegistro.ERRO_INFRAESTRUTURA)
+                            : processarEmissaoXmlVedacitComExclusao(cursorNextId, ocorrencia))
                     .orElse(ResultadoRegistro.ERRO_INFRAESTRUTURA);
         }
         return processarEmissaoXmlVedacitComExclusao(cursorNextId, ocorrencia);
@@ -499,9 +539,11 @@ public class EtlRegistroService {
             if (Thread.currentThread().isInterrupted()) break;
             if (xmlDocumentoLockService == null) throw new IllegalStateException("Lock XML indisponível");
             var tentativa = xmlDocumentoLockService.executarComLock("VEDACIT_XML", registro.getChaveCte(), registro.getChaveCte(),
-                    () -> etlEstadoIntegracaoService.buscarAtivoPorId(registro.getId())
+                    () -> xmlDocumentoLockService.executarComLock(DESTINO_VEDACIT, registro.getChaveNfe(), registro.getChaveCte(),
+                            () -> etlEstadoIntegracaoService.buscarAtivoPorId(registro.getId())
                             .filter(atual -> atual.getDataProcessamentoDados() != null && !atual.getDataProcessamentoDados().isAfter(antes))
-                            .map(this::reprocessarXmlCteVedacitPorChave).orElse(ResultadoRegistro.IGNORADO));
+                            .map(this::reprocessarXmlCteVedacitPorChave).orElse(ResultadoRegistro.IGNORADO))
+                            .orElse(ResultadoRegistro.RETIDO));
             resultado = resultado.com(tentativa.orElse(ResultadoRegistro.RETIDO));
             if (turno != null) turno.documentoAvaliado(tentativa.orElse(ResultadoRegistro.RETIDO));
         }
@@ -631,7 +673,24 @@ public class EtlRegistroService {
         }
     }
 
-    private ResultadoRegistro processarOcorrenciaComLog(
+    private ResultadoRegistro processarOcorrenciaComLog(String destino, String headerAuth, Long cursorNextId,
+            EslOcorrenciaDTO ocorrencia, ProcessadorDestino processadorDestino, LogIntegracaoModel registro) {
+        if (DESTINO_VEDACIT.equals(destino) && xmlDocumentoLockService != null) {
+            return xmlDocumentoLockService.executarComLock(destino, obterChaveNfe(ocorrencia), obterChaveCte(ocorrencia), () -> {
+                if (etlEstadoIntegracaoService.canhotoVedacitSucessoRegistradoPorPar(obterChaveNfe(ocorrencia), obterChaveCte(ocorrencia)))
+                    return ResultadoRegistro.JA_PROCESSADO;
+                if (etlEstadoIntegracaoService.canhotoVedacitRetidoPorPar(obterChaveNfe(ocorrencia), obterChaveCte(ocorrencia)))
+                    return ResultadoRegistro.RETIDO;
+                if (registro.getId() == null)
+                    return processarOcorrenciaComLogProtegido(destino, headerAuth, cursorNextId, ocorrencia, processadorDestino, registro);
+                return etlEstadoIntegracaoService.buscarAtivoPorId(registro.getId())
+                        .map(atual -> processarOcorrenciaComLogProtegido(destino, headerAuth, cursorNextId, ocorrencia, processadorDestino, atual))
+                        .orElse(ResultadoRegistro.IGNORADO);
+            }).orElse(ResultadoRegistro.PENDENTE_FOTO);
+        }
+        return processarOcorrenciaComLogProtegido(destino, headerAuth, cursorNextId, ocorrencia, processadorDestino, registro);
+    }
+    private ResultadoRegistro processarOcorrenciaComLogProtegido(
             String destino,
             String headerAuth,
             Long cursorNextId,
@@ -698,6 +757,9 @@ public class EtlRegistroService {
             }
 
             ResultadoIntegracao resultadoProcessador;
+            boolean protegerEnvioCanhoto = vedacitComprovanteComFontePrioritaria
+                    && !STATUS_SUCESSO.equals(logIntegracao.getStatusCanhoto());
+            if (protegerEnvioCanhoto) etlEstadoIntegracaoService.registrarInicioEnvioCanhoto(logIntegracao);
             try {
                 resultadoProcessador = processadorDestino.processar(ocorrencia, comprovanteProcessamento, logIntegracao);
             } catch (EslRequestTransientException e) {
@@ -717,6 +779,8 @@ public class EtlRegistroService {
             }
 
             etlEstadoIntegracaoService.aplicarResultadoIntegracao(logIntegracao, resultadoProcessador);
+            if (protegerEnvioCanhoto) etlEstadoIntegracaoService.classificarCanhotoVedacit(
+                    logIntegracao, classificarResultadoCanhotoVedacit(resultadoProcessador));
             etlEstadoIntegracaoService.salvar(logIntegracao);
 
             ResultadoRegistro resultadoRegistro = etlEstadoIntegracaoService.converterResultadoRegistro(resultadoProcessador);

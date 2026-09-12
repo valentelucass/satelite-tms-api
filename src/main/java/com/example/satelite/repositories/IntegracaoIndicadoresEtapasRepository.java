@@ -30,12 +30,16 @@ public class IntegracaoIndicadoresEtapasRepository {
                 FROM dbo.tb_log_integracao
                 WHERE (arquivado = 0 OR arquivado IS NULL) AND sistema_destino IN (:destinos)
                 UNION ALL
-                SELECT id, sistema_destino, occurrence_id,
-                       COALESCE(NULLIF(canhoto_chave_cte_efetiva, ''), chave_cte), chave_nfe,
-                       data_processamento, 'COMPROVANTE', status_canhoto, data_processamento_canhoto,
-                       canhoto_classificacao_operacional
-                FROM dbo.tb_log_integracao
-                WHERE (arquivado = 0 OR arquivado IS NULL) AND sistema_destino IN (:destinos)
+                SELECT l.id, l.sistema_destino, l.occurrence_id,
+                       COALESCE(NULLIF(l.canhoto_chave_cte_efetiva, ''), l.chave_cte), l.chave_nfe,
+                       l.data_processamento, 'COMPROVANTE',
+                       CASE WHEN c.chave_nfe IS NOT NULL THEN 'SUCESSO' ELSE l.status_canhoto END,
+                       CASE WHEN c.chave_nfe IS NOT NULL THEN c.primeira_confirmacao_em ELSE l.data_processamento_canhoto END,
+                       CASE WHEN c.chave_nfe IS NOT NULL THEN NULL ELSE l.canhoto_classificacao_operacional END
+                FROM dbo.tb_log_integracao l LEFT JOIN dbo.tb_confirmacao_comprovante c
+                    ON l.sistema_destino = 'VEDACIT' AND c.chave_nfe = l.chave_nfe
+                    AND c.chave_cte = COALESCE(NULLIF(l.canhoto_chave_cte_efetiva, ''), l.chave_cte)
+                WHERE (l.arquivado = 0 OR l.arquivado IS NULL) AND l.sistema_destino IN (:destinos)
             ), normalizadas AS (
                 SELECT *, UPPER(TRIM(COALESCE(status_etapa, ''))) AS situacao,
                     CASE
@@ -53,7 +57,8 @@ public class IntegracaoIndicadoresEtapasRepository {
                 SELECT *, ROW_NUMBER() OVER (
                     PARTITION BY sistema_destino, etapa, documento
                     ORDER BY CASE WHEN situacao IN ('SUCESSO', 'ENVIADO', 'PROCESSADO')
-                                       AND data_etapa IS NOT NULL THEN 0 ELSE 1 END,
+                                       AND data_etapa IS NOT NULL THEN 0
+                                  WHEN situacao IN ('SUCESSO', 'ENVIADO', 'PROCESSADO') THEN 1 ELSE 2 END,
                              CASE WHEN situacao IN ('SUCESSO', 'ENVIADO', 'PROCESSADO')
                                        AND data_etapa IS NOT NULL THEN data_etapa END ASC,
                              data_processamento DESC, id DESC
@@ -63,6 +68,7 @@ public class IntegracaoIndicadoresEtapasRepository {
                 SELECT *, CASE
                     WHEN situacao IN ('NAO_APLICAVEL', 'IGNORADO') THEN 'IGNORADO'
                     WHEN situacao IN ('SUCESSO', 'ENVIADO', 'PROCESSADO') AND data_etapa IS NOT NULL THEN 'SUCESSO'
+                    WHEN situacao IN ('SUCESSO', 'ENVIADO', 'PROCESSADO') AND etapa = 'COMPROVANTE' THEN 'CONFIRMADO_SEM_DATA'
                     WHEN situacao IN ('SUCESSO', 'ENVIADO', 'PROCESSADO') THEN 'SEM_CONFIRMACAO'
                     WHEN (etapa = 'DADOS' AND situacao = 'PENDENTE_ORIGEM')
                          OR bloqueio IN ('BLOQUEADO_ORIGEM', 'BLOQUEADO_DESTINO', 'TIMEOUT_AMBIGUO') THEN 'BLOQUEADO'
@@ -82,7 +88,8 @@ public class IntegracaoIndicadoresEtapasRepository {
                     AND data_etapa >= :inicio AND data_etapa < :fim THEN 1 ELSE 0 END AS BIGINT)) AS falhas,
                 SUM(CAST(CASE WHEN classe = 'PENDENTE' THEN 1 ELSE 0 END AS BIGINT)) AS pendentes,
                 SUM(CAST(CASE WHEN classe = 'BLOQUEADO' THEN 1 ELSE 0 END AS BIGINT)) AS bloqueados,
-                SUM(CAST(CASE WHEN classe = 'SEM_CONFIRMACAO' THEN 1 ELSE 0 END AS BIGINT)) AS sem_confirmacao
+                SUM(CAST(CASE WHEN classe = 'SEM_CONFIRMACAO' THEN 1 ELSE 0 END AS BIGINT)) AS sem_confirmacao,
+                SUM(CAST(CASE WHEN classe = 'CONFIRMADO_SEM_DATA' THEN 1 ELSE 0 END AS BIGINT)) AS confirmados_sem_data
             FROM classificadas
             GROUP BY sistema_destino, etapa
             ORDER BY sistema_destino, etapa
@@ -105,9 +112,10 @@ public class IntegracaoIndicadoresEtapasRepository {
                 .addValue("inicio", inicio.atStartOfDay()).addValue("fim", fim.plusDays(1).atStartOfDay());
         var etapas = jdbc.query(RESUMO, params, (rs, n) -> new IndicadoresEtapasDTO.Etapa(
                 rs.getString("sistema_destino"), rs.getString("etapa"), rs.getLong("sucessos"),
-                rs.getLong("falhas"), rs.getLong("pendentes"), rs.getLong("bloqueados"), rs.getLong("sem_confirmacao")));
+                rs.getLong("falhas"), rs.getLong("pendentes"), rs.getLong("bloqueados"), rs.getLong("sem_confirmacao"),
+                rs.getLong("confirmados_sem_data")));
         var dias = jdbc.query(EVOLUCAO, params, (rs, n) -> new IndicadoresEtapasDTO.Dia(
                 rs.getDate("dia").toLocalDate(), rs.getString("etapa"), rs.getLong("sucessos"), rs.getLong("falhas")));
-        return new IndicadoresEtapasDTO(1, inicio, fim, etapas, dias);
+        return new IndicadoresEtapasDTO(2, inicio, fim, etapas, dias);
     }
 }

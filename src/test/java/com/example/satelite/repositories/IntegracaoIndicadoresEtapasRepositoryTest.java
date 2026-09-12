@@ -22,6 +22,7 @@ class IntegracaoIndicadoresEtapasRepositoryTest {
                 + ";MODE=MSSQLServer;DB_CLOSE_DELAY=-1", "sa", "");
         jdbc = new JdbcTemplate(ds);
         jdbc.execute("CREATE SCHEMA dbo");
+        jdbc.execute("CREATE TABLE dbo.tb_confirmacao_comprovante (chave_nfe VARCHAR(44), chave_cte VARCHAR(44), primeira_confirmacao_em TIMESTAMP, PRIMARY KEY(chave_nfe,chave_cte))");
         jdbc.execute("""
                 CREATE TABLE dbo.tb_log_integracao (
                     id BIGINT PRIMARY KEY, sistema_destino VARCHAR(20), occurrence_id BIGINT,
@@ -45,6 +46,38 @@ class IntegracaoIndicadoresEtapasRepositoryTest {
 
     private IndicadoresEtapasDTO consultar() {
         return repository.consultar(LocalDate.parse("2026-09-01"), LocalDate.parse("2026-09-10"), List.of("VEDACIT"));
+    }
+
+    @Test
+    void aceiteDuravelNaoViraHojeNemPendenteAposSobrescritaDoLog() {
+        log(1, "cte1", "nf1", "SUCESSO", "PENDENTE_FOTO", null, "2026-09-09 12:00:00", "PENDENTE_ENVIO");
+        jdbc.update("INSERT INTO dbo.tb_confirmacao_comprovante VALUES ('nf1','cte1','2026-08-20 12:00:00')");
+        var dto = consultar();
+        assertEquals(2, dto.versao());
+        assertEquals(0, etapa(dto, "COMPROVANTE").sucessosPeriodo());
+        assertEquals(0, etapa(dto, "COMPROVANTE").pendentesAtuais());
+        assertTrue(dto.evolucao().isEmpty());
+    }
+
+    @Test
+    void dataAfetadaPeloIncidenteNaoEntraNoDiaNemNaFilaDePendencias() {
+        log(1, "cte1", "nf1", "SUCESSO", "SUCESSO", null, "2026-09-09 12:00:00", "SUCESSO");
+        jdbc.update("INSERT INTO dbo.tb_confirmacao_comprovante VALUES ('nf1','cte1',NULL)");
+        var pod = etapa(consultar(), "COMPROVANTE");
+        assertEquals(0, pod.sucessosPeriodo());
+        assertEquals(1, pod.confirmadosSemDataConfiavel());
+        assertEquals(0, pod.pendentesAtuais());
+        assertEquals(0, pod.semConfirmacaoDatada());
+        assertTrue(consultar().evolucao().isEmpty());
+    }
+
+    @Test
+    void ledgerUsaCteEfetivoSemOcultarOutroComprovanteDaMesmaNota() {
+        log(1, "cteOriginal", "nf1", "SUCESSO", "SUCESSO", null, "2026-09-09 12:00:00", "SUCESSO");
+        jdbc.update("UPDATE dbo.tb_log_integracao SET canhoto_chave_cte_efetiva='cteEfetivo'");
+        jdbc.update("INSERT INTO dbo.tb_confirmacao_comprovante VALUES ('nf1','cteEfetivo','2026-08-20 12:00:00')");
+        log(2, "cteOutro", "nf1", "SUCESSO", "SUCESSO", null, "2026-09-09 12:00:00", "SUCESSO");
+        assertEquals(1, etapa(consultar(), "COMPROVANTE").sucessosPeriodo());
     }
 
     private IndicadoresEtapasDTO.Etapa etapa(IndicadoresEtapasDTO dto, String etapa) {

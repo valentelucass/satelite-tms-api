@@ -43,10 +43,13 @@ if "%DB_APP_USER%"=="" set "DB_APP_USER=%DB_USER%"
 set "SCRIPT_ROOT=%~dp0sql"
 
 set "RODIZIO_ONLY="
+set "CONFIRMACOES_ONLY="
 if /I "%~1"=="--rodizio" (
     set "RODIZIO_ONLY=1"
+) else if /I "%~1"=="--confirmacoes" (
+    set "CONFIRMACOES_ONLY=1"
 ) else if not "%~1"=="" (
-    echo [ERRO] Opcao invalida. Use sem argumentos ou --rodizio.
+    echo [ERRO] Opcao invalida. Use sem argumentos, --rodizio ou --confirmacoes.
     exit /b 1
 )
 
@@ -81,6 +84,7 @@ if "%SQLCMD_TLS_ARGS%"=="" (
 echo.
 
 if defined RODIZIO_ONLY goto :rodizio_only
+if defined CONFIRMACOES_ONLY goto :confirmacoes_only
 
 call :run_sql "%SCRIPT_ROOT%\schema\00_create_database.sql"
 if errorlevel 1 exit /b 1
@@ -127,6 +131,15 @@ for /f "delims=" %%F in ('dir /b /a-d /on "%MIGRATION_ROOT%\*.sql" 2^>nul') do (
 )
 
 if "%FOUND_MIGRATION%"=="" echo Nenhuma migration SQL encontrada em %MIGRATION_ROOT%.
+exit /b 0
+
+:confirmacoes_only
+rem Atualiza a auditoria permanente e qualifica somente o manifesto do incidente.
+call :run_sql "%SCRIPT_ROOT%\migration\V24__confirmacao_duravel_comprovante.sql"
+if errorlevel 1 exit /b 1
+call :run_sql "%SCRIPT_ROOT%\migration\V25__qualificar_datas_incidente_comprovantes.sql"
+if errorlevel 1 exit /b 1
+echo [OK] Confirmacoes de comprovantes protegidas e datas qualificadas.
 exit /b 0
 
 :run_sql
