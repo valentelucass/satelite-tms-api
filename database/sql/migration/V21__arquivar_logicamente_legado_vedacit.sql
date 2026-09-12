@@ -1,6 +1,4 @@
 USE [$(DatabaseName)];
-GO
-
 SET ANSI_NULLS ON;
 SET QUOTED_IDENTIFIER ON;
 GO
@@ -29,12 +27,7 @@ BEGIN
 END;
 GO
 
-/* Preserva a auditoria e retira exclusivamente o legado Vedacit do uso operacional. */
-UPDATE dbo.tb_log_integracao
-SET arquivado = 1,
-    arquivado_em = COALESCE(arquivado_em, SYSDATETIME()),
-    arquivado_motivo = COALESCE(arquivado_motivo, 'LEGADO_SEM_CLIENTE_SFTP')
-WHERE sistema_destino = 'VEDACIT'
-  AND sftp_cliente IS NULL
-  AND COALESCE(arquivado, 0) = 0;
-GO
+/* O arquivamento de legado exige uma ação com manifesto delimitado.
+   O atualizador reaplica este arquivo: sftp_cliente NULL também identifica XMLs
+   recentes. Não repetir o arquivamento de dados pelo provisionamento do schema.
+   Os logs já arquivados são preservados. */

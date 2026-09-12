@@ -1,56 +1,41 @@
-# ⚙️ Regras Operacionais para IAs - Satélite TMS (Spring Boot ETL)
+# Satélite TMS — instruções do repositório
 
-**Contexto do Sistema:** Este projeto atua como um "Robô Satélite" (Middleware/ETL) sem interface gráfica. A missão dele é extrair ocorrências de frete da origem (API REST ESL Cloud / Rodogarcia), transformar os dados e enviar para dois destinos distintos: PPG (OK Entrega - REST) e Vedacit (MultiTMS - SOAP).
+ETL Java 17/Spring Boot: lê ocorrências e documentos ESL/Rodogarcia e integra PPG, Vedacit, SELIA e SUPPORTE conforme os perfis habilitados. O processamento principal usa scheduler/runners; a API auxiliar atende auditoria, quarentena e contratos específicos existentes.
 
-Sempre que gerar código ou sugerir soluções, obedeça estritamente às diretrizes abaixo:
+## Contexto conforme a tarefa
 
-## REGRA DE SILÊNCIO ABSOLUTO (ZERO CHATTER)
-1. É EXPRESSAMENTE PROIBIDO resumir, explicar, repetir regras ou descrever o que você leu no `states.md` ou neste arquivo.
-2. Não faça divagações, não crie planos de ação no chat e não explique o código que vai escrever. Leia tudo silenciosamente.
-3. O seu único output permitido no chat é a execução direta: faça as modificações nos arquivos de código e atualize as Tarefas Pendentes no `states.md`.
+- Consulte o estado recente e as pendências relacionadas em [states.md](states.md) ao retomar trabalho ou alterar comportamento, configuração ou operação. Diferencie histórico de estado atual; uma correção textual não exige releitura integral.
+- Consulte [CONTEXTO_GLOBAL.md](../etl-dash/CONTEXTO_GLOBAL.md) para fronteiras arquiteturais, banco, publicação, processos produtivos ou trabalho entre repositórios. O banco permitido ao Satélite continua exclusivamente `SATELITE_TMS_AUDITORIA`.
+- Use os scripts pertinentes em `database/sql/` para SQL, o relatório relacionado em `docs/` para incidentes e o cliente/DTO ou WSDL correspondente para contratos.
+- Instruções explícitas do usuário prevalecem sobre orientações locais. Anotações antigas não revogam autorizações já dadas para a mesma ação e escopo.
 
-## 0. Garantia de Contexto Antes de Agir
-* **Leitura obrigatória:** Antes de qualquer planejamento, análise ou escrita de código, leia este `AGENTS.md`, o `states.md` local e o `CONTEXTO_GLOBAL.md` do ecossistema quando presente no workspace.
-* **Hierarquia de regras:** O `CONTEXTO_GLOBAL.md` dita as regras imutáveis do ecossistema; este `AGENTS.md` dita as regras locais do Satélite; o `states.md` registra o estado atual e as tarefas pendentes. Em caso de conflito, preserve a integridade arquitetural e explicite a decisão.
+## Autonomia e conclusão
 
-## 1. Topologia e Arquitetura em Camadas
-Respeite a separação de responsabilidades. Não misture regras de domínio com chamadas HTTP.
-* `models`: Apenas entidades JPA da tabela de auditoria (`tb_log_integracao`).
-* `dto.rodogarcia`: Contratos de **entrada** (Leitura do JSON da ESL).
-* `dto.ppg`: Contratos de **saída** (Envio do JSON para a OK Entrega).
-* `clients`: Interfaces do **Spring Cloud OpenFeign** para chamadas REST externas. É estritamente proibido usar `RestTemplate` ou `WebClient`.
-* `services`: Regras de negócio divididas por domínio (`services.etl`, `services.ppg`, `services.vedacit`). 
-* `utils`: Lógicas puras isoladas (como processamento de imagem).
+- Prossiga com investigação, edição local e validação pertinente sem pedir aprovação por etapa. Procure nas fontes disponíveis e já autorizadas antes de pedir informações ao usuário. Resolva escolhas rotineiras; pergunte quando faltar uma decisão material.
+- Conclua o trabalho autorizado e corrija falhas decorrentes da alteração. Auditorias precisam explicar causas e números com evidências; correções precisam de validação. Distinga código pronto, pacote gerado e versão em execução.
+- Instalação operacional, controle de processos produtivos, habilitação de integrações e envios/reenvios precisam estar abrangidos pela autorização operacional do usuário. Considere autorizações existentes e o contexto global. Se faltar aprovação, prepare o resultado revisável antes de perguntar e explique a ação e a regra aplicável. Teste local não autoriza transmissão real.
+- Comunique achados e resultados em português simples, com atualizações curtas. Explique quando solicitado, sem recitar instruções nem impor silêncio absoluto. Preserve alterações fora do escopo; diante de bloqueio externo, registre a evidência e continue o trabalho independente.
 
-## 2. Padrões de Código e Imutabilidade
-* **DTOs:** Use a feature `record` do Java 14+ para todos os DTOs nativos.
-* **Mapeamento JSON:** Variáveis no Java devem estar em `camelCase`. Para campos fora do padrão vindos da API, use `@JsonProperty("nome_do_campo")`. 
-* **Resiliência de Contrato:** Adicione `@JsonIgnoreProperties(ignoreUnknown = true)` em todo DTO raiz para evitar quebras se a origem adicionar novos campos.
-* **Zero Hardcode:** Nenhuma credencial, URL ou ID fixo deve estar no código. Tudo deve ser injetado via `@Value` a partir do `application.properties` / `.env`.
+## Arquitetura e contratos
 
-## 3. Especificidades dos Destinos
-* **Destino PPG (REST):** * A API exige um Token (LoopBack) de 14 dias. A gestão do token deve ser em memória para evitar requests desnecessários de login.
-  * A imagem do canhoto exige transformação binária estrita: JPEG, sem canal alfa (fundo branco), proporção exata de 1536x240 pixels e prefixo `data:image/jpeg;base64,`.
-* **Destino Vedacit (SOAP):** * É **terminantemente proibido** criar ou alterar classes/DTOs manualmente para este domínio. 
-  * As classes devem ser auto-geradas via `jaxws-maven-plugin` na pasta `/target/generated-sources/wsimport/` lendo o WSDL oficial.
+- Separe `clients` (OpenFeign REST), `dto.*` (contratos), `services.*` (regras por domínio), `repositories` (acesso à auditoria), `models` (entidades de auditoria/estado técnico) e `utils` (lógica pura). Não use `RestTemplate` ou `WebClient`.
+- DTOs próprios usam `record`, `camelCase`, `@JsonProperty` para nomes externos e `@JsonIgnoreProperties(ignoreUnknown = true)` nos DTOs raiz. Credenciais, URLs e IDs de configuração vêm de propriedades/`.env`, injetados pela configuração Spring. Não exponha segredos em código, logs ou relatórios.
+- Preserve o fluxo principal em scheduler/runners; não crie `@RestController` para dispará-lo. A API auxiliar permanece separada.
+- Entrega/comprovante usa `occurrence.code == 1`; XML Vedacit tem fluxo próprio para `110`. Outros eventos dependem dos mapeamentos e fluxos habilitados do destino. Consulte as regras consolidadas em `states.md` ao alterar filtros ou DePara.
+- **PPG:** preserve o cache em memória do token LoopBack de 14 dias e imagem JPEG, fundo branco sem alfa, 1536x240 pixels e prefixo `data:image/jpeg;base64,`.
+- **Vedacit:** contratos SOAP são gerados pelo `jaxws-maven-plugin` a partir dos WSDLs oficiais, nunca escritos/editados manualmente. Saídas: `target/generated-sources/wsimport*`; contratos empacotados: `src/main/resources/wsdl/vedacit`.
+- Isole falhas por documento e registre o resultado sem derrubar o lote. Preserve correlação exata NF-e/CT-e, locks, aceites e primeiras datas. Timeout, ausência de data ou arquivo encontrado não autorizam inventar confirmação ou reenviar aceites. Respeite o modo SFTP exclusivo quando habilitado.
 
-## 4. Comportamento ETL e Banco de Dados
-* **Headless (Sem Web):** O motor do sistema é acionado via `@Scheduled`. Não crie `@RestController` para o fluxo principal.
-* **Filtro de Negócio:** O orquestrador só deve repassar para os destinos os registros que possuam `occurrence.code == 1` (Entrega Realizada).
-* **Database Permitida:** Toda ação manual, script, teste ou automação que toque SQL Server deve usar exclusivamente a base deste repositório: `SATELITE_TMS_AUDITORIA` (`satelite_tms_auditoria`). É proibido executar `TRUNCATE`, `DROP`, migração, carga, limpeza ou qualquer DDL/DML em `ETL_SISTEMA` ou em qualquer outra database.
-* **Banco de Dados (Auditoria):** O banco de dados é apenas para log e rastreabilidade (`tb_log_integracao`). Nenhuma NF, imagem ou dados de domínio devem ser persistidos fisicamente no banco.
-* **🚨 Exclusão Lógica (Soft Delete Obrigatório):** É ESTRITAMENTE PROIBIDO apagar fisicamente logs, auditorias, cursores, quarentenas ou estados técnicos de integração por hard delete (`DELETE FROM`) ou `TRUNCATE` em rotinas comuns. Correções operacionais devem preservar rastreabilidade via status, flags como `ativo = 0`, `deleted_at`, `arquivado = 1` ou campos equivalentes; leituras de produção devem filtrar registros inativos quando aplicável.
-* **Tratamento de Exceções:** Falhas em integrações HTTP (4xx, 5xx) ou conversões de uma NF não devem derrubar o lote inteiro. Use blocos `try/catch` individualizados por registro e grave o resultado (ex: `ERRO_VALIDACAO` ou `ERRO_DESTINO`) na tabela de log.
+## Banco e rastreabilidade
 
-## 5. Regras de Banco de Dados e Migrations
-* Qualquer modificação no banco de dados DEVE ser feita através de scripts `.sql` versionados nas pastas apropriadas.
-* Todo script SQL DEVE iniciar com `SET ANSI_NULLS ON;` e `SET QUOTED_IDENTIFIER ON;` após o comando `USE` para evitar falhas com o `sqlcmd`.
-* Os scripts DEVEM ser 100% idempotentes, permitindo múltiplas execuções sem falhas.
-* A única ação requerida pelo usuário para atualizar o banco de dados deve ser executar o arquivo `subir_database.bat`.
+- Toda consulta, script, teste ou automação SQL Server deste projeto usa apenas `SATELITE_TMS_AUDITORIA` (`satelite_tms_auditoria`). Não acesse `ETL_SISTEMA` nem outra database por este repositório.
+- Persista somente auditoria, cursores, quarentena e estado técnico; não armazene arquivos NF/XML, imagens ou dados de domínio no banco.
+- Preserve logs e estados por exclusão lógica (`arquivado`, `ativo`, `deleted_at` ou equivalente). Não os remova com `DELETE FROM` ou `TRUNCATE`. Leituras operacionais filtram inativos quando aplicável.
+- Mudanças de banco exigem `.sql` versionado e idempotente. Após `USE`, inclua `SET ANSI_NULLS ON;` e `SET QUOTED_IDENTIFIER ON;`. Disponibilize a atualização por `database/subir_database.bat`, preferindo o modo restrito pertinente para evitar reaplicar saneamentos históricos.
 
-## Diretrizes de Sincronização de Estado (states.md)
-1. Antes de iniciar a implementação de qualquer código, você DEVE ler o arquivo `states.md` para compreender o contexto arquitetural e as regras de negócio vigentes, garantindo que as novas implementações não quebrem o estado atual.
-2. Leia a seção "Tarefas Pendentes" no `states.md` para entender o escopo exato do que precisa ser desenvolvido.
-3. Após finalizar a escrita e modificação do código, você DEVE atualizar o arquivo `states.md`.
-4. A atualização consiste em: remover a tarefa concluída da seção "Tarefas Pendentes" e atualizar as seções "Arquitetura e Padrões", "Fluxo de Dados" ou "Regras de Negócio Consolidadas" refletindo exatamente o novo estado do sistema.
-5. NUNCA entregue ou finalize uma modificação de código sem antes reescrever e atualizar o `states.md` para refletir o presente.
+## Validação e estado
+
+- Para Java, use [scripts/testar_com_cobertura.ps1](scripts/testar_com_cobertura.ps1) com JDK 17 e `-Testes` para as classes afetadas. O script usa saída isolada, fontes SOAP locais e bloqueio de rede na JVM de testes. Execute/corrija sem aprovação entre rodadas; amplie os testes quando risco ou falha justificar.
+- Para documentação, revise diff, links e consistência; não execute suíte Java, banco ou serviços. Runners operacionais e testes externos são fluxos distintos da suíte isolada.
+- Prepare builds com `satelite.build.directory` separado do JAR operacional. Confira o conteúdo testado antes de publicar; build isolado não significa instalação concluída.
+- Ao mudar comportamento, decisões, instruções ou andamento, atualize somente as seções pertinentes de `states.md`: retire pendências concluídas, preserve histórico útil e registre evidências, limites e versão ativa/candidata. Não reescreva o arquivo inteiro nem crie pendências para simples correções textuais.

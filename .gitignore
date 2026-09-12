@@ -34,11 +34,11 @@ logs/
 *.tmp
 *.temp
 
-# Local process manager configs
-ecosystem.config.js
+# Local process manager overrides; the shared configuration is versioned.
 ecosystem.config.cjs
 ecosystem.*.config.js
 ecosystem.*.config.cjs
+!ecosystem.config.js
 pm2*.json
 .pm2/
 dump.pm2
@@ -127,6 +127,8 @@ scripts/*
 scripts/validacao/*
 !scripts/validacao/SqlSftpReadOnlyProbe.java
 !scripts/validacao/SqlIndicadoresEtapasReadOnlyProbe.java
+!scripts/validacao/ReconciliacaoVedacitSqlProbe.java
+!scripts/validacao/logback-reconciliacao.xml
 !scripts/probes/
 scripts/probes/*
 !scripts/probes/ConfirmacaoSqlServerProbe.java

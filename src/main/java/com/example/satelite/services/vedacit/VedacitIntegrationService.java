@@ -872,7 +872,7 @@ public class VedacitIntegrationService {
         bindingProvider.getRequestContext().put("jakarta.xml.ws.client.receiveTimeout", String.valueOf(soapReadTimeoutMs));
     }
 
-    private <T> T executarSoapComPrazo(Callable<T> chamada, String etapa) throws Exception {
+    <T> T executarSoapComPrazo(Callable<T> chamada, String etapa) throws Exception {
         ThreadFactory threadFactory = runnable -> {
             Thread thread = new Thread(runnable, "vedacit-soap-" + etapa.replaceAll("[^a-zA-Z0-9]", "-"));
             thread.setDaemon(true);

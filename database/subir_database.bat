@@ -44,12 +44,18 @@ set "SCRIPT_ROOT=%~dp0sql"
 
 set "RODIZIO_ONLY="
 set "CONFIRMACOES_ONLY="
+set "SANEAMENTO_VEDACIT_ONLY="
+set "RECONCILIACAO_ONLY="
 if /I "%~1"=="--rodizio" (
     set "RODIZIO_ONLY=1"
 ) else if /I "%~1"=="--confirmacoes" (
     set "CONFIRMACOES_ONLY=1"
+) else if /I "%~1"=="--saneamento-vedacit" (
+    set "SANEAMENTO_VEDACIT_ONLY=1"
+) else if /I "%~1"=="--reconciliacao" (
+    set "RECONCILIACAO_ONLY=1"
 ) else if not "%~1"=="" (
-    echo [ERRO] Opcao invalida. Use sem argumentos, --rodizio ou --confirmacoes.
+    echo [ERRO] Opcao invalida. Use sem argumentos, --rodizio, --confirmacoes, --saneamento-vedacit ou --reconciliacao.
     exit /b 1
 )
 
@@ -85,6 +91,8 @@ echo.
 
 if defined RODIZIO_ONLY goto :rodizio_only
 if defined CONFIRMACOES_ONLY goto :confirmacoes_only
+if defined SANEAMENTO_VEDACIT_ONLY goto :saneamento_vedacit_only
+if defined RECONCILIACAO_ONLY goto :reconciliacao_only
 
 call :run_sql "%SCRIPT_ROOT%\schema\00_create_database.sql"
 if errorlevel 1 exit /b 1
@@ -165,4 +173,18 @@ if errorlevel 1 (
     exit /b 1
 )
 
+exit /b 0
+
+:saneamento_vedacit_only
+rem Preserva aceites e corrige somente classificacoes comprovadamente residuais.
+call :run_sql "%SCRIPT_ROOT%\migration\V26__sanear_classificacoes_vedacit.sql"
+if errorlevel 1 exit /b 1
+echo [OK] Classificacoes Vedacit saneadas com historico preservado.
+exit /b 0
+
+:reconciliacao_only
+rem Somente estrutura aditiva da revisao noturna. Nao repete saneamentos ou arquivamentos.
+call :run_sql "%SCRIPT_ROOT%\migration\V27__reconciliacao_noturna_vedacit.sql"
+if errorlevel 1 exit /b 1
+echo [OK] Auditoria da reconciliacao noturna provisionada.
 exit /b 0

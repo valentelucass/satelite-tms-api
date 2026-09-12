@@ -79,6 +79,51 @@ class VedacitXmlRecoverySafetyTest {
         assertEquals("ORIGEM_XML_AUSENTE", registro.getMensagemErroDados());
         assertEquals(AGORA, registro.getDataProcessamentoDados());
     }
+
+    @Test void revisaoNoturnaPersisteIncertezaAntesDoEnvioEQuedaNaoLiberaRepeticao() {
+        var registro=erro("ORIGEM_XML_HTTP_401");
+        when(vedacit.reprocessarXmlCtePorChaves(NFE,CTE,"PENDENTE_FOTO")).thenAnswer(invocacao->{
+            verify(repo).save(registro);
+            assertEquals("ENVIO_XML_RESULTADO_DESCONHECIDO_RECONCILIACAO",registro.getMensagemErroDados());
+            throw new AssertionError("SIMULACAO_QUEDA_PROCESSO");
+        });
+        assertThrows(AssertionError.class,()->service.reprocessarXmlCteVedacitPorChave(registro,true));
+        assertEquals(ResultadoRegistro.IGNORADO,service.reprocessarXmlCteVedacitPorChave(registro,true));
+        verify(vedacit,times(1)).reprocessarXmlCtePorChaves(NFE,CTE,"PENDENTE_FOTO");
+    }
+
+    @Test void recuperaInventarioNuncaTentadoEAplicaCooldownSemAlterarComprovante() {
+        var registro = erro(null);
+        registro.setStatusDados("PENDENTE_ORIGEM");
+        registro.setDataProcessamentoDados(null);
+        registro.setTentativasDados(0);
+        registro.setCanhotoClassificacaoOperacional("BLOQUEADO_ORIGEM");
+        selecionar(registro);
+        when(vedacit.reprocessarXmlCtePorChaves(NFE, CTE, "PENDENTE_FOTO"))
+                .thenReturn(ResultadoIntegracao.pendenteOrigemDados("PENDENTE_FOTO", "Não localizado"));
+        assertEquals(1, service.recuperarXmlFalhasOrigem(null, 10).pendentesOrigem());
+        assertEquals(AGORA, registro.getDataProcessamentoDados());
+        assertEquals("ORIGEM_XML_AUSENTE", registro.getMensagemErroDados());
+        assertEquals("BLOQUEADO_ORIGEM", registro.getCanhotoClassificacaoOperacional());
+        assertNull(registro.getDataProcessamentoCanhoto());
+        // Mesmo se uma seleção antiga devolver a linha, a releitura impede nova chamada no cooldown.
+        assertEquals(1, service.recuperarXmlFalhasOrigem(null, 10).ignorados());
+        verify(vedacit, times(1)).reprocessarXmlCtePorChaves(NFE, CTE, "PENDENTE_FOTO");
+    }
+
+    @Test void ausenciaDeDataNaoAutorizaRecusaOuTentativaAnteriorSemResultado() {
+        var registro = erro(null);
+        registro.setDataProcessamentoDados(null);
+        registro.setTentativasDados(0);
+        assertEquals(ResultadoRegistro.IGNORADO, service.reprocessarXmlCteVedacitPorChave(registro));
+        registro.setStatusDados("PENDENTE_ORIGEM");
+        registro.setTentativasDados(1);
+        assertEquals(ResultadoRegistro.IGNORADO, service.reprocessarXmlCteVedacitPorChave(registro));
+        registro.setTentativasDados(0);
+        registro.setMensagemErroDados("Vedacit recusou XML");
+        assertEquals(ResultadoRegistro.IGNORADO, service.reprocessarXmlCteVedacitPorChave(registro));
+        verifyNoInteractions(vedacit);
+    }
     @Test void comprovanteSemProvaXmlOuAmbiguoNaoEntraEmEnvio() {
         var registro = erro(null);
         registro.setStatusDados("SUCESSO"); registro.setDataProcessamentoDados(null);

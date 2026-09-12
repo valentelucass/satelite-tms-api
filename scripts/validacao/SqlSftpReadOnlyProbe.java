@@ -84,6 +84,24 @@ public final class SqlSftpReadOnlyProbe {
         cfg.setStatementInspector((StatementInspector)sql->{checkSql(sql);return sql;});
         try(SessionFactory factory=cfg.buildSessionFactory();Session session=factory.withOptions().connection(c).openSession()) {
             session.setDefaultReadOnly(true);session.setHibernateFlushMode(org.hibernate.FlushMode.MANUAL);
+            String recoveryQuery=query("findXmlFalhaOrigemParaRecuperacao",java.time.LocalDateTime.class,Pageable.class);
+            var cutoff=java.time.LocalDateTime.now().minusMinutes(30);
+            var recovery=session.createQuery(recoveryQuery,LogIntegracaoModel.class)
+                    .setParameter("antes",cutoff).setMaxResults(10000).setReadOnly(true).setTimeout(10).getResultList();
+            List<Long> inventoryIds=new ArrayList<>();
+            try(PreparedStatement p=c.prepareStatement("SELECT l.id FROM dbo.tb_log_integracao l WHERE l.sistema_destino='VEDACIT' AND l.sftp_cliente='VEDACIT' AND (l.arquivado=0 OR l.arquivado IS NULL) AND l.status_dados='PENDENTE_ORIGEM' AND l.data_processamento_dados IS NULL AND COALESCE(l.tentativas_dados,0)=0 AND NULLIF(LTRIM(RTRIM(l.mensagem_erro_dados)),'') IS NULL AND l.chave_cte IS NOT NULL AND l.chave_nfe IS NOT NULL AND NOT EXISTS (SELECT 1 FROM dbo.tb_log_integracao a WHERE a.sistema_destino='VEDACIT' AND a.chave_cte=l.chave_cte AND a.status_dados='SUCESSO') ORDER BY l.id")) {
+                p.setQueryTimeout(10);try(ResultSet rs=p.executeQuery()){while(rs.next())inventoryIds.add(rs.getLong(1));}
+            }
+            var selectedInventory=recovery.stream().filter(l->l.getDataProcessamentoDados()==null).map(LogIntegracaoModel::getId).toList();
+            require(selectedInventory.equals(inventoryIds),"XML_INVENTORY_RECOVERY_MISMATCH");
+            require(recovery.stream().noneMatch(l->Boolean.TRUE.equals(l.getArquivado())||"SUCESSO".equals(l.getStatusDados())),"XML_RECOVERY_SELECTED_PROTECTED_ROW");
+            var limited=session.createQuery(recoveryQuery,LogIntegracaoModel.class)
+                    .setParameter("antes",cutoff).setMaxResults(10).setReadOnly(true).setTimeout(10).getResultList();
+            require(ids(limited).equals(ids(recovery).stream().limit(10).toList()),"XML_RECOVERY_LIMIT_OR_ORDER_MISMATCH");
+            result.put("xml_inventory_never_attempted",inventoryIds.size());
+            result.put("xml_recovery_candidates",recovery.size());
+            result.put("xml_recovery_inventory_matches_sql",true);
+            result.put("xml_recovery_limit_verified",true);
             List<String> keys=new ArrayList<>();
             try(PreparedStatement p=c.prepareStatement("SELECT DISTINCT chave_nfe FROM dbo.tb_log_integracao WHERE sistema_destino='VEDACIT' AND sftp_cliente=? AND (arquivado=0 OR arquivado IS NULL) AND chave_nfe IS NOT NULL ORDER BY chave_nfe")) {
                 p.setQueryTimeout(10);p.setString(1,"VEDACIT");try(ResultSet rs=p.executeQuery()){while(rs.next())keys.add(rs.getString(1).trim());}

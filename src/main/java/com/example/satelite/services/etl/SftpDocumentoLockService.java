@@ -52,6 +52,15 @@ public class SftpDocumentoLockService {
             Supplier<T> operacao
     ) {
         String recurso = recurso(cliente, chaveNfe, chaveCte);
+        return executarComRecurso(recurso, operacao);
+    }
+
+    /** Coordena o supervisor noturno entre JVMs sem ocupar o lock de um documento. */
+    public <T> Optional<T> executarRevisaoNoturna(Supplier<T> operacao) {
+        return executarComRecurso("SATELITE_TMS:VEDACIT:RECONCILIACAO_NOTURNA", operacao);
+    }
+
+    private <T> Optional<T> executarComRecurso(String recurso, Supplier<T> operacao) {
         if (recursosDaThread.get().contains(recurso)) return Optional.ofNullable(operacao.get());
         long timeoutSeguro = Math.max(0L, Math.min(lockTimeoutMs, 60_000L));
         return jdbcTemplate.execute((ConnectionCallback<Optional<T>>) connection -> {

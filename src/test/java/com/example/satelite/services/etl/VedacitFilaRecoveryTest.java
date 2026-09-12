@@ -54,6 +54,23 @@ class VedacitFilaRecoveryTest {
         verifyNoInteractions(registros, fonte);
     }
 
+    @ParameterizedTest @ValueSource(booleans = {false, true})
+    void arquivoSemIdentidadeNaoCriaUmaPendenciaXml(boolean porCliente) {
+        when(repo.save(any())).thenAnswer(i -> i.getArgument(0));
+        var inventario = new VedacitSftpInventory(List.of(), List.of(
+                new VedacitSftpInventory.DocumentoRejeitado("comprovantes/incompleto.jpg",
+                        null, null, "Arquivo inválido: nome sem chave CT-e")));
+        sincronizar(porCliente, inventario);
+        var captor = org.mockito.ArgumentCaptor.forClass(LogIntegracaoModel.class);
+        verify(repo).save(captor.capture());
+        var salvo = captor.getValue();
+        assertEquals("NAO_APLICAVEL", salvo.getStatusDados());
+        assertEquals("ERRO_DESTINO", salvo.getStatusCanhoto());
+        assertEquals("BLOQUEADO_ORIGEM", salvo.getCanhotoClassificacaoOperacional());
+        assertNull(salvo.getDataProcessamentoDados());
+        verifyNoInteractions(registros, fonte);
+    }
+
     @ParameterizedTest @ValueSource(strings = {"SUCESSO", "TIMEOUT_AMBIGUO", "BLOQUEADO_DESTINO"})
     void inventarioRejeitadoPreservaResultadoAnterior(String classificacao) {
         var data = LocalDateTime.of(2026, 9, 1, 10, 0);

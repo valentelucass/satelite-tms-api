@@ -88,6 +88,9 @@ class SateliteApplicationTests {
 	private WorkSftpClientesAuditoriaRepository workSftpClientesAuditoriaRepository;
 
 	@MockitoBean
+	private com.example.satelite.repositories.ReconciliacaoVedacitRepository reconciliacaoVedacitRepository;
+
+	@MockitoBean
 	private JdbcTemplate jdbcTemplate;
 
 	@Test

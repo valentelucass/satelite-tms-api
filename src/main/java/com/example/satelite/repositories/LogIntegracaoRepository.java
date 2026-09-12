@@ -112,10 +112,13 @@ public interface LogIntegracaoRepository extends JpaRepository<LogIntegracaoMode
             SELECT l FROM LogIntegracaoModel l WHERE l.sistemaDestino = 'VEDACIT'
               AND COALESCE(l.arquivado, false) = false AND l.statusDados IN ('ERRO_DESTINO', 'PENDENTE_ORIGEM')
               AND l.chaveCte IS NOT NULL AND l.chaveNfe IS NOT NULL
-              AND l.dataProcessamentoDados <= :antes
-              AND (l.mensagemErroDados LIKE 'ORIGEM_XML_%'
-                   OR l.mensagemErroDados LIKE 'SOAP_ANTERIOR_EM_ANDAMENTO%'
-                   OR (l.mensagemErroDados LIKE '%401%' AND l.mensagemErroDados LIKE '%RodogarciaClient#buscarXmlCte%'))
+              AND ((l.dataProcessamentoDados <= :antes
+                    AND (l.mensagemErroDados LIKE 'ORIGEM_XML_%'
+                         OR l.mensagemErroDados LIKE 'SOAP_ANTERIOR_EM_ANDAMENTO%'
+                         OR (l.mensagemErroDados LIKE '%401%' AND l.mensagemErroDados LIKE '%RodogarciaClient#buscarXmlCte%')))
+                   OR (l.statusDados = 'PENDENTE_ORIGEM' AND l.sftpCliente = 'VEDACIT'
+                       AND l.dataProcessamentoDados IS NULL AND COALESCE(l.tentativasDados, 0) = 0
+                       AND (l.mensagemErroDados IS NULL OR TRIM(l.mensagemErroDados) = '')))
               AND NOT EXISTS (SELECT p.id FROM LogIntegracaoModel p WHERE p.sistemaDestino = 'VEDACIT'
                   AND p.chaveCte = l.chaveCte AND p.statusDados = 'SUCESSO')
             ORDER BY l.dataProcessamentoDados, l.id
@@ -312,6 +315,7 @@ public interface LogIntegracaoRepository extends JpaRepository<LogIntegracaoMode
             SELECT l
             FROM LogIntegracaoModel l
             WHERE l.sistemaDestino = 'VEDACIT'
+              AND COALESCE(l.arquivado, false) = false
               AND l.status = 'ERRO_DESTINO'
               AND l.statusDados = 'ERRO_DESTINO'
               AND l.chaveCte IS NOT NULL
@@ -339,6 +343,7 @@ public interface LogIntegracaoRepository extends JpaRepository<LogIntegracaoMode
             SELECT l
             FROM LogIntegracaoModel l
             WHERE l.sistemaDestino = 'VEDACIT'
+              AND COALESCE(l.arquivado, false) = false
               AND l.status = 'ERRO_DESTINO'
               AND l.statusDados = 'SUCESSO'
               AND l.statusCanhoto = 'ERRO_DESTINO'

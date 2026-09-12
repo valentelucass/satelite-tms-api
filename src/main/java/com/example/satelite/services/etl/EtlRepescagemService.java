@@ -664,8 +664,13 @@ public class EtlRepescagemService {
                 || ClassificacaoOperacionalCanhotoVedacit.BLOQUEADO_DESTINO.name().equals(classificacao)) return;
         registro.setStatus(ResultadoIntegracao.STATUS_PARCIAL);
         // Rejeição de comprovante não é evidência de transmissão do XML.
-        if (registro.getStatusDados() == null || registro.getStatusDados().isBlank())
-            registro.setStatusDados(ResultadoIntegracao.STATUS_PENDENTE_ORIGEM);
+        if (registro.getStatusDados() == null || registro.getStatusDados().isBlank()) {
+            // Sem identidade fiscal, esta linha audita somente um arquivo rejeitado.
+            boolean semIdentidade = (registro.getChaveCte() == null || registro.getChaveCte().isBlank())
+                    && (registro.getChaveNfe() == null || registro.getChaveNfe().isBlank());
+            registro.setStatusDados(semIdentidade ? ResultadoIntegracao.STATUS_NAO_APLICAVEL
+                    : ResultadoIntegracao.STATUS_PENDENTE_ORIGEM);
+        }
         registro.setStatusCanhoto(ResultadoIntegracao.STATUS_ERRO_DESTINO);
         registro.setCanhotoOrigem("SFTP");
         registro.setMensagemErroCanhoto(rejeitado.motivo());

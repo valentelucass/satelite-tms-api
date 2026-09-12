@@ -79,7 +79,7 @@ public final class NoNetworkSecurityManager extends SecurityManager {
     Add-Element $conf 'reportsDirectory' "$saida/surefire-reports" | Out-Null
     $sys = Add-Element $conf 'systemPropertyVariables' $null
     Add-Element $sys 'spring.config.import' 'optional:classpath:unit-tests-no-import.properties' | Out-Null
-    foreach ($name in @('APP_SCHEDULER_ENABLED','APP_NIGHTLY_RETRY_ENABLED','APP_CICLO_UNICO','APP_PPG_ENABLED','APP_SELIA_ENABLED','APP_VEDACIT_ENABLED','APP_SUPPORTE_ENABLED','work.sftp-clientes.enabled','SFTP_RODOGARCIA_ENABLED')) { Add-Element $sys $name 'false' | Out-Null }
+    foreach ($name in @('APP_SCHEDULER_ENABLED','APP_NIGHTLY_RETRY_ENABLED','APP_CICLO_UNICO','APP_PPG_ENABLED','APP_SELIA_ENABLED','APP_VEDACIT_ENABLED','APP_SUPPORTE_ENABLED','work.sftp-clientes.enabled','SFTP_RODOGARCIA_ENABLED','VEDACIT_RECONCILIACAO_ENABLED')) { Add-Element $sys $name 'false' | Out-Null }
     Add-Element $sys 'APP_DASHBOARD_API_ONLY' 'true' | Out-Null
     Add-Element $sys 'junit.jupiter.execution.timeout.default' '30s' | Out-Null
     $jacoco = Add-Element $build.plugins 'plugin' $null
