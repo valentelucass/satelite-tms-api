@@ -142,3 +142,13 @@ Manifesto final e backups: `target/correcao-idempotencia-20260911/instalacao.jso
 SQL reproduzível: `database/sql/diagnostico/20260911_divergencia_comprovantes.sql`, parametrizado com arrays JSON de chaves e janelas de data. Execução com transação encerrada por rollback, timeout de consulta e lock, sem escrita SQL. As consultas são sequenciais sob o isolamento normal do banco; o trabalhador continuou funcionando. Os cortes e a reconstrução de 965 evitam tratar números crescentes como se fossem uma única fotografia imutável.
 
 Evidências locais ignoradas pelo Git em `target/divergencia-comprovantes-20260911/`: `consulta-1.csv` a `consulta-11.csv`, `resumo.json`, `api-setembro.json`, `historico-alterado.csv`, `aceites-soap-log.csv`, `verificacao-logs.json`, `InventoryRegressionProbe.java`, `regressao-reproduzida.log`, `classe-validada.json` e `505-notas-conferidas.csv`. Credenciais, imagens e XMLs fiscais não foram incluídos no relatório nem no SQL versionado.
+
+## Reconferência do alinhamento em 11/09, 22:00 BRT
+
+Conferência concluída sem alterar dados ou processos. O JAR instalado confere com o manifesto e os 58 arquivos publicados da interface coincidem com o candidato. A implementação extraída diretamente do JAR instalado passou em dez consultas reais: 274 confirmações datáveis em 11/09 e 702 com primeira data incerta, resumos iguais às séries e filtro de destino preservado. O trigger está ativo e seu corpo coincide com a migration; o SQL Server normaliza `CREATE OR ALTER` para `CREATE` na definição armazenada.
+
+No banco há 2.816 pares preservados. Não foram encontradas datas inconsistentes, divergências nos 702 logs qualificados, aceites sem registro permanente ou primeiras datas posteriores a uma evidência de sucesso disponível.
+
+**A operação ainda não foi retomada.** API e worker Satélite estão parados, e a porta 19090 não responde. A interface responde HTTP 200 com HTML e metadados novos; seu processo estático ainda mantém o cabeçalho de build anterior em memória. A consulta anônima ao Dashboard retorna 401, como esperado, e não valida o proxy autenticado. Restam início humano da API/worker e reinício do serviço estático para atualizar o cabeçalho; após isso, conferir HTTP v2 e o primeiro ciclo. Esta conferência não afirma que o fluxo completo esteja funcionando com os processos parados.
+
+Evidências: `target/correcao-idempotencia-20260911/reconferencia/artefatos-http.json`, `banco.json`, `trigger-conferido.json`, `indicadores-jar-instalado.json`, `indicadores-jar-instalado.log` e `fechamento.json`.
