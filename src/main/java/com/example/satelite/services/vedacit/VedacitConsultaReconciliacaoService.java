@@ -48,7 +48,8 @@ public class VedacitConsultaReconciliacaoService {
     static ResultadoConsulta classificar(String mensagem) {
         String m=Normalizer.normalize(mensagem==null?"":mensagem,Normalizer.Form.NFD)
                 .replaceAll("\\p{M}","").toLowerCase(Locale.ROOT);
-        if(m.contains("autoriza") || m.contains("unauthor") || m.contains("forbidden") || m.contains("401") || m.contains("403"))
+        if(m.contains("autoriza") || m.contains("unauthor") || m.contains("forbidden") || m.contains("401") || m.contains("403")
+                || m.contains("sem permiss") || m.contains("permissao negada") || m.contains("acesso negado"))
             return falha("CONSULTA_SEM_PERMISSAO");
         if(m.contains("nao encontrad") || m.contains("nao localizad") || m.contains("nao existe"))
             return new ResultadoConsulta("NAO_LOCALIZADO_NO_DESTINO",false);

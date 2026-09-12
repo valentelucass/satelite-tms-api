@@ -28,6 +28,12 @@ public interface RodogarciaClient {
         @RequestParam("cte_key") String cteKey
     );
 
+    @GetMapping("${RODOGARCIA_CUSTOMER_DELIVERY_RECEIPTS_PATH:/api/customer/freight_delivery_receipts}")
+    ComprovanteEslDTO buscarComprovanteCliente(
+        @RequestHeader("Authorization") String bearerToken,
+        @RequestParam("cte_key") String cteKey
+    );
+
     @GetMapping("${RODOGARCIA_CTE_XML_PATH:/api/ctes}")
     CteResponseDTO buscarXmlCte(
         @RequestHeader("Authorization") String bearerToken,

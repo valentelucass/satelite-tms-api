@@ -30,6 +30,20 @@ class VedacitConsultaReconciliacaoServiceTest {
         assertEquals("CONSULTA_SEM_PERMISSAO",resultado.codigo());assertTrue(resultado.interromperFonte());
         assertFalse(resultado.toString().contains("segredo"));
     }
+    @Test void faultRealDeMetodoSemPermissaoEhIdentificadoNasDuasConsultas() throws Exception {
+        var factory=jakarta.xml.soap.SOAPFactory.newInstance();
+        when(cte.buscarCTePorChave(anyString())).thenThrow(new jakarta.xml.ws.soap.SOAPFaultException(
+                factory.createFault("Método BuscarCTePorChave sem permissão. detalhe-restrito",
+                        new QName("http://schemas.xmlsoap.org/soap/envelope/","Client"))));
+        when(nfe.buscarCanhotoPorChaveNFe(anyString())).thenThrow(new jakarta.xml.ws.soap.SOAPFaultException(
+                factory.createFault("Método BuscarCanhotoPorChaveNFe sem permissão. detalhe-restrito",
+                        new QName("http://schemas.xmlsoap.org/soap/envelope/","Client"))));
+        for(var resultado:java.util.List.of(service.consultarXml("4".repeat(44)),service.consultarComprovante("3".repeat(44)))) {
+            assertEquals("CONSULTA_SEM_PERMISSAO",resultado.codigo());
+            assertTrue(resultado.interromperFonte());
+            assertFalse(resultado.toString().contains("detalhe-restrito"));
+        }
+    }
     @Test void xmlExatoConfirmaPresencaMasNaoInventaDataHistorica() {
         var objeto=new CTe();objeto.setChave(elemento(String.class,"4".repeat(44)));
         var r=new RetornoOfCTeS2VakUsz();r.setStatus(true);r.setObjeto(elemento(CTe.class,objeto));

@@ -2,6 +2,8 @@
 
 Supervisor próprio, residente e sem porta HTTP, para revisar diariamente os documentos Vedacit entre **02:00 e 06:00, America/Sao_Paulo**. O processo é independente do `WORK-SFTP-CLIENTES`, que termina entre ciclos.
 
+**Atualização de 12/09 às 20:51:** pacote normal agora `A4392527...`, com correção da consulta de comprovante por cliente e reconhecimento do SOAP Fault real `Método ... sem permissão`. Bateria final: 433 testes, 430 aprovados, zero falhas/erros e três manuais desabilitados. API/worker seguem parados pelo usuário; supervisor ainda online na cópia anterior `05A4BC9C...`. Na retomada humana, carregar também o supervisor pelo ecosystem principal para aplicar o diagnóstico novo. As consultas reais de CT-e e canhoto continuam sem permissão; a janela e as proteções de reconciliação não mudaram. [Rastreio, dependências e pacote](rastreio-vedacit-2026-09-12.md).
+
 **Ativado em 12/09/2026 às 19:29 BRT:** `VEDACIT-RECONCILIACAO-NOTURNA` online, PID inicial 47592, sem reinícios; cadastro salvo no PM2. Primeira janela: **13/09, a partir de 02:00**. A ativação do novo supervisor atende ao pedido de manter a revisão diariamente de madrugada; nenhum processo existente foi reiniciado. A revisão real da primeira madrugada ainda precisa ser aferida pelo histórico.
 
 ## Comportamento

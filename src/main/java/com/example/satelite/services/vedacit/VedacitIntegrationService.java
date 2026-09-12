@@ -633,6 +633,7 @@ public class VedacitIntegrationService {
     }
 
     private ComprovanteEslDTO obterComprovanteEslFallback(ComprovanteEslDTO comprovanteAtual, String chaveCte) {
+        comprovanteAtual = filtrarComprovantePorCte(comprovanteAtual, chaveCte);
         if (comprovanteTemImagem(comprovanteAtual)) {
             return comprovanteAtual;
         }
@@ -640,8 +641,11 @@ public class VedacitIntegrationService {
         try {
             ComprovanteEslDTO comprovante = eslRequestPolicyService.executarComTelemetria(
                     EslRequestContext.criar("VEDACIT", "DELIVERY_RECEIPT"),
-                    () -> rodogarciaClient.buscarComprovante("Bearer " + obterTokenComprovanteEsl(), chaveCte)
+                    () -> tokenComprovanteEsl != null && !tokenComprovanteEsl.isBlank()
+                            ? rodogarciaClient.buscarComprovante("Bearer " + obterTokenComprovanteEsl(), chaveCte)
+                            : rodogarciaClient.buscarComprovanteCliente("Bearer " + obterTokenComprovanteEsl(), chaveCte)
             );
+            comprovante = filtrarComprovantePorCte(comprovante, chaveCte);
             if (!comprovanteTemImagem(comprovante)) {
                 throw new CanhotoIndisponivelNaOrigemException("Canhoto ainda não disponível na ESL");
             }
@@ -655,12 +659,18 @@ public class VedacitIntegrationService {
         }
     }
 
+    private ComprovanteEslDTO filtrarComprovantePorCte(ComprovanteEslDTO comprovante, String chaveCte) {
+        if (comprovante == null || comprovante.data() == null) return null;
+        return new ComprovanteEslDTO(comprovante.data().stream()
+                .filter(item -> item != null && item.freight() != null
+                        && chaveCte.equals(item.freight().cteKey())
+                        && item.imageUrl() != null && !item.imageUrl().isBlank())
+                .toList(), comprovante.paging());
+    }
+
     private String obterTokenComprovanteEsl() {
         if (tokenComprovanteEsl != null && !tokenComprovanteEsl.isBlank()) {
             return tokenComprovanteEsl.trim();
-        }
-        if (tokenCteXmlEsl != null && !tokenCteXmlEsl.isBlank()) {
-            return tokenCteXmlEsl.trim();
         }
         if (tokenVedacitEsl != null && !tokenVedacitEsl.isBlank()) {
             return tokenVedacitEsl.trim();

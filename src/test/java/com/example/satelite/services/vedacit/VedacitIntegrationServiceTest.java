@@ -39,6 +39,7 @@ import org.springframework.test.util.ReflectionTestUtils;
 
 import com.example.satelite.clients.RodogarciaClient;
 import com.example.satelite.dto.rodogarcia.ComprovanteEslDTO;
+import com.example.satelite.dto.rodogarcia.ComprovanteEslFreightDTO;
 import com.example.satelite.dto.rodogarcia.ComprovanteEslItemDTO;
 import com.example.satelite.dto.rodogarcia.CteDataDTO;
 import com.example.satelite.dto.rodogarcia.CteItemDTO;
@@ -535,7 +536,8 @@ class VedacitIntegrationServiceTest {
                 "https://assinada.exemplo/canhoto.jpg",
                 OffsetDateTime.parse("2026-06-17T10:31:00-03:00"),
                 OffsetDateTime.parse("2026-06-17T10:32:00-03:00"),
-                null
+                new ComprovanteEslFreightDTO(30L, 1234L,
+                        "35260612345678000123570010000012341000012345", null)
         );
 
         return new ComprovanteEslDTO(List.of(item), null);
@@ -592,5 +594,59 @@ class VedacitIntegrationServiceTest {
         assertEquals("ORIGEM_XML_HTTP_401", primeiro.mensagemErroDados());
         assertEquals("ORIGEM_XML_AUTENTICACAO_EM_ESPERA", segundo.mensagemErroDados());
         verify(esl, org.mockito.Mockito.times(1)).buscarXmlCte(any(), any());
+    }
+
+    @Test void fallbackClienteUsaTokenVedacitMesmoComMasterPreenchido() throws Exception {
+        var esl = mock(RodogarciaClient.class);
+        var imagem = mock(ImageDownloader.class);
+        var porta = mock(INFe.class);
+        var aceite = new com.example.satelite.vedacit.nfe.RetornoOfboolean();
+        aceite.setStatus(true);
+        when(porta.enviarDigitalizacaoCanhoto(any())).thenReturn(aceite);
+        String cte = criarOcorrencia().freight().cteKey();
+        when(esl.buscarComprovanteCliente("Bearer token-cliente", cte)).thenReturn(criarComprovante());
+        when(imagem.baixarImagemDaUrl(any(), any())).thenReturn(criarImagemJpegTeste());
+        var service = new VedacitIntegrationService(imagem, esl, criarPoliticaEslExecutora()) {
+            @Override protected INFe criarPortaNFe() { return porta; }
+        };
+        ReflectionTestUtils.setField(service, "envioCanhotoHabilitado", true);
+        ReflectionTestUtils.setField(service, "tokenVedacitEsl", "token-cliente");
+        ReflectionTestUtils.setField(service, "tokenCteXmlEsl", "master-sem-escopo");
+        var resultado = service.processarOcorrencia(criarOcorrencia(), null, true, false);
+        assertEquals(ResultadoIntegracao.STATUS_SUCESSO, resultado.statusCanhoto());
+        verify(esl).buscarComprovanteCliente("Bearer token-cliente", cte);
+        verify(esl, never()).buscarComprovante(any(), any());
+        verify(imagem).baixarImagemDaUrl("https://assinada.exemplo/canhoto.jpg", cte);
+    }
+
+    @Test void respostaVaziaOuComCteDiferenteNaoAutorizaDownloadNemEnvio() {
+        var esl = mock(RodogarciaClient.class);
+        var imagem = mock(ImageDownloader.class);
+        var service = new VedacitIntegrationService(imagem, esl, criarPoliticaEslExecutora());
+        ReflectionTestUtils.setField(service, "envioCanhotoHabilitado", true);
+        ReflectionTestUtils.setField(service, "tokenVedacitEsl", "token-cliente");
+        var divergente = new ComprovanteEslItemDTO(1L, "https://example.invalid/outra.jpg", null, null,
+                new ComprovanteEslFreightDTO(9L, 9999L, "9".repeat(44), null));
+        var semIdentidade = new ComprovanteEslItemDTO(2L, "https://example.invalid/sem-cte.jpg", null, null, null);
+        for (var resposta : List.of(new ComprovanteEslDTO(List.of(), null),
+                new ComprovanteEslDTO(List.of(divergente), null),
+                new ComprovanteEslDTO(List.of(semIdentidade), null))) {
+            when(esl.buscarComprovanteCliente(any(), any())).thenReturn(resposta);
+            var resultado = service.processarOcorrencia(criarOcorrencia(), null, true, false);
+            assertEquals(ResultadoIntegracao.STATUS_PENDENTE_FOTO, resultado.statusCanhoto());
+        }
+        verifyNoInteractions(imagem);
+    }
+
+    @Test void selecionaImagemDoCteExatoMesmoQuandoNaoForPrimeiroItem() {
+        var esl = mock(RodogarciaClient.class);
+        var service = new VedacitIntegrationService(mock(ImageDownloader.class), esl, criarPoliticaEslExecutora());
+        var exato = criarComprovante().data().get(0);
+        var divergente = new ComprovanteEslItemDTO(1L, "https://example.invalid/outra.jpg", null, null,
+                new ComprovanteEslFreightDTO(9L, 9999L, "9".repeat(44), null));
+        ComprovanteEslDTO resultado = ReflectionTestUtils.invokeMethod(service, "obterComprovanteEslFallback",
+                new ComprovanteEslDTO(List.of(divergente, exato), null), criarOcorrencia().freight().cteKey());
+        assertEquals(List.of(exato), resultado.data());
+        verifyNoInteractions(esl);
     }
 }

@@ -134,5 +134,6 @@ scripts/probes/*
 !scripts/probes/ConfirmacaoSqlServerProbe.java
 !scripts/probes/IndicadoresSqlServerProbe.java
 !scripts/probes/DocumentoLockSqlServerProbe.java
+!scripts/probes/DiagnosticoAcessoEslProbe.java
 
 /docs/contexto

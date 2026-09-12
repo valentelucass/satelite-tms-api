@@ -74,9 +74,6 @@ public class EtlRegistroService {
     @Value("${RODOGARCIA_TOKEN_VEDACIT_COMPROVANTE:}")
     private String tokenVedacitComprovanteEsl;
 
-    @Value("${RODOGARCIA_MASTER_API_REST:}")
-    private String tokenMasterEsl;
-
     @Value("${VEDACIT_XML_SOURCE_RETRY_COOLDOWN_MS:1800000}")
     private long xmlSourceRetryCooldownMs = 1800000;
 
@@ -1007,7 +1004,7 @@ public class EtlRegistroService {
         try {
             comprovante = eslRequestPolicyService.executarComTelemetria(
                     EslRequestContext.criar(destino, "DELIVERY_RECEIPT"),
-                    () -> rodogarciaClient.buscarComprovante(obterHeaderComprovante(destino, headerAuth), cteKey)
+                    () -> consultarComprovante(destino, headerAuth, cteKey)
             );
         } catch (EslRequestTransientException e) {
             throw new FalhaConsultaComprovanteException(
@@ -1042,13 +1039,17 @@ public class EtlRegistroService {
             return "Bearer " + tokenVedacitComprovanteEsl.trim();
         }
 
-        if (DESTINO_VEDACIT.equals(destino)
-                && tokenMasterEsl != null
-                && !tokenMasterEsl.isBlank()) {
-            return "Bearer " + tokenMasterEsl.trim();
-        }
-
         return headerAuth;
+    }
+
+    ComprovanteEslDTO consultarComprovante(String destino, String headerAuth, String chaveCte) {
+        String header = obterHeaderComprovante(destino, headerAuth);
+        // Sem credencial documental explicita, Vedacit usa o contrato e o token de cliente.
+        if (DESTINO_VEDACIT.equals(destino)
+                && (tokenVedacitComprovanteEsl == null || tokenVedacitComprovanteEsl.isBlank())) {
+            return rodogarciaClient.buscarComprovanteCliente(header, chaveCte);
+        }
+        return rodogarciaClient.buscarComprovante(header, chaveCte);
     }
 
     private ComprovanteEslDTO prepararComprovanteParaModoTeste(
