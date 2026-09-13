@@ -17,6 +17,31 @@ import com.example.satelite.services.ppg.PpgIntegrationService;
 import com.example.satelite.services.vedacit.VedacitIntegrationService;
 
 class VedacitXmlRecoverySafetyTest {
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(strings = {
+            "ORIGEM_XML_HTTP_401", "ORIGEM_XML_HTTP_403", "ORIGEM_XML_AUTENTICACAO_EM_ESPERA"})
+    void identificaBloqueioDeAcessoSemLiberarEnvioNemAlterarComprovante(String causa) {
+        var registro = erro("ORIGEM_XML_HTTP_401");
+        registro.setCanhotoClassificacaoOperacional("TIMEOUT_AMBIGUO");
+        when(vedacit.reprocessarXmlCtePorChaves(NFE, CTE, "PENDENTE_FOTO"))
+                .thenReturn(ResultadoIntegracao.erroDados(causa));
+        assertEquals(ResultadoRegistro.RETIDO_ACESSO_ORIGEM, service.reprocessarXmlCteVedacitPorChave(registro));
+        assertEquals(causa, registro.getMensagemErroDados());
+        assertEquals("ERRO_DESTINO", registro.getStatusDados());
+        assertEquals(AGORA, registro.getDataProcessamentoDados());
+        assertEquals(1, registro.getTentativasDados());
+        assertEquals("TIMEOUT_AMBIGUO", registro.getCanhotoClassificacaoOperacional());
+        assertNull(registro.getDataProcessamentoCanhoto());
+    }
+
+    @Test void erroDeEnvioNaoViraBloqueioDeAcessoPelaCausaAnterior() {
+        var registro = erro("ORIGEM_XML_HTTP_401");
+        when(vedacit.reprocessarXmlCtePorChaves(NFE, CTE, "PENDENTE_FOTO"))
+                .thenReturn(ResultadoIntegracao.erroDados("Read timed out"));
+        assertEquals(ResultadoRegistro.RETIDO, service.reprocessarXmlCteVedacitPorChave(registro));
+        assertEquals("Read timed out", registro.getMensagemErroDados());
+    }
+
     private static final String NFE = "1".repeat(44), CTE = "2".repeat(44);
     private static final LocalDateTime AGORA = LocalDateTime.of(2026, 9, 11, 12, 0);
     private final LogIntegracaoRepository repo = mock(LogIntegracaoRepository.class);

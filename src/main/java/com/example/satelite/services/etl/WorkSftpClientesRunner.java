@@ -92,7 +92,7 @@ public class WorkSftpClientesRunner implements CommandLineRunner, ExitCodeGenera
                 if (ciclo.xmlHabilitado) ciclo.xml = xml;
                 if ("VEDACIT".equals(ciclo.perfil.identificador()) && (xml.erroCritico() || xml.erros() > 0)) {
                     ciclo.falhou = true;
-                    if (ciclo.motivo == null) ciclo.motivo = "XML_RETIDO: Há falhas XML auditadas; consulte a etapa XML";
+                    if (ciclo.motivo == null) ciclo.motivo = xml.motivoFalhaXml();
                 }
                 if (!ciclo.registrar() || ciclo.falhou) falhos++;
             }

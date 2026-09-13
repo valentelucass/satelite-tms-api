@@ -8,6 +8,7 @@ public enum ResultadoRegistro {
     PENDENTE_ORIGEM(false, false),
     ERRO(true, false),
     RETIDO(true, false),
+    RETIDO_ACESSO_ORIGEM(true, false),
     ERRO_INFRAESTRUTURA(true, true);
 
     private final boolean erro;
@@ -36,6 +37,10 @@ public enum ResultadoRegistro {
 
     boolean erro() {
         return erro;
+    }
+
+    boolean retido() {
+        return this == RETIDO || this == RETIDO_ACESSO_ORIGEM;
     }
 
     boolean falhaInfraestrutura() {

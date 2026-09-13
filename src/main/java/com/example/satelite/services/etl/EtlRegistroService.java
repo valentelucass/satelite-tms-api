@@ -543,9 +543,14 @@ public class EtlRegistroService {
     }
 
     private ResultadoRegistro reterXmlAuditado(LogIntegracaoModel registro) {
-        return registro.getId() != null && registro.getChaveCte() != null && registro.getChaveCte().matches("\\d{44}")
-                && registro.getChaveNfe() != null && registro.getChaveNfe().matches("\\d{44}")
-                ? ResultadoRegistro.RETIDO : ResultadoRegistro.ERRO;
+        boolean auditado = registro.getId() != null && registro.getChaveCte() != null && registro.getChaveCte().matches("\\d{44}")
+                && registro.getChaveNfe() != null && registro.getChaveNfe().matches("\\d{44}");
+        if (!auditado) return ResultadoRegistro.ERRO;
+        return switch (String.valueOf(registro.getMensagemErroDados())) {
+            case "ORIGEM_XML_HTTP_401", "ORIGEM_XML_HTTP_403", "ORIGEM_XML_AUTENTICACAO_EM_ESPERA"
+                    -> ResultadoRegistro.RETIDO_ACESSO_ORIGEM;
+            default -> ResultadoRegistro.RETIDO;
+        };
     }
 
     ResultadoPagina recuperarXmlFalhasOrigem(TurnoEtl turno, int limite) {
@@ -665,7 +670,7 @@ public class EtlRegistroService {
 
             ResultadoRegistro resultadoRegistro = STATUS_SUCESSO.equals(resultado.statusDados()) ? ResultadoRegistro.ENVIADO
                     : resultado.erro() ? reterXmlAuditado(logIntegracao) : etlEstadoIntegracaoService.converterResultadoRegistro(resultado);
-            if (resultadoRegistro.erro() && resultadoRegistro != ResultadoRegistro.RETIDO) {
+            if (resultadoRegistro.erro() && !resultadoRegistro.retido()) {
                 return etlResilienciaService.resultadoErroAposTentativa(
                         DESTINO_VEDACIT,
                         obterChaveNfe(ocorrencia),

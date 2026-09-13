@@ -59,13 +59,15 @@ class EtlFluxoDestinoSafetyTest {
         assertTrue(fluxo.diagnosticarLoopPaginacao("PPG", 2, 10L, 9L, 11L, null, current).detectado());
     }
 
-    @Test void xmlRetidoEmAuditoriaPermiteAvancarMasErroSemRetencaoPreservaCursor() {
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.EnumSource(value = ResultadoRegistro.class, names = {"RETIDO", "RETIDO_ACESSO_ORIGEM"})
+    void xmlRetidoEmAuditoriaPermiteAvancarMasErroSemRetencaoPreservaCursor(ResultadoRegistro retencao) {
         ReflectionTestUtils.setField(fluxo, "pausaPacingPaginacaoMs", 0L);
         var evento = event(101L, "2026-09-11T08:00:00-03:00", "2026-09-11T08:00:00-03:00");
         when(esl.buscarOcorrencias(anyString(), any(), any(), any(), eq(110)))
                 .thenReturn(new EslLoteResponseDTO(List.of(evento), new EslPagingDTO(102L, 1)))
                 .thenReturn(new EslLoteResponseDTO(List.of(), null));
-        when(registros.processarEmissaoXmlVedacit(anyString(), any(), any())).thenReturn(ResultadoRegistro.RETIDO);
+        when(registros.processarEmissaoXmlVedacit(anyString(), any(), any())).thenReturn(retencao);
         var result = fluxo.executarFluxoDestino("VEDACIT", "VEDACIT_XML", "teste", ExecucaoEtlRequest.incremental(1),
                 110, false, (o,c,l) -> ResultadoIntegracao.enviado(), new TurnoEtl(10, 120000, () -> {}));
         assertEquals(1, result.erros());

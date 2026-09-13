@@ -58,7 +58,9 @@ class WorkVedacitXmlTest {
         assertEquals(List.of("XML-inicio", "POD", "POD", "XML-fim", "POD"), ordemReal);
     }
 
-    @Test void erroXmlTambemMarcaCicloComoFalhaMesmoSemErroDeComprovante() {
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.CsvSource({"RETIDO,XML_RETIDO", "RETIDO_ACESSO_ORIGEM,XML_ACESSO_ORIGEM"})
+    void erroXmlTambemMarcaCicloComoFalhaMesmoSemErroDeComprovante(ResultadoRegistro retencao, String motivo) {
         var xml = mock(OrquestradorEtlService.class);
         var factory = mock(VedacitSftpClientFactory.class);
         var sftp = mock(VedacitSftpClient.class);
@@ -69,7 +71,7 @@ class WorkVedacitXmlTest {
         when(factory.criarClientesHabilitados()).thenReturn(List.of(new VedacitSftpClientFactory.ClienteSftp("VEDACIT", sftp, 10)));
         when(sftp.listarInventarioComprovantes()).thenReturn(new VedacitSftpInventory(List.of(), List.of()));
         when(xml.executarXmlVedacit(any(TurnoEtl.class))).thenReturn(ResultadoDestino.vazio("VEDACIT")
-                .comRegistros(ResultadoPagina.vazio().com(ResultadoRegistro.RETIDO).com(ResultadoRegistro.PENDENTE_ORIGEM)));
+                .comRegistros(ResultadoPagina.vazio().com(retencao).com(ResultadoRegistro.PENDENTE_ORIGEM)));
         when(repescagem.processarClienteSftpVedacit(any(), any(), any(), anyInt(), anyLong(), any(), anyLong()))
                 .thenReturn(new EtlRepescagemService.ResultadoClienteSftpVedacit(new EtlRepescagemService.ResultadoInventarioSftpVedacit(0,0,0,0),
                         new EtlRepescagemService.ResultadoReprocessamentoCanhotoVedacit(0,0,0,0,0), 0));
@@ -77,6 +79,6 @@ class WorkVedacitXmlTest {
         ReflectionTestUtils.setField(runner, "orquestrador", xml);
         assertEquals(1, runner.executarCiclo());
         verify(auditoria).registrarProgresso(any(), argThat(c -> c.xmlHabilitado() && c.xmlErros() == 1 && c.xmlPendentes() == 1
-                && c.errosComprovante() == 0 && c.status().equals("FALHA") && c.motivoFalha().startsWith("XML_RETIDO")));
+                && c.errosComprovante() == 0 && c.status().equals("FALHA") && c.motivoFalha().startsWith(motivo)));
     }
 }

@@ -10,12 +10,12 @@ record ResultadoDestino(
         int jaProcessados,
         int erros,
         boolean erroCritico,
-        String mensagemEncerramento, int pendentesOrigem
+        String mensagemEncerramento, int pendentesOrigem, int retidosAcessoOrigem
 ) {
     ResultadoDestino(String destino, int paginasProcessadas, int recebidos, int enviados, int ignorados,
             int pendentesFoto, int jaProcessados, int erros, boolean erroCritico, String mensagemEncerramento) {
         this(destino, paginasProcessadas, recebidos, enviados, ignorados, pendentesFoto, jaProcessados,
-                erros, erroCritico, mensagemEncerramento, 0);
+                erros, erroCritico, mensagemEncerramento, 0, 0);
     }
     static ResultadoDestino vazio(String destino) {
         return new ResultadoDestino(destino, 0, 0, 0, 0, 0, 0, 0, false, "Sem paginas processadas");
@@ -40,7 +40,8 @@ record ResultadoDestino(
                 jaProcessados + pagina.jaProcessados(),
                 erros + pagina.erros(),
                 erroCritico,
-                mensagemEncerramento, pendentesOrigem + pagina.pendentesOrigem()
+                mensagemEncerramento, pendentesOrigem + pagina.pendentesOrigem(),
+                retidosAcessoOrigem + pagina.retidosAcessoOrigem()
         );
     }
 
@@ -55,7 +56,8 @@ record ResultadoDestino(
                 jaProcessados + pagina.jaProcessados(),
                 erros + pagina.erros(),
                 erroCritico,
-                mensagemEncerramento, pendentesOrigem + pagina.pendentesOrigem()
+                mensagemEncerramento, pendentesOrigem + pagina.pendentesOrigem(),
+                retidosAcessoOrigem + pagina.retidosAcessoOrigem()
         );
     }
 
@@ -70,7 +72,7 @@ record ResultadoDestino(
                 jaProcessados,
                 erros,
                 erroCritico,
-                mensagemEncerramento, pendentesOrigem
+                mensagemEncerramento, pendentesOrigem, retidosAcessoOrigem
         );
     }
 
@@ -86,7 +88,7 @@ record ResultadoDestino(
                 jaProcessados,
                 erros + 1,
                 true,
-                "Erro critico: " + mensagemErro, pendentesOrigem
+                "Erro critico: " + mensagemErro, pendentesOrigem, retidosAcessoOrigem
         );
     }
 
@@ -101,7 +103,7 @@ record ResultadoDestino(
                 jaProcessados,
                 erros + 1,
                 true,
-                mensagemErro, pendentesOrigem
+                mensagemErro, pendentesOrigem, retidosAcessoOrigem
         );
     }
 
@@ -120,7 +122,18 @@ record ResultadoDestino(
                 jaProcessados + outro.jaProcessados,
                 erros + outro.erros,
                 erroCritico || outro.erroCritico,
-                mensagem, pendentesOrigem + outro.pendentesOrigem
+                mensagem, pendentesOrigem + outro.pendentesOrigem,
+                retidosAcessoOrigem + outro.retidosAcessoOrigem
         );
+    }
+
+    /** O motivo resume somente os resultados desta execução, sem inferir pelo saldo atual. */
+    String motivoFalhaXml() {
+        if (erroCritico) return "XML_PROCESSAMENTO: Não foi possível concluir a execução da etapa XML";
+        if (erros > 0 && erros == retidosAcessoOrigem)
+            return "XML_ACESSO_ORIGEM: A origem recusou o acesso ao XML; documentos retidos sem envio";
+        if (retidosAcessoOrigem > 0)
+            return "XML_FALHAS_MISTAS: Há bloqueio de acesso à origem e outras falhas ou retenções XML";
+        return "XML_RETIDO: Há falhas ou retenções XML; consulte a auditoria dos documentos";
     }
 }

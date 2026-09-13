@@ -10,13 +10,13 @@ record ResultadoPagina(
         int falhasInfraestruturaConsecutivas,
         boolean interromperCiclo,
         boolean fimJanelaRetroativa,
-        boolean circuitoAberto, int retidos, int pendentesOrigem
+        boolean circuitoAberto, int retidos, int pendentesOrigem, int retidosAcessoOrigem
 ) {
     ResultadoPagina(int recebidos, int enviados, int ignorados, int pendentesFoto, int jaProcessados,
             int erros, int falhasInfraestruturaConsecutivas, boolean interromperCiclo,
             boolean fimJanelaRetroativa, boolean circuitoAberto) {
         this(recebidos, enviados, ignorados, pendentesFoto, jaProcessados, erros,
-                falhasInfraestruturaConsecutivas, interromperCiclo, fimJanelaRetroativa, circuitoAberto, 0, 0);
+                falhasInfraestruturaConsecutivas, interromperCiclo, fimJanelaRetroativa, circuitoAberto, 0, 0, 0);
     }
     static ResultadoPagina vazio() {
         return vazio(0);
@@ -52,8 +52,9 @@ record ResultadoPagina(
                 registro.falhaInfraestrutura() ? falhasInfraestruturaConsecutivas + 1 : 0,
                 interromperCiclo,
                 fimJanelaRetroativa,
-                circuitoAberto, retidos + (registro == ResultadoRegistro.RETIDO ? 1 : 0),
-                pendentesOrigem + (registro == ResultadoRegistro.PENDENTE_ORIGEM ? 1 : 0)
+                circuitoAberto, retidos + (registro.retido() ? 1 : 0),
+                pendentesOrigem + (registro == ResultadoRegistro.PENDENTE_ORIGEM ? 1 : 0),
+                retidosAcessoOrigem + (registro == ResultadoRegistro.RETIDO_ACESSO_ORIGEM ? 1 : 0)
         );
     }
 
@@ -68,7 +69,7 @@ record ResultadoPagina(
                 falhasInfraestruturaConsecutivas,
                 true,
                 fimJanelaRetroativa,
-                circuitoAberto, retidos, pendentesOrigem
+                circuitoAberto, retidos, pendentesOrigem, retidosAcessoOrigem
         );
     }
 
@@ -83,7 +84,7 @@ record ResultadoPagina(
                 falhasInfraestruturaConsecutivas,
                 interromperCiclo,
                 true,
-                circuitoAberto, retidos, pendentesOrigem
+                circuitoAberto, retidos, pendentesOrigem, retidosAcessoOrigem
         );
     }
 
@@ -98,7 +99,7 @@ record ResultadoPagina(
                 falhasInfraestruturaConsecutivas,
                 interromperCiclo,
                 fimJanelaRetroativa,
-                true, retidos, pendentesOrigem
+                true, retidos, pendentesOrigem, retidosAcessoOrigem
         );
     }
 }
