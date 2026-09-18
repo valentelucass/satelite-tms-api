@@ -133,3 +133,24 @@ Os três cadastros PM2 apontam para o mesmo JAR. O noturno ainda mantinha a vers
 A troca foi autorizada explicitamente pelo usuário, superando a pendência de autorização registrada no corte anterior. O comportamento instalado mantém pendentes os documentos sem data segura e retém datas conflitantes. Alinhamento com o gestor, escolha de evento em conflito, retificação histórica e substituição da planilha conservam seus limites próprios; não exigem repetir a aprovação da instalação concluída.
 
 Evidências finais em `target/publicacao-data-entrega-20260918/`: `instalacao.json`, `comparacao-conteudo.json`, `build.log` e `prova-antes-depois.json`. Este último preserva o antes produtivo reconstruído e o depois do teste local, agora associado ao hash efetivamente instalado. **Não é prova de envio produtivo com a correção:** os processos continuam parados e o valor no destino ainda não foi conferido. Após o início humano, verificar somente um novo par elegível; não reenviar o log 71230 ou qualquer aceite anterior para obter a prova.
+
+## Execução nova e prova antes/depois — 18/09, corte 18:01 BRT
+
+A subida humana carregou a versão correta: API PID 26920 desde 17:41:59 e worker PID 57036 desde 17:41:55, ambos online com o JAR `EFF36F937715338675CCA3F52A2C4429CC2B70AFA8EC4CEA6A7C9E46AB908A2F`. A API respondeu HTTP 200 e o ciclo SFTP Vedacit iniciou às 17:42:19. A consulta de auditoria foi somente leitura, em `SATELITE_TMS_AUDITORIA`, dentro de rollback.
+
+| Evidência da regra nova | Horário | Resultado posterior |
+|---|---:|---|
+| Telemetria 19704, rota `VEDACIT_DELIVERY_OCCURRENCE`, HTTP 200, sem fallback | 17:51:07.659 | Log 71260 aceito às 17:53:43.218 |
+| Telemetria 19705, rota `VEDACIT_DELIVERY_OCCURRENCE`, HTTP 200, sem fallback | 17:53:59.742 | Log 71261 aceito às 17:56:03.284 |
+
+Os dois aceites são de imagem SFTP, têm `status_canhoto=SUCESSO`, classificação `SUCESSO` e confirmação atômica datada. O fluxo do worker é sequencial e, no JAR em execução, ele somente cria o `Canhoto` e chama o SOAP depois de a rota nova resolver uma ocorrência ESL com código `1`, NF-e e CT-e exatos e `occurrence_at` válido. Assim, as consultas de entrega com HTTP 200 seguidas dos dois aceites comprovam o comportamento novo em produção. A hora do envio continua separada em `DataEnvioCanhoto`; `DataEntregaNota` vem da ocorrência, no fuso `America/Sao_Paulo` e no formato `dd/MM/yyyy HH:mm:ss`.
+
+| Comparação | Antes | Depois observado |
+|---|---|---|
+| Fonte de `DataEntregaNota` | Processamento técnico do XML | Ocorrência real ESL código 1, par NF-e/CT-e exato |
+| Exemplo | NF 244920/CT-e 57982: entrega 11:08:30, campo 12:51:39 | Logs 71260 e 71261 aceitos após resolução de entrega real |
+| Sem data segura | Não era regra protegida | Pendência antes do SOAP; não há substituição por data técnica |
+
+No mesmo corte, dois outros comprovantes ficaram `TIMEOUT_AMBIGUO`, sem confirmação local e sem novo envio. Isso é proteção de idempotência, não aceite. O sistema não persiste o envelope SOAP após transmiti-lo: a prova identifica o JAR em execução, consulta de entrega bem-sucedida e aceite posterior, mas não consegue recuperar o texto literal de `DataEntregaNota` depois do envio. Uma leitura avulsa posterior à ESL retornou HTTP 500 e não foi usada; não alterou dados ou gerou envio. Para a confirmação visual final, a Vedacit deve consultar os novos comprovantes NF 241660/CT-e 56071 ou NF 243911/CT-e 56931. Não reenviar comprovantes para produzir essa captura.
+
+Arquivos: `target/publicacao-data-entrega-20260918/prova-antes-depois-execucao.json` (prova consolidada), `mensagem-gestor.md` (texto para encaminhar), `auditoria-pos-start-final.json` (linhas de auditoria e telemetria) e [consulta reproduzível](../database/sql/diagnostico/20260918_prova_execucao_data_entrega_vedacit.sql).
