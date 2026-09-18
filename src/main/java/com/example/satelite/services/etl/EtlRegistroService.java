@@ -1,8 +1,6 @@
 package com.example.satelite.services.etl;
 
-import java.time.LocalDateTime;
 import java.time.OffsetDateTime;
-import java.time.ZoneId;
 import java.util.List;
 import java.util.Optional;
 
@@ -28,6 +26,7 @@ import com.example.satelite.services.selia.SeliaIntegrationService;
 import com.example.satelite.services.supporte.SupporteIntegrationService;
 import com.example.satelite.services.vedacit.VedacitIntegrationService;
 import com.example.satelite.services.vedacit.VedacitCteCanhotoReconciliationService;
+import com.example.satelite.services.vedacit.VedacitDataEntregaService;
 import com.example.satelite.services.origem.sftp.vedacit.VedacitSftpDocumentSource;
 
 @Service
@@ -85,12 +84,19 @@ public class EtlRegistroService {
 
     private VedacitCteCanhotoReconciliationService vedacitCteCanhotoReconciliationService;
 
+    private VedacitDataEntregaService vedacitDataEntregaService;
+
     @Autowired
     private SftpDocumentoLockService xmlDocumentoLockService;
 
     @Autowired
     void configurarReconciliacaoVedacit(VedacitCteCanhotoReconciliationService service) {
         this.vedacitCteCanhotoReconciliationService = service;
+    }
+
+    @Autowired
+    void configurarDataEntregaVedacit(VedacitDataEntregaService service) {
+        this.vedacitDataEntregaService = service;
     }
 
     @Autowired
@@ -171,6 +177,11 @@ public class EtlRegistroService {
 
         for (LogIntegracaoModel pendencia : pendencias) {
             try {
+                if (DESTINO_VEDACIT.equals(destino)) {
+                    // O caminho SFTP Vedacit precisa resolver a entrega exata antes do marcador SOAP.
+                    resultado = resultado.com(reprocessarCanhotoVedacitPorCte(pendencia));
+                    continue;
+                }
                 Optional<EslOcorrenciaDTO> ocorrencia = buscarOcorrenciaPendente(headerAuth, pendencia);
                 if (ocorrencia.isEmpty()) {
                     manterPendenteSemOcorrencia(pendencia);
@@ -293,8 +304,7 @@ public class EtlRegistroService {
             return ResultadoRegistro.IGNORADO;
         }
 
-        EslOcorrenciaDTO ocorrencia = reconstruirOcorrenciaVedacit(logIntegracao);
-        String chaveNfe = obterChaveNfe(ocorrencia);
+        String chaveNfe = logIntegracao.getChaveNfe();
         try {
             // No worker multi-cliente, a auditoria e o documento pertencem ao perfil atual;
             // nunca usa reconciliação global de outra fila.
@@ -319,8 +329,23 @@ public class EtlRegistroService {
                 logIntegracao.setCanhotoChaveCteEfetiva(decisao.chaveCteEfetiva());
                 logIntegracao.setCanhotoReconciliacaoTipo(decisao.tipo());
                 logIntegracao.setCanhotoReconciliacaoMotivo(decisao.motivo());
-                ocorrencia = comChaveCte(ocorrencia, decisao.chaveCteEfetiva());
             }
+            String chaveCteEfetiva = decisao == null ? logIntegracao.getChaveCte() : decisao.chaveCteEfetiva();
+            if (etlEstadoIntegracaoService.canhotoVedacitSucessoRegistradoPorPar(chaveNfe, chaveCteEfetiva)) {
+                return ResultadoRegistro.JA_PROCESSADO;
+            }
+            if (etlEstadoIntegracaoService.canhotoVedacitRetidoPorPar(chaveNfe, chaveCteEfetiva)) {
+                return ResultadoRegistro.RETIDO;
+            }
+
+            VedacitDataEntregaService.Resolucao resolucao = resolverDataEntregaVedacit(chaveNfe, chaveCteEfetiva);
+            if (!resolucao.encontrada()) {
+                return manterPendenteSemDataEntrega(logIntegracao, resolucao);
+            }
+            if (resolucao.idEvento() != null) {
+                logIntegracao.setOccurrenceId(resolucao.idEvento());
+            }
+            EslOcorrenciaDTO ocorrencia = reconstruirOcorrenciaVedacit(logIntegracao, chaveCteEfetiva, resolucao);
             final EslOcorrenciaDTO ocorrenciaEnvio = ocorrencia;
             final VedacitCteCanhotoReconciliationService.Decisao decisaoEnvio = decisao;
             if (xmlDocumentoLockService != null) {
@@ -353,6 +378,22 @@ public class EtlRegistroService {
             VedacitSftpDocumentSource fonteSftp, EslOcorrenciaDTO ocorrencia,
             VedacitCteCanhotoReconciliationService.Decisao decisao) {
         String chaveNfe = obterChaveNfe(ocorrencia);
+            // A consulta da data pode demorar; releitura sob o lock efetivo evita enviar
+            // um candidato que tenha sido arquivado, confirmado ou bloqueado nesse intervalo.
+            if (logIntegracao.getId() != null) {
+                Optional<LogIntegracaoModel> atual = etlEstadoIntegracaoService.buscarAtivoPorId(logIntegracao.getId());
+                if (atual.isEmpty() || !ehCandidatoCanhotoVedacit(atual.get())) {
+                    return ResultadoRegistro.IGNORADO;
+                }
+                logIntegracao = atual.get();
+                if (decisao != null) {
+                    logIntegracao.setCanhotoChaveCteEfetiva(decisao.chaveCteEfetiva());
+                    logIntegracao.setCanhotoReconciliacaoTipo(decisao.tipo());
+                    logIntegracao.setCanhotoReconciliacaoMotivo(decisao.motivo());
+                }
+            } else if (!ehCandidatoCanhotoVedacit(logIntegracao)) {
+                return ResultadoRegistro.IGNORADO;
+            }
             // Sucesso histórico, mesmo sem data, impede novo envio; não gera aceite datado artificial.
             if (etlEstadoIntegracaoService.canhotoVedacitSucessoRegistradoPorPar(chaveNfe, obterChaveCte(ocorrencia)))
                 return ResultadoRegistro.JA_PROCESSADO;
@@ -379,17 +420,6 @@ public class EtlRegistroService {
                 );
             }
             return etlEstadoIntegracaoService.converterResultadoRegistro(resultado);
-    }
-
-    private EslOcorrenciaDTO comChaveCte(EslOcorrenciaDTO ocorrencia, String chaveCteEfetiva) {
-        EslFreightDTO freight = ocorrencia.freight();
-        EslFreightDTO freightEfetivo = new EslFreightDTO(
-                freight.id(), chaveCteEfetiva, freight.orderNumber(), freight.volumeNumber()
-        );
-        return new EslOcorrenciaDTO(
-                ocorrencia.id(), ocorrencia.orderNumber(), ocorrencia.volumeNumber(), ocorrencia.occurrenceAt(),
-                ocorrencia.createdAt(), ocorrencia.invoice(), freightEfetivo, ocorrencia.occurrence()
-        );
     }
 
     static ClassificacaoOperacionalCanhotoVedacit classificarResultadoCanhotoVedacit(
@@ -952,32 +982,58 @@ public class EtlRegistroService {
                 && !logIntegracao.getChaveCte().isBlank();
     }
 
-    private EslOcorrenciaDTO reconstruirOcorrenciaVedacit(LogIntegracaoModel logIntegracao) {
+    private EslOcorrenciaDTO reconstruirOcorrenciaVedacit(
+            LogIntegracaoModel logIntegracao,
+            String chaveCteEfetiva,
+            VedacitDataEntregaService.Resolucao resolucao
+    ) {
         String chaveNfe = logIntegracao.getChaveNfe();
-        LocalDateTime dataAuditoria = logIntegracao.getDataProcessamentoDados();
-        if (dataAuditoria == null) {
-            dataAuditoria = logIntegracao.getDataProcessamento();
-        }
-        if (dataAuditoria == null) {
-            dataAuditoria = etlEstadoIntegracaoService.agoraAuditoria();
-        }
-        OffsetDateTime dataEntrega = dataAuditoria.atZone(ZoneId.of("America/Sao_Paulo")).toOffsetDateTime();
+        OffsetDateTime dataEntrega = resolucao.dataEntrega();
 
         return new EslOcorrenciaDTO(
-                logIntegracao.getOccurrenceId(),
+                resolucao.idEvento(),
                 logIntegracao.getOrderNumber(),
                 logIntegracao.getVolumeNumber(),
                 dataEntrega,
-                dataEntrega,
+                null,
                 new EslInvoiceDTO(null, chaveNfe, chaveNfe.substring(22, 25), chaveNfe.substring(25, 34)),
                 new EslFreightDTO(
                         logIntegracao.getFreightId(),
-                        logIntegracao.getChaveCte(),
+                        chaveCteEfetiva,
                         logIntegracao.getOrderNumber(),
                         logIntegracao.getVolumeNumber()
                 ),
                 new EslOccurrenceDefDTO(null, CODIGO_ENTREGA_REALIZADA, "Entrega Realizada")
         );
+    }
+
+    private VedacitDataEntregaService.Resolucao resolverDataEntregaVedacit(String chaveNfe, String chaveCteEfetiva) {
+        if (vedacitDataEntregaService == null) {
+            // O bean é obrigatório no runtime Spring. Mantém construtores unitários legados isolados.
+            return VedacitDataEntregaService.Resolucao.incompleta("DATA_ENTREGA_SERVICO_NAO_CONFIGURADO");
+        }
+        return vedacitDataEntregaService.resolver(chaveNfe, chaveCteEfetiva);
+    }
+
+    private ResultadoRegistro manterPendenteSemDataEntrega(
+            LogIntegracaoModel pendencia,
+            VedacitDataEntregaService.Resolucao resolucao
+    ) {
+        String motivo = resolucao.motivo() == null || resolucao.motivo().isBlank()
+                ? "DATA_ENTREGA_NAO_RESOLVIDA"
+                : resolucao.motivo();
+        ResultadoIntegracao pendente = ResultadoIntegracao.parcialCanhotoPendente(STATUS_SUCESSO, motivo);
+        etlEstadoIntegracaoService.aplicarResultadoIntegracao(pendencia, pendente);
+        etlEstadoIntegracaoService.classificarCanhotoVedacit(
+                pendencia, ClassificacaoOperacionalCanhotoVedacit.PENDENTE_ENVIO
+        );
+        etlEstadoIntegracaoService.salvar(pendencia);
+        logDetalheSftpVedacit.info(
+                "⏳ [VEDACIT] NF {}: canhoto retido antes do SOAP; motivo={}",
+                pendencia.getChaveNfe(),
+                motivo
+        );
+        return ResultadoRegistro.PENDENTE_FOTO;
     }
 
     private void manterPendenteSemOcorrencia(LogIntegracaoModel pendencia) {

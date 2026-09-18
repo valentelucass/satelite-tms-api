@@ -49,6 +49,7 @@ import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.text.Normalizer;
 import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.Base64;
 import java.util.List;
@@ -76,6 +77,7 @@ public class VedacitIntegrationService {
     private static final String WSDL_OCORRENCIAS = "/wsdl/vedacit/ocorrencias/Ocorrencias.wsdl";
     private static final String WSDL_NFE = "/wsdl/vedacit/nfe/NFe.wsdl";
     private static final String WSDL_CTE = "/wsdl/vedacit/cte/CTe.wsdl";
+    private static final ZoneId ZONA_VEDACIT = ZoneId.of("America/Sao_Paulo");
 
     @Value("${VEDACIT_API_TOKEN}")
     private String vedacitToken;
@@ -275,7 +277,7 @@ public class VedacitIntegrationService {
         }
 
         DateTimeFormatter formatter = DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm:ss");
-        String dataOcorrencia = ocorrencia.occurrenceAt().format(formatter);
+        String dataOcorrencia = ocorrencia.occurrenceAt().atZoneSameInstant(ZONA_VEDACIT).format(formatter);
         String statusDados = dadosJaEnviados
                 ? ResultadoIntegracao.STATUS_SUCESSO
                 : ResultadoIntegracao.STATUS_NAO_APLICAVEL;
@@ -508,7 +510,9 @@ public class VedacitIntegrationService {
         canhoto.setChaveAcesso(factory.createCanhotoChaveAcesso(chaveNfe));
         canhoto.setChaveAcessoCte(factory.createCanhotoChaveAcessoCte(cteKey));
         canhoto.setDataEntregaNota(factory.createCanhotoDataEntregaNota(dataEntrega));
-        canhoto.setDataEnvioCanhoto(factory.createCanhotoDataEnvioCanhoto(LocalDateTime.now().format(formatter)));
+        canhoto.setDataEnvioCanhoto(factory.createCanhotoDataEnvioCanhoto(
+                LocalDateTime.now(ZONA_VEDACIT).format(formatter)
+        ));
         canhoto.setImagemCanhotoBase64(factory.createCanhotoImagemCanhotoBase64(imagemBase64Bruta));
         canhoto.setNomeImagemCanhoto(factory.createCanhotoNomeImagemCanhoto("canhoto_" + chaveNfe + ".jpg"));
         canhoto.setLatitude(factory.createCanhotoLatitude("0"));

@@ -10,6 +10,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import java.time.LocalDateTime;
@@ -206,27 +207,15 @@ class EtlRepescagemServiceTest {
         when(repository.findErrosParciaisCanhotoPendentesRetry()).thenReturn(List.of(erroParcial));
         when(etlEstadoIntegracaoService.statusSucesso(ResultadoIntegracao.STATUS_SUCESSO)).thenReturn(true);
         when(etlEstadoIntegracaoService.statusSucesso(ResultadoIntegracao.STATUS_ERRO_DESTINO)).thenReturn(false);
-        when(etlRegistroService.reprocessarLogExistente(
-                eq("VEDACIT"),
-                eq("Bearer token-vedacit"),
-                eq(erroParcial),
-                any()
-        )).thenReturn(ResultadoRegistro.ENVIADO);
+        when(etlRegistroService.reprocessarCanhotoVedacitPorCte(eq(erroParcial)))
+                .thenReturn(ResultadoRegistro.ENVIADO);
 
         service.executarRepescagem(inicioCiclo);
 
-        ArgumentCaptor<ProcessadorDestino> processadorCaptor = ArgumentCaptor.forClass(ProcessadorDestino.class);
         verify(repository).findErrosParciaisCanhotoPendentesRetry();
-        verify(etlRegistroService).reprocessarLogExistente(
-                eq("VEDACIT"),
-                eq("Bearer token-vedacit"),
-                eq(erroParcial),
-                processadorCaptor.capture()
-        );
-
-        processadorCaptor.getValue().processar(null, null, erroParcial);
-
-        verify(vedacitIntegrationService).processarOcorrencia(null, null, true, false);
+        verify(etlRegistroService).reprocessarCanhotoVedacitPorCte(erroParcial);
+        verify(etlRegistroService, never()).reprocessarLogExistente(eq("VEDACIT"), any(), any(), any());
+        verifyNoInteractions(vedacitIntegrationService);
     }
 
     @Test

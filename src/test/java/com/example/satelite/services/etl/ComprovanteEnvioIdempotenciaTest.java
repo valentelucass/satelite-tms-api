@@ -18,12 +18,14 @@ import com.example.satelite.services.ResultadoIntegracao;
 import com.example.satelite.services.origem.sftp.vedacit.VedacitSftpDocumentSource;
 import com.example.satelite.services.ppg.PpgIntegrationService;
 import com.example.satelite.services.vedacit.VedacitIntegrationService;
+import com.example.satelite.services.vedacit.VedacitDataEntregaService;
 
 class ComprovanteEnvioIdempotenciaTest {
     private static final String NF="1".repeat(44), CTE="2".repeat(44);
     private final LogIntegracaoRepository repo=mock(LogIntegracaoRepository.class);
     private final EtlEstadoIntegracaoService estado=new EtlEstadoIntegracaoService(repo);
     private final VedacitIntegrationService destino=mock(VedacitIntegrationService.class);
+    private final VedacitDataEntregaService dataEntrega=mock(VedacitDataEntregaService.class);
     private final VedacitSftpDocumentSource fonte=mock(VedacitSftpDocumentSource.class);
     private final SftpDocumentoLockService locks=mock(SftpDocumentoLockService.class);
     private final EtlRegistroService service=new EtlRegistroService(mock(RodogarciaClient.class),
@@ -34,6 +36,9 @@ class ComprovanteEnvioIdempotenciaTest {
 
     @BeforeEach void preparar() {
         ReflectionTestUtils.setField(service,"xmlDocumentoLockService",locks);
+        ReflectionTestUtils.setField(service,"vedacitDataEntregaService",dataEntrega);
+        when(dataEntrega.resolver(NF, CTE)).thenReturn(VedacitDataEntregaService.Resolucao.encontrada(
+                java.time.OffsetDateTime.parse("2026-09-18T11:08:30-03:00"), 10L));
         var mutex=new ReentrantLock();
         when(locks.executarComLock(any(),any(),any(),any())).thenAnswer(i -> {
             mutex.lock(); try { return Optional.ofNullable(i.<Supplier<?>>getArgument(3).get()); }

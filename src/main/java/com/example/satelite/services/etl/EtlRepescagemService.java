@@ -1267,12 +1267,14 @@ public class EtlRepescagemService {
         );
 
         try {
-            ResultadoRegistro resultado = etlRegistroService.reprocessarLogExistente(
-                    destino,
-                    headerAuth(destino),
-                    registro,
-                    processadorDestino(destino)
-            );
+            ResultadoRegistro resultado = DESTINO_VEDACIT.equals(destino)
+                    ? etlRegistroService.reprocessarCanhotoVedacitPorCte(registro)
+                    : etlRegistroService.reprocessarLogExistente(
+                            destino,
+                            headerAuth(destino),
+                            registro,
+                            processadorDestino(destino)
+                    );
             log.warn("🎣 [{}] NF {}: resultado da repescagem={}", destino, registro.getChaveNfe(), resultado);
         } catch (Exception e) {
             log.error(
