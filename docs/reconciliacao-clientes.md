@@ -60,11 +60,13 @@ A primeira bateria identificou mocks ausentes dos repositórios de Integrações
 
 ## Subida pelo operador
 
-O antigo cadastro parado `VEDACIT-RECONCILIACAO-NOTURNA` foi removido, e o PM2 foi salvo. API e worker continuam parados; os demais processos foram preservados. `RECONCILIACAO-CLIENTES` será cadastrado e iniciado ao ler o ecosystem. Na pasta do Satélite, executar:
+O antigo cadastro parado `VEDACIT-RECONCILIACAO-NOTURNA` foi removido, e o PM2 foi salvo na preparação. O procedimento para cadastrar o supervisor e subir os três processos pelo ecosystem, na pasta do Satélite, é:
 
 ```bat
 pm2 start ecosystem.config.js
 pm2 save
 ```
 
-O primeiro comando aplica os três cadastros desse arquivo; o segundo persiste a organização após a subida, conforme a [documentação do PM2](https://pm2.keymetrics.io/docs/usage/application-declaration/). Não usar o nome antigo. Não houve início/reinício de serviços nesta entrega; falta conferir a subida humana e o próximo ciclo natural. A publicação do Dashboard continua sendo uma etapa separada.
+O primeiro comando aplica os três cadastros desse arquivo; o segundo persiste a organização após a subida, conforme a [documentação do PM2](https://pm2.keymetrics.io/docs/usage/application-declaration/). Não usar o nome antigo. A publicação do Dashboard continua sendo uma etapa separada.
+
+Subida humana conferida em 21/09/2026 às 23:40 BRT: API PID 10844, worker PID 61136 e supervisor PID 35284 online, com PIDs e contadores de reinício estáveis durante a observação. API retornou HTTP 200 no ciclo SFTP, indicadores operacionais v3 e consultas de reconciliação PPG/SELIA/SUPPORTE. Ciclo Vedacit iniciado às 23:35:21 ainda em execução, conexão OK e um XML enviado na atualização das 23:38:51. Supervisor concluiu a inicialização às 23:35:19, com os quatro clientes na janela 02:00–06:00 America/Sao_Paulo, zero reinícios e log de erro vazio. A primeira janela consolidada será em 22/09; históricos locais vazios antes dela são esperados. Cadastro antigo ausente. Esta conferência não iniciou/reiniciou processos nem provocou transmissões; resultado final do ciclo e primeira execução noturna permanecem pendentes de observação.
