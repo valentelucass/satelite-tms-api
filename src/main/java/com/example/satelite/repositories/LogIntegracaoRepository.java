@@ -111,6 +111,8 @@ public interface LogIntegracaoRepository extends JpaRepository<LogIntegracaoMode
     @Query("""
             SELECT l FROM LogIntegracaoModel l WHERE l.sistemaDestino = 'VEDACIT'
               AND COALESCE(l.arquivado, false) = false AND l.statusDados IN ('ERRO_DESTINO', 'PENDENTE_ORIGEM')
+              AND (l.dadosProximaAvaliacaoEm IS NULL OR l.dadosProximaAvaliacaoEm <= :agora)
+              AND (l.dadosAcaoOperacional IS NULL OR l.dadosAcaoOperacional NOT IN ('INTERVENCAO','AGUARDANDO_CONFIRMACAO','A_CONFERIR'))
               AND l.chaveCte IS NOT NULL AND l.chaveNfe IS NOT NULL
               AND ((l.dataProcessamentoDados <= :antes
                     AND (l.mensagemErroDados LIKE 'ORIGEM_XML_%'
@@ -123,7 +125,11 @@ public interface LogIntegracaoRepository extends JpaRepository<LogIntegracaoMode
                   AND p.chaveCte = l.chaveCte AND p.statusDados = 'SUCESSO')
             ORDER BY l.dataProcessamentoDados, l.id
             """)
-    List<LogIntegracaoModel> findXmlFalhaOrigemParaRecuperacao(LocalDateTime antes, Pageable pageable);
+    List<LogIntegracaoModel> findXmlFalhaOrigemElegivel(LocalDateTime antes, LocalDateTime agora, Pageable pageable);
+
+    default List<LogIntegracaoModel> findXmlFalhaOrigemParaRecuperacao(LocalDateTime antes, Pageable pageable) {
+        return findXmlFalhaOrigemElegivel(antes, LocalDateTime.now(java.time.ZoneId.of("America/Sao_Paulo")), pageable);
+    }
 
     Optional<LogIntegracaoModel> findTopBySistemaDestinoAndSftpClienteAndCanhotoReferenciaOrderByDataProcessamentoDescIdDesc(
             String sistemaDestino, String sftpCliente, String canhotoReferencia
@@ -230,11 +236,17 @@ public interface LogIntegracaoRepository extends JpaRepository<LogIntegracaoMode
               AND l.statusDados = 'SUCESSO' AND l.statusCanhoto = 'PENDENTE_FOTO'
               AND l.canhotoClassificacaoOperacional = 'PENDENTE_ENVIO'
               AND l.chaveNfe IN :chavesNfe AND l.chaveCte IS NOT NULL AND TRIM(l.chaveCte) <> ''
+            AND (l.canhotoProximaAvaliacaoEm IS NULL OR l.canhotoProximaAvaliacaoEm <= :agora)
             ORDER BY l.dataProcessamento ASC, l.id ASC
             """)
     List<LogIntegracaoModel> findCandidatosSftpPorClienteENfes(
-            @Param("cliente") String cliente, @Param("chavesNfe") List<String> chavesNfe, Pageable pageable
+            @Param("cliente") String cliente, @Param("chavesNfe") List<String> chavesNfe,
+            @Param("agora") LocalDateTime agora, Pageable pageable
     );
+
+    default List<LogIntegracaoModel> findCandidatosSftpPorClienteENfes(String cliente, List<String> chavesNfe, Pageable pageable) {
+        return findCandidatosSftpPorClienteENfes(cliente, chavesNfe, LocalDateTime.now(java.time.ZoneId.of("America/Sao_Paulo")), pageable);
+    }
 
     @Query("""
             SELECT l FROM LogIntegracaoModel l
@@ -242,11 +254,17 @@ public interface LogIntegracaoRepository extends JpaRepository<LogIntegracaoMode
               AND l.statusDados = 'SUCESSO' AND l.statusCanhoto = 'ERRO_DESTINO'
               AND l.canhotoClassificacaoOperacional = 'PENDENTE_TECNICO'
               AND l.chaveNfe IN :chavesNfe AND l.chaveCte IS NOT NULL AND TRIM(l.chaveCte) <> ''
+            AND (l.canhotoProximaAvaliacaoEm IS NULL OR l.canhotoProximaAvaliacaoEm <= :agora)
             ORDER BY l.dataProcessamento ASC, l.id ASC
             """)
     List<LogIntegracaoModel> findTecnicosSftpPorClienteENfes(
-            @Param("cliente") String cliente, @Param("chavesNfe") List<String> chavesNfe, Pageable pageable
+            @Param("cliente") String cliente, @Param("chavesNfe") List<String> chavesNfe,
+            @Param("agora") LocalDateTime agora, Pageable pageable
     );
+
+    default List<LogIntegracaoModel> findTecnicosSftpPorClienteENfes(String cliente, List<String> chavesNfe, Pageable pageable) {
+        return findTecnicosSftpPorClienteENfes(cliente, chavesNfe, LocalDateTime.now(java.time.ZoneId.of("America/Sao_Paulo")), pageable);
+    }
 
     @Query("""
             SELECT COUNT(DISTINCT l.chaveNfe) FROM LogIntegracaoModel l

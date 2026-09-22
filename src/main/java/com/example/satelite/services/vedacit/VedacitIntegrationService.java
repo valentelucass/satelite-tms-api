@@ -130,6 +130,9 @@ public class VedacitIntegrationService {
     private long intervaloXmlMs = 1000;
     private long ultimaTentativaXmlNanos;
 
+    @Autowired
+    private com.example.satelite.services.auditoria.IntegracaoTransmissaoAuditoriaService transmissaoAuditoria;
+
     public VedacitIntegrationService(
             ImageDownloader imageDownloader,
             RodogarciaClient rodogarciaClient,
@@ -539,12 +542,14 @@ public class VedacitIntegrationService {
     }
 
     private void enviarCanhoto(Canhoto canhoto, String chaveNfe, String cteKey) throws Exception {
+        var cicloAuditoria = com.example.satelite.utils.ContextoCicloIntegracao.atual();
         logDetalheSftpVedacit.info("📤 [VEDACIT] NF {}: Enviando digitalização do canhoto...", chaveNfe);
         RetornoOfboolean retorno;
         try {
             retorno = executarSoapComPrazo(
                     () -> {
                         INFe porta = criarPortaNFe();
+                        if (transmissaoAuditoria != null) transmissaoAuditoria.iniciar("COMPROVANTE", chaveNfe, cteKey, cicloAuditoria, false);
                         return porta.enviarDigitalizacaoCanhoto(canhoto);
                     },
                     "digitalização do canhoto"
@@ -590,7 +595,8 @@ public class VedacitIntegrationService {
             return xmlSftp.get();
         }
 
-        if (System.currentTimeMillis() < xmlEslLiberadoEm) throw new IllegalStateException("ORIGEM_XML_AUTENTICACAO_EM_ESPERA");
+        if (System.currentTimeMillis() < xmlEslLiberadoEm || (transmissaoAuditoria != null && transmissaoAuditoria.acessoXmlEmEspera()))
+            throw new IllegalStateException("ORIGEM_XML_AUTENTICACAO_EM_ESPERA");
         try {
             byte[] xml = baixarXmlCteEsl(chaveCte, chaveNfe);
             if (!com.example.satelite.utils.CteXmlValidator.corresponde(xml, chaveCte, chaveNfe))
@@ -688,7 +694,11 @@ public class VedacitIntegrationService {
         log.info("Baixando XML do CT-e na ESL usando a chave: {}", chaveCte);
         CteResponseDTO response = eslRequestPolicyService.executarComTelemetria(
                 EslRequestContext.criar("VEDACIT", "CTE_XML"),
-                () -> rodogarciaClient.buscarXmlCte("Bearer " + token, chaveCte)
+                () -> {
+                    if (transmissaoAuditoria != null) transmissaoAuditoria.iniciar("DADOS", chaveNfe, chaveCte,
+                            com.example.satelite.utils.ContextoCicloIntegracao.atual(), true);
+                    return rodogarciaClient.buscarXmlCte("Bearer " + token, chaveCte);
+                }
         );
         String xmlString = extrairXmlCte(response);
         byte[] xmlCte = xmlString.getBytes(StandardCharsets.UTF_8);
@@ -736,6 +746,7 @@ public class VedacitIntegrationService {
     }
 
     private void enviarXmlCte(byte[] xmlCte, String chaveNfe, String cteKey) throws Exception {
+        var cicloAuditoria = com.example.satelite.utils.ContextoCicloIntegracao.atual();
         ICTe porta = criarPortaCte();
         aguardarIntervaloXml();
 
@@ -743,7 +754,10 @@ public class VedacitIntegrationService {
         RetornoOfstring retorno;
         try {
             retorno = executarSoapComPrazo(
-                    () -> porta.enviarArquivoXMLCTe(xmlCte),
+                    () -> {
+                        if (transmissaoAuditoria != null) transmissaoAuditoria.iniciar("DADOS", chaveNfe, cteKey, cicloAuditoria, false);
+                        return porta.enviarArquivoXMLCTe(xmlCte);
+                    },
                     "XML do CT-e"
             );
         } catch (Exception e) {

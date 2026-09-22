@@ -1,5 +1,7 @@
 # Reconciliação noturna Vedacit
 
+**Atualização em 21/09/2026:** o supervisor exclusivo foi substituído pelo `RECONCILIACAO-CLIENTES`, com preservação do histórico e das regras Vedacit. O JAR novo está instalado, aguardando subida humana. Configuração, clientes e validação em [reconciliacao-clientes.md](reconciliacao-clientes.md). As situações operacionais abaixo são históricas.
+
 Supervisor próprio, residente e sem porta HTTP, para revisar diariamente os documentos Vedacit entre **02:00 e 06:00, America/Sao_Paulo**. O processo é independente do `WORK-SFTP-CLIENTES`, que termina entre ciclos.
 
 **Situação conferida em 12/09 às 21:06:** uma única instância noturna, cadastro PM2 **191 / PID 28340**, no JAR normal **A4392527...**, zero reinícios e cadastro salvo. A duplicata surgida na retomada humana foi removida com autorização explícita; API e worker foram preservados. Histórico de reconciliação ainda vazio antes da primeira janela. O worker encerrou às 21:05 com XML retido por HTTP 401 da origem e aguarda o próximo ciclo às 21:35. Detalhes e orientação para evitar repetição da duplicação em [rastreio-vedacit-2026-09-12.md](rastreio-vedacit-2026-09-12.md).

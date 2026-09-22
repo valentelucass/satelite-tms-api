@@ -26,7 +26,7 @@ public final class SqlSftpReadOnlyProbe {
         require(!clean.matches("(?s).*\\b(insert|update|delete|merge|truncate|drop|alter|create|execute|exec|into)\\b.*"), "WRITE_SQL_BLOCKED");
         int parameters=(int) sql.chars().filter(c -> c=='?').count();
         maxParameters=Math.max(maxParameters, parameters);
-        require(parameters<=502, "SQL_PARAMETER_BOUND_EXCEEDED");
+        require(parameters<=503, "SQL_PARAMETER_BOUND_EXCEEDED");
     }
     static Connection guard(Connection raw) {
         return (Connection) Proxy.newProxyInstance(SqlSftpReadOnlyProbe.class.getClassLoader(), new Class[]{Connection.class}, (proxy, method, args) -> {
@@ -57,7 +57,7 @@ public final class SqlSftpReadOnlyProbe {
     static List<Long> ids(List<LogIntegracaoModel> rows) {return rows.stream().map(LogIntegracaoModel::getId).toList();}
     static String jsonKeys(List<String> keys) throws Exception {return new ObjectMapper().writeValueAsString(keys);}
     static List<Long> baseline(Connection c, List<String> keys, boolean technical) throws Exception {
-        String sql="WITH candidatos AS (SELECT id, data_processamento, chave_nfe, ROW_NUMBER() OVER (PARTITION BY chave_nfe ORDER BY data_processamento,id) AS pos FROM dbo.tb_log_integracao WHERE sistema_destino='VEDACIT' AND sftp_cliente=? AND (arquivado=0 OR arquivado IS NULL) AND status_dados='SUCESSO' AND status_canhoto=? AND canhoto_classificacao_operacional=? AND chave_cte IS NOT NULL AND LTRIM(RTRIM(chave_cte))<>'' AND chave_nfe IN (SELECT value FROM OPENJSON(?))) SELECT TOP (10) id FROM candidatos WHERE pos=1 ORDER BY data_processamento,id";
+        String sql="WITH candidatos AS (SELECT id, data_processamento, chave_nfe, ROW_NUMBER() OVER (PARTITION BY chave_nfe ORDER BY data_processamento,id) AS pos FROM dbo.tb_log_integracao WHERE sistema_destino='VEDACIT' AND sftp_cliente=? AND (arquivado=0 OR arquivado IS NULL) AND status_dados='SUCESSO' AND status_canhoto=? AND canhoto_classificacao_operacional=? AND (canhoto_proxima_avaliacao_em IS NULL OR canhoto_proxima_avaliacao_em<=SYSDATETIME()) AND chave_cte IS NOT NULL AND LTRIM(RTRIM(chave_cte))<>'' AND chave_nfe IN (SELECT value FROM OPENJSON(?))) SELECT TOP (10) id FROM candidatos WHERE pos=1 ORDER BY data_processamento,id";
         try(PreparedStatement p=c.prepareStatement(sql)) {
             p.setQueryTimeout(10);p.setString(1,"VEDACIT");p.setString(2,technical?"ERRO_DESTINO":"PENDENTE_FOTO");p.setString(3,technical?"PENDENTE_TECNICO":"PENDENTE_ENVIO");p.setString(4,jsonKeys(keys));
             try(ResultSet rs=p.executeQuery()){List<Long> out=new ArrayList<>();while(rs.next())out.add(rs.getLong(1));return out;}
@@ -84,19 +84,19 @@ public final class SqlSftpReadOnlyProbe {
         cfg.setStatementInspector((StatementInspector)sql->{checkSql(sql);return sql;});
         try(SessionFactory factory=cfg.buildSessionFactory();Session session=factory.withOptions().connection(c).openSession()) {
             session.setDefaultReadOnly(true);session.setHibernateFlushMode(org.hibernate.FlushMode.MANUAL);
-            String recoveryQuery=query("findXmlFalhaOrigemParaRecuperacao",java.time.LocalDateTime.class,Pageable.class);
+            String recoveryQuery=query("findXmlFalhaOrigemElegivel",java.time.LocalDateTime.class,java.time.LocalDateTime.class,Pageable.class);
             var cutoff=java.time.LocalDateTime.now().minusMinutes(30);
             var recovery=session.createQuery(recoveryQuery,LogIntegracaoModel.class)
-                    .setParameter("antes",cutoff).setMaxResults(10000).setReadOnly(true).setTimeout(10).getResultList();
+                    .setParameter("antes",cutoff).setParameter("agora",java.time.LocalDateTime.now()).setMaxResults(10000).setReadOnly(true).setTimeout(10).getResultList();
             List<Long> inventoryIds=new ArrayList<>();
-            try(PreparedStatement p=c.prepareStatement("SELECT l.id FROM dbo.tb_log_integracao l WHERE l.sistema_destino='VEDACIT' AND l.sftp_cliente='VEDACIT' AND (l.arquivado=0 OR l.arquivado IS NULL) AND l.status_dados='PENDENTE_ORIGEM' AND l.data_processamento_dados IS NULL AND COALESCE(l.tentativas_dados,0)=0 AND NULLIF(LTRIM(RTRIM(l.mensagem_erro_dados)),'') IS NULL AND l.chave_cte IS NOT NULL AND l.chave_nfe IS NOT NULL AND NOT EXISTS (SELECT 1 FROM dbo.tb_log_integracao a WHERE a.sistema_destino='VEDACIT' AND a.chave_cte=l.chave_cte AND a.status_dados='SUCESSO') ORDER BY l.id")) {
+            try(PreparedStatement p=c.prepareStatement("SELECT l.id FROM dbo.tb_log_integracao l WHERE l.sistema_destino='VEDACIT' AND l.sftp_cliente='VEDACIT' AND (l.arquivado=0 OR l.arquivado IS NULL) AND (l.dados_proxima_avaliacao_em IS NULL OR l.dados_proxima_avaliacao_em<=SYSDATETIME()) AND (l.dados_acao_operacional IS NULL OR l.dados_acao_operacional NOT IN ('INTERVENCAO','AGUARDANDO_CONFIRMACAO','A_CONFERIR')) AND l.status_dados='PENDENTE_ORIGEM' AND l.data_processamento_dados IS NULL AND COALESCE(l.tentativas_dados,0)=0 AND NULLIF(LTRIM(RTRIM(l.mensagem_erro_dados)),'') IS NULL AND l.chave_cte IS NOT NULL AND l.chave_nfe IS NOT NULL AND NOT EXISTS (SELECT 1 FROM dbo.tb_log_integracao a WHERE a.sistema_destino='VEDACIT' AND a.chave_cte=l.chave_cte AND a.status_dados='SUCESSO') ORDER BY l.id")) {
                 p.setQueryTimeout(10);try(ResultSet rs=p.executeQuery()){while(rs.next())inventoryIds.add(rs.getLong(1));}
             }
             var selectedInventory=recovery.stream().filter(l->l.getDataProcessamentoDados()==null).map(LogIntegracaoModel::getId).toList();
             require(selectedInventory.equals(inventoryIds),"XML_INVENTORY_RECOVERY_MISMATCH");
             require(recovery.stream().noneMatch(l->Boolean.TRUE.equals(l.getArquivado())||"SUCESSO".equals(l.getStatusDados())),"XML_RECOVERY_SELECTED_PROTECTED_ROW");
             var limited=session.createQuery(recoveryQuery,LogIntegracaoModel.class)
-                    .setParameter("antes",cutoff).setMaxResults(10).setReadOnly(true).setTimeout(10).getResultList();
+                    .setParameter("antes",cutoff).setParameter("agora",java.time.LocalDateTime.now()).setMaxResults(10).setReadOnly(true).setTimeout(10).getResultList();
             require(ids(limited).equals(ids(recovery).stream().limit(10).toList()),"XML_RECOVERY_LIMIT_OR_ORDER_MISMATCH");
             result.put("xml_inventory_never_attempted",inventoryIds.size());
             result.put("xml_recovery_candidates",recovery.size());
@@ -127,11 +127,11 @@ public final class SqlSftpReadOnlyProbe {
             Method select=EtlRepescagemService.class.getDeclaredMethod("buscarRegistrosSftpEmLotes",List.class,int.class,Function.class);select.setAccessible(true);
             Method count=EtlRepescagemService.class.getDeclaredMethod("contarNfesSftpEmLotes",List.class,ToLongFunction.class);count.setAccessible(true);
             for(boolean technical:List.of(false,true)) {
-                String jpql=query(technical?"findTecnicosSftpPorClienteENfes":"findCandidatosSftpPorClienteENfes",String.class,List.class,Pageable.class);
+                String jpql=query(technical?"findTecnicosSftpPorClienteENfes":"findCandidatosSftpPorClienteENfes",String.class,List.class,java.time.LocalDateTime.class,Pageable.class);
                 int[] chunks={0};
                 Function<List<String>,List<LogIntegracaoModel>> fetch=chunk->{
                     require(chunk.size()<=500,"CHUNK_TOO_LARGE");chunks[0]++;
-                    return session.createQuery(jpql,LogIntegracaoModel.class).setParameter("cliente","VEDACIT").setParameterList("chavesNfe",chunk).setMaxResults(10).setReadOnly(true).setTimeout(10).getResultList();
+                    return session.createQuery(jpql,LogIntegracaoModel.class).setParameter("cliente","VEDACIT").setParameterList("chavesNfe",chunk).setParameter("agora",java.time.LocalDateTime.now()).setMaxResults(10).setReadOnly(true).setTimeout(10).getResultList();
                 };
                 List<LogIntegracaoModel> selected=(List<LogIntegracaoModel>)select.invoke(service,keys,10,fetch);
                 List<Long> expected=baseline(c,keys,technical);

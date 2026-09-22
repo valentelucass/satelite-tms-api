@@ -140,6 +140,7 @@ public class EtlRepescagemService {
         final Set<String> tentadas = new HashSet<>();
         int errosConsecutivos;
         boolean suspensa;
+        boolean falhaInfraestrutura;
         boolean mais;
         boolean limitada;
         int indiceInventario;
@@ -147,6 +148,7 @@ public class EtlRepescagemService {
         String motivoFalha;
         int totalAvaliados, totalEnviados, totalPendentes, totalErros;
         void contabilizar(ResultadoRegistro resultado) {
+            falhaInfraestrutura |= resultado.falhaInfraestrutura();
             if (resultado == ResultadoRegistro.ENVIADO) totalEnviados++;
             else if (resultado == ResultadoRegistro.PENDENTE_FOTO) totalPendentes++;
             else if (resultado.erro()) totalErros++;

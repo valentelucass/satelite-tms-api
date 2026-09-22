@@ -102,6 +102,22 @@ class EtlRegistroDataEntregaVedacitTest {
         when(portaSoap.enviarDigitalizacaoCanhoto(any(Canhoto.class))).thenReturn(aceite);
     }
 
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(strings = {"INTERVENCAO", "AGUARDANDO_CONFIRMACAO", "A_CONFERIR"})
+    void acaoPersistidaBloqueiaReenvioSobLock(String acao) {
+        registro.setCanhotoAcaoPainel(acao);
+        assertEquals(ResultadoRegistro.RETIDO, service.reprocessarCanhotoVedacitPorCte(registro, sftp));
+        verify(dataEntrega, never()).resolver(any(), any());
+        verify(portaSoap, never()).enviarDigitalizacaoCanhoto(any());
+    }
+
+    @Test void cooldownPersistidoNaoConsomeConsultaOuTentativaDeEnvio() {
+        registro.setCanhotoProximaAvaliacaoEm(LocalDateTime.of(2026, 9, 18, 13, 25));
+        assertEquals(ResultadoRegistro.PENDENTE_FOTO, service.reprocessarCanhotoVedacitPorCte(registro, sftp));
+        verify(dataEntrega, never()).resolver(any(), any());
+        verify(portaSoap, never()).enviarDigitalizacaoCanhoto(any());
+    }
+
     @Test
     void enviaAoProxySoapAEntregaRealESeparaDataDeEnvioDaRegressaoConhecida() {
         when(dataEntrega.resolver(NFE, CTE)).thenReturn(

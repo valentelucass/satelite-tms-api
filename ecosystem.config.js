@@ -7,14 +7,14 @@ module.exports = {
     {
       name: "Satelite-API-19090", cwd: __dirname, script: JAVA_17_EXECUTABLE, interpreter: "none",
       exec_mode: "fork", instances: 1, autorestart: true, windowsHide: true,
-      args: ["-Dfile.encoding=UTF-8", "-jar", SATELITE_JAR, "--debug=false", "--APP_DASHBOARD_API_ONLY=true", "--APP_SCHEDULER_ENABLED=false", "--APP_CICLO_UNICO=false", "--APP_NIGHTLY_RETRY_ENABLED=false", "--APP_ETL_REPESCAGEM_ENABLED=false", "--server.port=19090"],
+      args: ["-Dfile.encoding=UTF-8", "-jar", SATELITE_JAR, "--debug=false", "--APP_RECONCILIACAO_ENABLED=false", "--VEDACIT_RECONCILIACAO_ENABLED=false", "--APP_DASHBOARD_API_ONLY=true", "--APP_SCHEDULER_ENABLED=false", "--APP_CICLO_UNICO=false", "--APP_NIGHTLY_RETRY_ENABLED=false", "--APP_ETL_REPESCAGEM_ENABLED=false", "--server.port=19090"],
       env: { LANG: "pt_BR.UTF-8", LC_ALL: "pt_BR.UTF-8" }
     },
     {
       name: "WORK-SFTP-CLIENTES", cwd: __dirname, script: JAVA_17_EXECUTABLE, interpreter: "none",
       exec_mode: "fork", instances: 1, autorestart: true, restart_delay: 30 * 60 * 1000, windowsHide: true,
       out_file: "logs\\work-sftp-clientes-out.log", error_file: "logs\\work-sftp-clientes-error.log", log_date_format: "YYYY-MM-DD HH:mm:ss.SSS",
-      args: ["-Dfile.encoding=UTF-8", "-jar", SATELITE_JAR, "--debug=false", "--spring.main.web-application-type=none", "--server.port=0", "--work.sftp-clientes.enabled=true", "--APP_SCHEDULER_ENABLED=false", "--APP_CICLO_UNICO=false", "--APP_NIGHTLY_RETRY_ENABLED=false", "--APP_ETL_REPESCAGEM_ENABLED=false", "--APP_PPG_ENABLED=false", "--APP_SELIA_ENABLED=false", "--APP_SUPPORTE_ENABLED=false", "--APP_VEDACIT_ENABLED=true", "--VEDACIT_SFTP_RECEIPT_ONLY=true"],
+      args: ["-Dfile.encoding=UTF-8", "-jar", SATELITE_JAR, "--debug=false", "--APP_RECONCILIACAO_ENABLED=false", "--VEDACIT_RECONCILIACAO_ENABLED=false", "--spring.main.web-application-type=none", "--server.port=0", "--work.sftp-clientes.enabled=true", "--APP_SCHEDULER_ENABLED=false", "--APP_CICLO_UNICO=false", "--APP_NIGHTLY_RETRY_ENABLED=false", "--APP_ETL_REPESCAGEM_ENABLED=false", "--APP_PPG_ENABLED=false", "--APP_SELIA_ENABLED=false", "--APP_SUPPORTE_ENABLED=false", "--APP_VEDACIT_ENABLED=true", "--VEDACIT_SFTP_RECEIPT_ONLY=true"],
       env: { LANG: "pt_BR.UTF-8", LC_ALL: "pt_BR.UTF-8",
         WORK_SFTP_CLIENTES_XML_ENABLED: "true", SFTP_RODOGARCIA_ENABLED: "true",
         VEDACIT_SEND_CTE_XML_ENABLED: "true", WORK_SFTP_CLIENTES_DRAIN_ENABLED: "true",
@@ -25,14 +25,16 @@ module.exports = {
       }
     },
     {
-      // Residente: revisa de madrugada mesmo enquanto o worker normal espera entre ciclos.
-      name: "VEDACIT-RECONCILIACAO-NOTURNA", cwd: __dirname, script: JAVA_17_EXECUTABLE, interpreter: "none",
+      // Um supervisor residente para todos os clientes; agendas e regras isoladas por adaptador.
+      name: "RECONCILIACAO-CLIENTES", cwd: __dirname, script: JAVA_17_EXECUTABLE, interpreter: "none",
       exec_mode: "fork", instances: 1, autorestart: true, restart_delay: 60000, windowsHide: true,
-      out_file: "logs/reconciliacao-vedacit-out.log", error_file: "logs/reconciliacao-vedacit-error.log",
+      out_file: "logs/reconciliacao-clientes-out.log", error_file: "logs/reconciliacao-clientes-error.log",
       log_date_format: "YYYY-MM-DD HH:mm:ss.SSS",
       args: ["-Dfile.encoding=UTF-8", "-jar", SATELITE_JAR,
         "--spring.main.web-application-type=none", "--server.port=0",
-        "--VEDACIT_RECONCILIACAO_ENABLED=true", "--VEDACIT_RECONCILIACAO_START=02:00", "--VEDACIT_RECONCILIACAO_END=06:00",
+        "--APP_RECONCILIACAO_ENABLED=true", "--VEDACIT_RECONCILIACAO_ENABLED=false",
+        "--RECONCILIACAO_CLIENTES=VEDACIT,PPG,SELIA,SUPPORTE",
+        "--VEDACIT_RECONCILIACAO_START=02:00", "--VEDACIT_RECONCILIACAO_END=06:00",
         "--APP_TIME_ZONE=America/Sao_Paulo", "--APP_DASHBOARD_API_ONLY=false", "--APP_SCHEDULER_ENABLED=false",
         "--APP_CICLO_UNICO=false", "--ciclo_unico=false", "--APP_NIGHTLY_RETRY_ENABLED=false", "--APP_ETL_REPESCAGEM_ENABLED=false",
         "--retroactive.enabled=false", "--RETROACTIVE_ENABLED=false", "--spring.jpa.hibernate.ddl-auto=validate",

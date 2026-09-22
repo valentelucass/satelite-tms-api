@@ -44,10 +44,10 @@ class LogIntegracaoRepositoryTest {
     @Test
     void filaSftpDeveSelecionarSomentePendenciaAtivaEClassificada() throws NoSuchMethodException {
         Method normal = LogIntegracaoRepository.class.getMethod(
-                "findCandidatosSftpPorClienteENfes", String.class, List.class, Pageable.class
+                "findCandidatosSftpPorClienteENfes", String.class, List.class, java.time.LocalDateTime.class, Pageable.class
         );
         Method tecnico = LogIntegracaoRepository.class.getMethod(
-                "findTecnicosSftpPorClienteENfes", String.class, List.class, Pageable.class
+                "findTecnicosSftpPorClienteENfes", String.class, List.class, java.time.LocalDateTime.class, Pageable.class
         );
         Method saldo = LogIntegracaoRepository.class.getMethod(
                 "countNfesCandidatasSftpPorClienteENfes", String.class, List.class
@@ -57,6 +57,8 @@ class LogIntegracaoRepositoryTest {
         assertTrue(normal.getAnnotation(Query.class).value().contains("canhotoClassificacaoOperacional = 'PENDENTE_ENVIO'"));
         assertTrue(normal.getAnnotation(Query.class).value().contains("l.statusCanhoto = 'PENDENTE_FOTO'"));
         assertTrue(tecnico.getAnnotation(Query.class).value().contains("canhotoClassificacaoOperacional = 'PENDENTE_TECNICO'"));
+        assertTrue(normal.getAnnotation(Query.class).value().contains("canhotoProximaAvaliacaoEm <= :agora"));
+        assertTrue(tecnico.getAnnotation(Query.class).value().contains("canhotoProximaAvaliacaoEm <= :agora"));
         assertTrue(saldo.getAnnotation(Query.class).value().contains("COUNT(DISTINCT l.chaveNfe)"));
     }
 }

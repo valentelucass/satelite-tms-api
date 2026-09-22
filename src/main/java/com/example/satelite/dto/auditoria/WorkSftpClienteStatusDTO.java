@@ -22,8 +22,20 @@ public record WorkSftpClienteStatusDTO(
         long duracaoMs,
         LocalDateTime proximaExecucaoEstimada,
         Boolean xmlHabilitado, Integer xmlAvaliados, Integer xmlEnviados, Integer xmlJaProcessados, Integer xmlPendentes, Integer xmlErros, Integer errosComprovante, String motivoFalha,
-        LocalDateTime atualizadoEm
+        LocalDateTime atualizadoEm,
+        String resultadoExecucao
 ) {
+    public WorkSftpClienteStatusDTO(String cliente, LocalDateTime inicioUltimoCiclo, LocalDateTime fimUltimoCiclo,
+            String conexao, String statusCiclo, int arquivosValidos, int arquivosRejeitados, int selecionados,
+            int enviados, int pendentes, long saldo, long bloqueios, long timeoutsAmbiguos, long duracaoMs,
+            LocalDateTime proximaExecucaoEstimada, Boolean xmlHabilitado, Integer xmlAvaliados, Integer xmlEnviados,
+            Integer xmlJaProcessados, Integer xmlPendentes, Integer xmlErros, Integer errosComprovante, String motivoFalha,
+            LocalDateTime atualizadoEm) {
+        this(cliente, inicioUltimoCiclo, fimUltimoCiclo, conexao, statusCiclo, arquivosValidos, arquivosRejeitados,
+                selecionados, enviados, pendentes, saldo, bloqueios, timeoutsAmbiguos, duracaoMs,
+                proximaExecucaoEstimada, xmlHabilitado, xmlAvaliados, xmlEnviados, xmlJaProcessados,
+                xmlPendentes, xmlErros, errosComprovante, motivoFalha, atualizadoEm, null);
+    }
     public WorkSftpClienteStatusDTO(String cliente, LocalDateTime inicioUltimoCiclo, LocalDateTime fimUltimoCiclo,
             String conexao, String statusCiclo, int arquivosValidos, int arquivosRejeitados, int selecionados,
             int enviados, int pendentes, long saldo, long bloqueios, long timeoutsAmbiguos, long duracaoMs,

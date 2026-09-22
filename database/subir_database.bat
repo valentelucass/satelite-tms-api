@@ -46,6 +46,7 @@ set "RODIZIO_ONLY="
 set "CONFIRMACOES_ONLY="
 set "SANEAMENTO_VEDACIT_ONLY="
 set "RECONCILIACAO_ONLY="
+set "EVENTOS_ETAPAS_ONLY="
 if /I "%~1"=="--rodizio" (
     set "RODIZIO_ONLY=1"
 ) else if /I "%~1"=="--confirmacoes" (
@@ -54,8 +55,10 @@ if /I "%~1"=="--rodizio" (
     set "SANEAMENTO_VEDACIT_ONLY=1"
 ) else if /I "%~1"=="--reconciliacao" (
     set "RECONCILIACAO_ONLY=1"
+) else if /I "%~1"=="--eventos-etapas" (
+    set "EVENTOS_ETAPAS_ONLY=1"
 ) else if not "%~1"=="" (
-    echo [ERRO] Opcao invalida. Use sem argumentos, --rodizio, --confirmacoes, --saneamento-vedacit ou --reconciliacao.
+    echo [ERRO] Opcao invalida. Use sem argumentos, --rodizio, --confirmacoes, --saneamento-vedacit, --reconciliacao ou --eventos-etapas.
     exit /b 1
 )
 
@@ -93,6 +96,7 @@ if defined RODIZIO_ONLY goto :rodizio_only
 if defined CONFIRMACOES_ONLY goto :confirmacoes_only
 if defined SANEAMENTO_VEDACIT_ONLY goto :saneamento_vedacit_only
 if defined RECONCILIACAO_ONLY goto :reconciliacao_only
+if defined EVENTOS_ETAPAS_ONLY goto :eventos_etapas_only
 
 call :run_sql "%SCRIPT_ROOT%\schema\00_create_database.sql"
 if errorlevel 1 exit /b 1
@@ -112,6 +116,12 @@ if errorlevel 1 exit /b 1
 echo.
 echo [OK] Database %DB_NAME% pronta para o Satelite TMS.
 echo.
+exit /b 0
+
+:eventos_etapas_only
+call :run_sql "%SCRIPT_ROOT%\migration\V28__eventos_etapas_integracao.sql"
+if errorlevel 1 exit /b 1
+echo [OK] Auditoria de eventos e agenda documental atualizadas.
 exit /b 0
 
 :rodizio_only
@@ -186,5 +196,7 @@ exit /b 0
 rem Somente estrutura aditiva da revisao noturna. Nao repete saneamentos ou arquivamentos.
 call :run_sql "%SCRIPT_ROOT%\migration\V27__reconciliacao_noturna_vedacit.sql"
 if errorlevel 1 exit /b 1
-echo [OK] Auditoria da reconciliacao noturna provisionada.
+call :run_sql "%SCRIPT_ROOT%\migration\V29__reconciliacao_clientes.sql"
+if errorlevel 1 exit /b 1
+echo [OK] Auditoria da reconciliacao de clientes provisionada.
 exit /b 0

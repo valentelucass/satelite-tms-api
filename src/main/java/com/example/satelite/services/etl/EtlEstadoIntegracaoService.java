@@ -7,6 +7,11 @@ import java.util.Set;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.transaction.annotation.Transactional;
+import com.example.satelite.policy.AcaoEtapaIntegracao;
+import com.example.satelite.repositories.IntegracaoEventoRepository;
+import com.example.satelite.utils.ContextoCicloIntegracao;
 
 import com.example.satelite.dto.rodogarcia.EslOcorrenciaDTO;
 import com.example.satelite.models.LogIntegracaoModel;
@@ -30,6 +35,13 @@ public class EtlEstadoIntegracaoService {
     private final QuarentenaEventoRepository quarentenaEventoRepository;
 
     @Autowired
+    private IntegracaoEventoRepository eventosRepository;
+    @Value("${VEDACIT_XML_SOURCE_RETRY_COOLDOWN_MS:1800000}")
+    private long intervaloXmlMs = 1800000;
+    @Value("${INTEGRATION_DOCUMENT_RETRY_COOLDOWN_MS:1800000}")
+    private long intervaloDocumentoMs = 1800000;
+
+    @Autowired
     public EtlEstadoIntegracaoService(
             LogIntegracaoRepository logIntegracaoRepository,
             AuditoriaDataHoraService auditoriaDataHoraService,
@@ -51,10 +63,63 @@ public class EtlEstadoIntegracaoService {
         this(logIntegracaoRepository, auditoriaDataHoraService, null);
     }
 
+    @Transactional
     public LogIntegracaoModel salvar(LogIntegracaoModel logIntegracao) {
+        prepararAcao(logIntegracao, true);
+        prepararAcao(logIntegracao, false);
         LogIntegracaoModel salvo = logIntegracaoRepository.save(logIntegracao);
         registrarEventosQuarentena(salvo);
+        // Construtores legados sem Spring são usados pela suíte unitária isolada.
+        // Em produção a dependência é obrigatória e a gravação participa desta transação.
+        if (eventosRepository != null) {
+            registrarAvaliacao(logIntegracao, salvo.getId(), true);
+            registrarAvaliacao(logIntegracao, salvo.getId(), false);
+        }
         return salvo;
+    }
+
+    private void prepararAcao(LogIntegracaoModel log, boolean dados) {
+        LocalDateTime quando = dados ? log.getAvaliacaoDadosEm() : log.getAvaliacaoCanhotoEm();
+        if (quando == null) return;
+        var acao = AcaoEtapaIntegracao.classificar(dados ? log.getStatusDados() : log.getStatusCanhoto(),
+                dados ? null : log.getCanhotoClassificacaoOperacional(),
+                dados ? log.getMensagemErroDados() : log.getMensagemErroCanhoto());
+        boolean pendente = acao != AcaoEtapaIntegracao.CONFIRMADO && acao != AcaoEtapaIntegracao.IGNORADO;
+        var proxima = acao.permiteReavaliacaoAutomatica()
+                ? quando.plusNanos(Math.max(1000, Math.min(86_400_000, dados ? intervaloXmlMs : intervaloDocumentoMs)) * 1_000_000L) : null;
+        if (dados) {
+            log.setDadosAcaoOperacional(acao.name()); log.setDadosProximaAvaliacaoEm(proxima);
+            log.setDadosPendenteDesde(!pendente ? null : log.getDadosPendenteDesde() == null ? quando : log.getDadosPendenteDesde());
+        } else {
+            log.setCanhotoAcaoPainel(acao.name()); log.setCanhotoProximaAvaliacaoEm(proxima);
+            log.setCanhotoPendenteDesde(!pendente ? null : log.getCanhotoPendenteDesde() == null ? quando : log.getCanhotoPendenteDesde());
+        }
+    }
+
+    private void registrarAvaliacao(LogIntegracaoModel log, Long id, boolean dados) {
+        var eventoId = dados ? log.getAvaliacaoDadosId() : log.getAvaliacaoCanhotoId();
+        if (eventoId == null) return;
+        String etapa = dados ? "DADOS" : "COMPROVANTE";
+        String cte = !dados && log.getCanhotoChaveCteEfetiva() != null && !log.getCanhotoChaveCteEfetiva().isBlank()
+                ? log.getCanhotoChaveCteEfetiva() : log.getChaveCte();
+        var acao = AcaoEtapaIntegracao.valueOf(dados ? log.getDadosAcaoOperacional() : log.getCanhotoAcaoPainel());
+        eventosRepository.registrar(new IntegracaoEventoRepository.Evento(eventoId, log.getAvaliacaoCicloId(), id,
+                log.getSistemaDestino(), etapa,
+                IntegracaoEventoRepository.documento(log.getSistemaDestino(), etapa, log.getChaveNfe(), cte, log.getOccurrenceId(), id),
+                "AVALIACAO", acao.name(), AcaoEtapaIntegracao.motivo(dados ? log.getMensagemErroDados() : log.getMensagemErroCanhoto(), acao),
+                dados ? log.getAvaliacaoDadosEm() : log.getAvaliacaoCanhotoEm(),
+                dados ? log.getDadosProximaAvaliacaoEm() : log.getCanhotoProximaAvaliacaoEm()));
+    }
+
+    /** Revisita sem chamada externa: registra a decisão, sem mover a data do erro ou a agenda. */
+    public void registrarReavaliacaoXmlSemEnvio(LogIntegracaoModel log) {
+        if (eventosRepository == null || log == null || log.getId() == null) return;
+        var acao = AcaoEtapaIntegracao.classificar(log.getStatusDados(), null, log.getMensagemErroDados());
+        eventosRepository.registrar(new IntegracaoEventoRepository.Evento(java.util.UUID.randomUUID(),
+                ContextoCicloIntegracao.atual(), log.getId(), log.getSistemaDestino(), "DADOS",
+                IntegracaoEventoRepository.documento(log.getSistemaDestino(), "DADOS", log.getChaveNfe(), log.getChaveCte(), log.getOccurrenceId(), log.getId()),
+                "AVALIACAO", acao.name(), AcaoEtapaIntegracao.motivo(log.getMensagemErroDados(), acao),
+                agoraAuditoria(), log.getDadosProximaAvaliacaoEm()));
     }
 
     public List<LogIntegracaoModel> buscarPendenciasCanhoto(String destino, String statusCanhoto) {
@@ -174,6 +239,19 @@ public class EtlEstadoIntegracaoService {
 
         logIntegracao.setEstavaEmQuarentena(estavaEmQuarentena);
         logIntegracao.setResultadoDaRepescagem(estavaEmQuarentena ? resultado.status() : null);
+        logIntegracao.setAvaliacaoCicloId(ContextoCicloIntegracao.atual());
+        logIntegracao.setAvaliacaoDadosId(null);
+        logIntegracao.setAvaliacaoDadosEm(null);
+        logIntegracao.setAvaliacaoCanhotoId(null);
+        logIntegracao.setAvaliacaoCanhotoEm(null);
+        if (resultado.statusDados() != null && !(STATUS_SUCESSO.equals(statusDadosAnterior) && STATUS_SUCESSO.equals(statusDadosNovo))) {
+            logIntegracao.setAvaliacaoDadosId(java.util.UUID.randomUUID());
+            logIntegracao.setAvaliacaoDadosEm(agora);
+        }
+        if (!preservarComprovante && resultado.statusCanhoto() != null) {
+            logIntegracao.setAvaliacaoCanhotoId(java.util.UUID.randomUUID());
+            logIntegracao.setAvaliacaoCanhotoEm(agora);
+        }
     }
 
     public ResultadoRegistro converterResultadoRegistro(ResultadoIntegracao resultado) {
@@ -225,6 +303,7 @@ public class EtlEstadoIntegracaoService {
     }
 
     /** Antes do efeito remoto: uma queda do processo exige conferência, nunca reenvio cego. */
+    @Transactional
     public void registrarInicioEnvioCanhoto(LogIntegracaoModel registro) {
         registro.setStatusCanhoto("EM_PROCESSAMENTO");
         registro.setMensagemErroCanhoto("ENVIO_INICIADO_SEM_RESULTADO: conferir destino se o processo for interrompido.");
@@ -234,6 +313,7 @@ public class EtlEstadoIntegracaoService {
     }
 
     /** Propaga somente o resultado do mesmo canhoto; não altera chave CT-e histórica. */
+    @Transactional
     public void marcarCanhotosVedacitRelacionadosComoSucesso(
             String chaveNfe, String chaveCteEfetiva, String tipo, String motivo
     ) {

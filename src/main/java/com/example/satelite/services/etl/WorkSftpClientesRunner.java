@@ -73,7 +73,10 @@ public class WorkSftpClientesRunner implements CommandLineRunner, ExitCodeGenera
                 });
                 turno.observarProgresso(parcial -> ciclos.stream().filter(c -> c.xmlHabilitado)
                         .forEach(c -> c.xml = ResultadoDestino.vazio("VEDACIT").comRegistros(parcial)));
-                try { xml = orquestrador.executarXmlVedacit(turno); }
+                try (var escopo = com.example.satelite.utils.ContextoCicloIntegracao.abrir(
+                        ciclos.stream().filter(c -> c.xmlHabilitado).findFirst().orElseThrow().execucaoId)) {
+                    xml = orquestrador.executarXmlVedacit(turno);
+                }
                 catch (Exception e) {
                     xml = ciclos.stream().filter(c -> c.xmlHabilitado).findFirst().map(c -> c.xml)
                             .orElse(xml).comErroCritico("XML: " + resumir(e));
@@ -90,6 +93,7 @@ public class WorkSftpClientesRunner implements CommandLineRunner, ExitCodeGenera
             for (CicloCliente ciclo : ciclos) {
                 ciclo.xmlHabilitado = "VEDACIT".equals(ciclo.perfil.identificador()) && xmlHabilitado;
                 if (ciclo.xmlHabilitado) ciclo.xml = xml;
+                ciclo.falhaTecnica |= (ciclo.xmlHabilitado && xml.erroCritico()) || ciclo.passagem.falhaInfraestrutura;
                 if ("VEDACIT".equals(ciclo.perfil.identificador()) && (xml.erroCritico() || xml.erros() > 0)) {
                     ciclo.falhou = true;
                     if (ciclo.motivo == null) ciclo.motivo = xml.motivoFalhaXml();
@@ -112,7 +116,7 @@ public class WorkSftpClientesRunner implements CommandLineRunner, ExitCodeGenera
         final Instant inicio = Instant.now();
         final LocalDateTime inicioAuditoria = LocalDateTime.now();
         com.example.satelite.services.origem.sftp.vedacit.VedacitSftpInventory inventario;
-        boolean conectado, conexaoTentada, falhou;
+        boolean conectado, conexaoTentada, falhou, falhaTecnica;
         int selecionados, enviados, pendentes, errosComprovante;
         boolean xmlHabilitado;
         ResultadoDestino xml = ResultadoDestino.vazio("VEDACIT");
@@ -123,9 +127,10 @@ public class WorkSftpClientesRunner implements CommandLineRunner, ExitCodeGenera
         }
         void processar(int limite, long duracao, long pausa) {
             if (falhou || passagem.suspensa || Thread.currentThread().isInterrupted()) return;
-            try {
+            try (var escopo = com.example.satelite.utils.ContextoCicloIntegracao.abrir(execucaoId)) {
                 if (!"VEDACIT".equals(perfil.identificador())) {
                     falhou = true;
+                    falhaTecnica = true;
                     motivo = "ADAPTADOR_AUSENTE: Cliente sem adaptador de destino neste worker";
                     return;
                 }
@@ -153,6 +158,7 @@ public class WorkSftpClientesRunner implements CommandLineRunner, ExitCodeGenera
                         resultado.processamento().pendentes(), resultado.processamento().erros(), saldo);
             } catch (Exception e) {
                 falhou = true;
+                falhaTecnica = true;
                 selecionados = Math.max(selecionados, passagem.totalAvaliados);
                 enviados = Math.max(enviados, passagem.totalEnviados);
                 pendentes = Math.max(pendentes, passagem.totalPendentes);
@@ -175,7 +181,11 @@ public class WorkSftpClientesRunner implements CommandLineRunner, ExitCodeGenera
                     finalizado ? falhou ? "FALHA" : "CONCLUIDO" : "EM_EXECUCAO", inventario == null ? 0 : inventario.documentosValidos().size(),
                     inventario == null ? 0 : inventario.rejeitados().size(), selecionados, enviados, pendentes,
                     saldo, bloqueios, timeouts, Duration.between(inicio, Instant.now()).toMillis(),
-                    xmlHabilitado, xml, errosComprovante, motivo);
+                    xmlHabilitado, xml, errosComprovante, motivo,
+                    !finalizado ? "EM_EXECUCAO" : Thread.currentThread().isInterrupted() ? "INTERROMPIDO"
+                    : falhaTecnica ? "FALHA_TECNICA"
+                    : xml.erros() > 0 || xml.pendentesOrigem() > 0 || errosComprovante > 0 || pendentes > 0
+                        ? "COM_PENDENCIAS" : "CONCLUIDO");
         }
     }
     @Override public int getExitCode() { return exitCode; }
@@ -191,12 +201,12 @@ public class WorkSftpClientesRunner implements CommandLineRunner, ExitCodeGenera
     private String resumir(Exception e) { return com.example.satelite.utils.FalhaIntegracaoSanitizada.resumir(e); }
     private boolean registrarCiclo(java.util.UUID execucaoId, boolean finalizado, String cliente, LocalDateTime inicio, String conexao, String status, int validos, int rejeitados,
             int selecionados, int enviados, int pendentes, long saldo, long bloqueios, long timeouts, long duracao,
-            boolean xmlHabilitado, ResultadoDestino xml, int errosComprovante, String motivo) {
+            boolean xmlHabilitado, ResultadoDestino xml, int errosComprovante, String motivo, String resultadoExecucao) {
         try {
             auditoria.registrarProgresso(execucaoId, new WorkSftpClientesAuditoriaRepository.Ciclo(cliente, inicio, finalizado ? LocalDateTime.now() : null, conexao, status,
                     validos, rejeitados, selecionados, enviados, pendentes, saldo, bloqueios, timeouts, duracao,
                     xmlHabilitado, xml.recebidos(), xml.enviados(), xml.jaProcessados(), xml.pendentesOrigem(), xml.erros(),
-                    errosComprovante, motivo == null && Thread.currentThread().isInterrupted() ? "INTERROMPIDO: Ciclo interrompido" : motivo));
+                    errosComprovante, motivo == null && Thread.currentThread().isInterrupted() ? "INTERROMPIDO: Ciclo interrompido" : motivo, resultadoExecucao));
             return true;
         } catch (Exception e) {
             log.error("[WORK-SFTP-CLIENTES] cliente={} falha ao registrar auditoria do ciclo: {}", cliente, resumir(e));

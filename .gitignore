@@ -127,7 +127,9 @@ scripts/*
 scripts/validacao/*
 !scripts/validacao/SqlSftpReadOnlyProbe.java
 !scripts/validacao/SqlIndicadoresEtapasReadOnlyProbe.java
+!scripts/validacao/SqlIndicadoresOperacionaisReadOnlyProbe.java
 !scripts/validacao/ReconciliacaoVedacitSqlProbe.java
+!scripts/validacao/ReconciliacaoClientesSqlProbe.java
 !scripts/validacao/logback-reconciliacao.xml
 !scripts/probes/
 scripts/probes/*

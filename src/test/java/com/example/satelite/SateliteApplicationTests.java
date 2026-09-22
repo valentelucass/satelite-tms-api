@@ -91,6 +91,15 @@ class SateliteApplicationTests {
 	private com.example.satelite.repositories.ReconciliacaoVedacitRepository reconciliacaoVedacitRepository;
 
 	@MockitoBean
+	private com.example.satelite.repositories.ReconciliacaoLocalRepository reconciliacaoLocalRepository;
+
+	@MockitoBean
+	private com.example.satelite.repositories.IntegracaoOperacionalRepository integracaoOperacionalRepository;
+
+	@MockitoBean
+	private com.example.satelite.repositories.IntegracaoEventoRepository integracaoEventoRepository;
+
+	@MockitoBean
 	private JdbcTemplate jdbcTemplate;
 
 	@Test

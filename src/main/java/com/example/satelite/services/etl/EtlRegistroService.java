@@ -300,9 +300,12 @@ public class EtlRegistroService {
 
     private ResultadoRegistro reprocessarCanhotoVedacitComExclusao(
             LogIntegracaoModel logIntegracao, VedacitSftpDocumentSource fonteSftp) {
-        if (!ehCandidatoCanhotoVedacit(logIntegracao)) {
-            return ResultadoRegistro.IGNORADO;
-        }
+        if (!ehCandidatoCanhotoVedacit(logIntegracao)) return ResultadoRegistro.IGNORADO;
+        if (logIntegracao != null && java.util.Set.of("INTERVENCAO","AGUARDANDO_CONFIRMACAO","A_CONFERIR")
+                .contains(String.valueOf(logIntegracao.getCanhotoAcaoPainel()))) return ResultadoRegistro.RETIDO;
+        if (logIntegracao != null && logIntegracao.getCanhotoProximaAvaliacaoEm() != null
+                && logIntegracao.getCanhotoProximaAvaliacaoEm().isAfter(etlEstadoIntegracaoService.agoraAuditoria()))
+            return ResultadoRegistro.PENDENTE_FOTO;
 
         String chaveNfe = logIntegracao.getChaveNfe();
         try {
@@ -386,6 +389,11 @@ public class EtlRegistroService {
                     return ResultadoRegistro.IGNORADO;
                 }
                 logIntegracao = atual.get();
+                if (java.util.Set.of("INTERVENCAO", "AGUARDANDO_CONFIRMACAO", "A_CONFERIR")
+                        .contains(String.valueOf(logIntegracao.getCanhotoAcaoPainel()))) return ResultadoRegistro.RETIDO;
+                if (logIntegracao.getCanhotoProximaAvaliacaoEm() != null
+                        && logIntegracao.getCanhotoProximaAvaliacaoEm().isAfter(etlEstadoIntegracaoService.agoraAuditoria()))
+                    return ResultadoRegistro.PENDENTE_FOTO;
                 if (decisao != null) {
                     logIntegracao.setCanhotoChaveCteEfetiva(decisao.chaveCteEfetiva());
                     logIntegracao.setCanhotoReconciliacaoTipo(decisao.tipo());
@@ -447,6 +455,11 @@ public class EtlRegistroService {
     }
 
     ResultadoRegistro reprocessarXmlCteVedacitPorChave(LogIntegracaoModel logIntegracao, boolean protegerInterrupcao) {
+        if (logIntegracao != null && java.util.Set.of("INTERVENCAO","AGUARDANDO_CONFIRMACAO","A_CONFERIR")
+                .contains(String.valueOf(logIntegracao.getDadosAcaoOperacional()))) return ResultadoRegistro.RETIDO;
+        if (logIntegracao != null && logIntegracao.getDadosProximaAvaliacaoEm() != null
+                && logIntegracao.getDadosProximaAvaliacaoEm().isAfter(etlEstadoIntegracaoService.agoraAuditoria()))
+            return ResultadoRegistro.RETIDO;
         if (!ehCandidatoXmlCteVedacit(logIntegracao)
                 || !(erroObtencaoXml(logIntegracao.getMensagemErroDados()) || xmlInventarioSemTentativa(logIntegracao))) {
             return ResultadoRegistro.IGNORADO;
@@ -624,6 +637,7 @@ public class EtlRegistroService {
         if (logExistente.isPresent()
                 && ResultadoIntegracao.STATUS_PENDENTE_ORIGEM.equals(logExistente.get().getStatusDados())
                 && (!sftpRodogarciaHabilitado || erroObtencaoXml(logExistente.get().getMensagemErroDados()))) {
+            etlEstadoIntegracaoService.registrarReavaliacaoXmlSemEnvio(logExistente.get());
             log.info(
                     "⏸️ [VEDACIT] NF {}: XML do CT-e permanece pendente de disponibilização na ESL. CTe={}",
                     obterChaveNfe(ocorrencia),
@@ -633,8 +647,10 @@ public class EtlRegistroService {
         }
 
         // Recusas e resultados de envio desconhecidos precisam de conciliação, não de reenvio cego.
-        if (logExistente.isPresent() && STATUS_ERRO_DESTINO.equals(logExistente.get().getStatusDados()))
+        if (logExistente.isPresent() && STATUS_ERRO_DESTINO.equals(logExistente.get().getStatusDados())) {
+            etlEstadoIntegracaoService.registrarReavaliacaoXmlSemEnvio(logExistente.get());
             return reterXmlAuditado(logExistente.get());
+        }
 
         if (logExistente.isPresent()
                 && ResultadoIntegracao.STATUS_PENDENTE_ORIGEM.equals(logExistente.get().getStatusDados())) {

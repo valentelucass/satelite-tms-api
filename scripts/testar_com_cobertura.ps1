@@ -21,7 +21,7 @@ try {
     $mvn = (Get-Command $Maven -ErrorAction Stop).Source
     $agent = Join-Path $env:USERPROFILE '.m2/repository/org/jacoco/org.jacoco.agent/0.8.15/org.jacoco.agent-0.8.15-runtime.jar'
     if (!(Test-Path $agent)) { throw 'JaCoCo 0.8.15 deve estar no cache Maven local antes da execucao offline.' }
-    foreach ($key in @((Get-ChildItem Env: | Where-Object { $_.Name -match '^(APP_|DB_|SATELITE_|SFTP_|VEDACIT_|SELIA_|SUPPORTE_|PPG_|RODOGARCIA_|ESL_|WORK_|SPRING_|INTEGRATION_|RETROACTIVE_|JAVA_TOOL_OPTIONS$|_JAVA_OPTIONS$|JDK_JAVA_OPTIONS$|MAVEN_OPTS$|JAVA_HOME$)' }).Name)) {
+    foreach ($key in @((Get-ChildItem Env: | Where-Object { $_.Name -match '^(APP_|DB_|SATELITE_|SFTP_|VEDACIT_|SELIA_|SUPPORTE_|PPG_|RECONCILIACAO_|RODOGARCIA_|ESL_|WORK_|SPRING_|INTEGRATION_|RETROACTIVE_|JAVA_TOOL_OPTIONS$|_JAVA_OPTIONS$|JDK_JAVA_OPTIONS$|MAVEN_OPTS$|JAVA_HOME$)' }).Name)) {
         $envAnterior[$key] = [Environment]::GetEnvironmentVariable($key, 'Process')
         [Environment]::SetEnvironmentVariable($key, $null, 'Process')
     }
@@ -79,7 +79,7 @@ public final class NoNetworkSecurityManager extends SecurityManager {
     Add-Element $conf 'reportsDirectory' "$saida/surefire-reports" | Out-Null
     $sys = Add-Element $conf 'systemPropertyVariables' $null
     Add-Element $sys 'spring.config.import' 'optional:classpath:unit-tests-no-import.properties' | Out-Null
-    foreach ($name in @('APP_SCHEDULER_ENABLED','APP_NIGHTLY_RETRY_ENABLED','APP_CICLO_UNICO','APP_PPG_ENABLED','APP_SELIA_ENABLED','APP_VEDACIT_ENABLED','APP_SUPPORTE_ENABLED','work.sftp-clientes.enabled','SFTP_RODOGARCIA_ENABLED','VEDACIT_RECONCILIACAO_ENABLED')) { Add-Element $sys $name 'false' | Out-Null }
+    foreach ($name in @('APP_SCHEDULER_ENABLED','APP_NIGHTLY_RETRY_ENABLED','APP_CICLO_UNICO','APP_PPG_ENABLED','APP_SELIA_ENABLED','APP_VEDACIT_ENABLED','APP_SUPPORTE_ENABLED','work.sftp-clientes.enabled','SFTP_RODOGARCIA_ENABLED','VEDACIT_RECONCILIACAO_ENABLED','APP_RECONCILIACAO_ENABLED')) { Add-Element $sys $name 'false' | Out-Null }
     Add-Element $sys 'APP_DASHBOARD_API_ONLY' 'true' | Out-Null
     Add-Element $sys 'junit.jupiter.execution.timeout.default' '30s' | Out-Null
     $jacoco = Add-Element $build.plugins 'plugin' $null

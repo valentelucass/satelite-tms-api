@@ -31,6 +31,7 @@ class WorkSftpClientesRunnerSafetyTest {
         var ciclo = cycle();
         assertEquals("OK", ciclo.conexao());
         assertEquals("FALHA", ciclo.status());
+        assertEquals("COM_PENDENCIAS", ciclo.resultadoExecucao());
         assertEquals(2, ciclo.arquivosValidos());
         assertEquals(1, ciclo.enviados());
         assertEquals(5, ciclo.saldo());
@@ -58,6 +59,7 @@ class WorkSftpClientesRunnerSafetyTest {
         assertEquals(2, c.selecionados()); assertEquals(1, c.enviados());
         assertEquals(2, c.arquivosValidos()); assertEquals("OK", c.conexao());
         assertEquals("BANCO_FILA_PROCESSAMENTO: SQL_1205", c.motivoFalha());
+        assertEquals("FALHA_TECNICA", c.resultadoExecucao());
     }
 
     @Test
@@ -109,6 +111,7 @@ class WorkSftpClientesRunnerSafetyTest {
         assertEquals(1, ids.getAllValues().stream().distinct().count());
         var etapas = registros.getAllValues();
         assertEquals("EM_EXECUCAO", etapas.get(0).status());
+        assertEquals("EM_EXECUCAO", etapas.get(0).resultadoExecucao());
         assertNull(etapas.get(0).fim());
         assertEquals("EM_EXECUCAO", etapas.get(1).status());
         assertNull(etapas.get(1).fim());

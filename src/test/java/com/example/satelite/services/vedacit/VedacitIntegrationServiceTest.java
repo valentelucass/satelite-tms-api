@@ -589,11 +589,27 @@ class VedacitIntegrationServiceTest {
         var service = new VedacitIntegrationService(mock(ImageDownloader.class), esl, criarPoliticaEslExecutora());
         ReflectionTestUtils.setField(service, "tokenCteXmlEsl", "teste");
         ReflectionTestUtils.setField(service, "envioXmlCteHabilitado", true);
+        var auditoria = mock(com.example.satelite.services.auditoria.IntegracaoTransmissaoAuditoriaService.class);
+        ReflectionTestUtils.setField(service, "transmissaoAuditoria", auditoria);
         var primeiro = service.processarXmlCteEmitido(criarOcorrencia(), null);
         var segundo = service.processarXmlCteEmitido(criarOcorrencia(), null);
         assertEquals("ORIGEM_XML_HTTP_401", primeiro.mensagemErroDados());
         assertEquals("ORIGEM_XML_AUTENTICACAO_EM_ESPERA", segundo.mensagemErroDados());
         verify(esl, org.mockito.Mockito.times(1)).buscarXmlCte(any(), any());
+        verify(auditoria, org.mockito.Mockito.times(1)).iniciar(org.mockito.ArgumentMatchers.eq("DADOS"), any(), any(), any(), org.mockito.ArgumentMatchers.eq(true));
+        verify(auditoria, never()).iniciar(any(), any(), any(), any(), org.mockito.ArgumentMatchers.eq(false));
+    }
+
+    @Test void novaJvmRespeitaEsperaPersistidaSemConsultaRemotaOuEnvio() {
+        var esl = mock(RodogarciaClient.class);
+        var auditoria = mock(com.example.satelite.services.auditoria.IntegracaoTransmissaoAuditoriaService.class);
+        when(auditoria.acessoXmlEmEspera()).thenReturn(true);
+        var service = new VedacitIntegrationService(mock(ImageDownloader.class), esl, criarPoliticaEslExecutora());
+        ReflectionTestUtils.setField(service, "transmissaoAuditoria", auditoria);
+        ReflectionTestUtils.setField(service, "envioXmlCteHabilitado", true);
+        assertEquals("ORIGEM_XML_AUTENTICACAO_EM_ESPERA",service.processarXmlCteEmitido(criarOcorrencia(),null).mensagemErroDados());
+        verifyNoInteractions(esl);
+        verify(auditoria, never()).iniciar(any(), any(), any(), any(), org.mockito.ArgumentMatchers.anyBoolean());
     }
 
     @Test void fallbackClienteUsaTokenVedacitMesmoComMasterPreenchido() throws Exception {

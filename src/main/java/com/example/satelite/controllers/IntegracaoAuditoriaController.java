@@ -98,6 +98,20 @@ public class IntegracaoAuditoriaController {
         return integracaoAuditoriaService.consultarIndicadoresEtapas(dataInicial, dataFinal, destino);
     }
 
+    @GetMapping("/integracoes-clientes/indicadores-operacionais")
+    public com.example.satelite.dto.auditoria.IndicadoresOperacionaisDTO consultarIndicadoresOperacionais(
+            @RequestParam String dataInicial, @RequestParam String dataFinal,
+            @RequestParam(required=false) List<String> destino) {
+        return integracaoAuditoriaService.consultarIndicadoresOperacionais(dataInicial, dataFinal, destino);
+    }
+
+    @GetMapping("/integracoes-clientes/pendencias-etapas")
+    public com.example.satelite.dto.auditoria.PendenciasEtapasDTO consultarPendenciasEtapas(
+            @RequestParam(required=false) List<String> destino, @RequestParam String etapa, @RequestParam String acao,
+            @RequestParam(defaultValue="0") int pagina, @RequestParam(defaultValue="25") int tamanho) {
+        return integracaoAuditoriaService.consultarPendenciasEtapas(destino, etapa, acao, pagina, tamanho);
+    }
+
     @GetMapping("/integracoes-clientes/resumo-tabelas")
     public List<ResumoTabelaIntegracaoDTO> consultarResumoTabelas(
             @RequestParam String dataInicial,

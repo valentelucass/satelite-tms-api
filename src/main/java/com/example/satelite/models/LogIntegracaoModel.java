@@ -96,6 +96,25 @@ public class LogIntegracaoModel {
     @Column(name = "data_processamento", nullable = false)
     private LocalDateTime dataProcessamento;
 
+    @Column(name = "dados_acao_operacional", length = 40)
+    private String dadosAcaoOperacional;
+    @Column(name = "canhoto_acao_painel", length = 40)
+    private String canhotoAcaoPainel;
+    @Column(name = "dados_proxima_avaliacao_em")
+    private LocalDateTime dadosProximaAvaliacaoEm;
+    @Column(name = "canhoto_proxima_avaliacao_em")
+    private LocalDateTime canhotoProximaAvaliacaoEm;
+    @Column(name = "dados_pendente_desde")
+    private LocalDateTime dadosPendenteDesde;
+    @Column(name = "canhoto_pendente_desde")
+    private LocalDateTime canhotoPendenteDesde;
+
+    @Transient private java.util.UUID avaliacaoDadosId;
+    @Transient private java.util.UUID avaliacaoCanhotoId;
+    @Transient private LocalDateTime avaliacaoDadosEm;
+    @Transient private LocalDateTime avaliacaoCanhotoEm;
+    @Transient private java.util.UUID avaliacaoCicloId;
+
     @Transient
     private boolean estavaEmQuarentena;
     @Transient

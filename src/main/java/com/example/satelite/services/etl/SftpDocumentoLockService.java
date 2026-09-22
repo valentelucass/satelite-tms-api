@@ -60,6 +60,10 @@ public class SftpDocumentoLockService {
         return executarComRecurso("SATELITE_TMS:VEDACIT:RECONCILIACAO_NOTURNA", operacao);
     }
 
+    public <T> Optional<T> executarRevisaoCliente(String cliente, Supplier<T> operacao) {
+        return executarComRecurso("SATELITE_TMS:" + normalizarCliente(cliente) + ":RECONCILIACAO_NOTURNA", operacao);
+    }
+
     private <T> Optional<T> executarComRecurso(String recurso, Supplier<T> operacao) {
         if (recursosDaThread.get().contains(recurso)) return Optional.ofNullable(operacao.get());
         long timeoutSeguro = Math.max(0L, Math.min(lockTimeoutMs, 60_000L));

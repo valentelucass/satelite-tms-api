@@ -76,6 +76,8 @@ public class IntegracaoAuditoriaService {
     private final IntegracaoAuditoriaQueryRepository integracaoAuditoriaQueryRepository;
     private final WorkSftpClientesAuditoriaRepository workSftpClientesAuditoriaRepository;
     private final IntegracaoIndicadoresEtapasRepository indicadoresEtapasRepository;
+    @org.springframework.beans.factory.annotation.Autowired
+    private com.example.satelite.repositories.IntegracaoOperacionalRepository operacionalRepository;
 
     public IntegracaoAuditoriaService(
             LogIntegracaoRepository logIntegracaoRepository,
@@ -182,6 +184,22 @@ public class IntegracaoAuditoriaService {
         PeriodoFiltro periodo = lerPeriodoObrigatorio(dataInicial, dataFinal);
         return indicadoresEtapasRepository.consultar(periodo.dataInicialSql().toLocalDate(),
                 periodo.dataFinalLimitSql().toLocalDate().minusDays(1), normalizarDestinos(destinos));
+    }
+
+    public com.example.satelite.dto.auditoria.IndicadoresOperacionaisDTO consultarIndicadoresOperacionais(
+            String inicio, String fim, List<String> destinos) {
+        PeriodoFiltro periodo = lerPeriodoObrigatorio(inicio, fim);
+        return operacionalRepository.consultar(periodo.dataInicialSql().toLocalDate(),
+                periodo.dataFinalLimitSql().toLocalDate().minusDays(1), normalizarDestinos(destinos));
+    }
+
+    public com.example.satelite.dto.auditoria.PendenciasEtapasDTO consultarPendenciasEtapas(
+            List<String> destinos, String etapa, String acao, int pagina, int tamanho) {
+        if (!Set.of("DADOS","COMPROVANTE").contains(etapa) || !Set.of("AGUARDANDO_PROCESSAMENTO", "NOVA_TENTATIVA",
+                "AGUARDANDO_ORIGEM", "AGUARDANDO_CONFIRMACAO", "INTERVENCAO", "A_CONFERIR").contains(acao))
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Etapa ou ação inválida.");
+        return operacionalRepository.pendencias(normalizarDestinos(destinos), etapa, acao,
+                normalizarPagina(pagina), Math.min(100, normalizarTamanho(tamanho)));
     }
 
     public List<ResumoTabelaIntegracaoDTO> consultarResumoTabelas(
