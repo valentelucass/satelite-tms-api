@@ -7,7 +7,7 @@ $compilacao=Split-Path $candidato
 $summary=Get-Content (Join-Path $compilacao 'summary.json') -Raw | ConvertFrom-Json
 if($summary.ExitCode -ne 0 -or $summary.Failures -ne 0 -or $summary.Errors -ne 0 -or $summary.Passed -lt 385) { throw 'TESTS_NOT_APPROVED' }
 $front=(Resolve-Path -LiteralPath $Frontend).Path
-$dash=[IO.Path]::GetFullPath((Join-Path $repo '../etl-dash/dashboards'))
+$dash=[IO.Path]::GetFullPath((Join-Path $repo '../dashboards-etl'))
 $destino=Join-Path $repo 'target/satelite-0.0.1-SNAPSHOT.jar'
 $uiDestino=Join-Path $dash 'frontend/dist-prod'
 $out=Join-Path $repo 'target/correcao-idempotencia-20260911'

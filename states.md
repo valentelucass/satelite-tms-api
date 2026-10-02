@@ -533,3 +533,27 @@
 - [ ] [Alta / Código] Em `EtlFluxoDestinoService`, desacoplar leitura e distribuição: buscar cada página de ocorrências ESL uma vez por escopo compatível e distribuir os itens aos destinos elegíveis, preservando cursor e idempotência por destino. Medir antes/depois para comprovar que não houve perda ou duplicidade de integração.
 - [ ] [Alta / Código] Em `EtlRegistroService`, `VedacitIntegrationService` e `EtlRepescagemService`, persistir cache negativo de XML e comprovante ausentes, com razão, data da última consulta e cooldown configurável por recurso. Nova consulta só é permitida após expiração ou nova evidência de alteração na ocorrência.
 - [ ] [Média / Código] Adicionar validação do artefato/JAR antes de abrir a porta pública, com healthcheck degradado e log técnico para incompatibilidades. `SateliteApplicationTests` já cobre o carregamento do contexto e evitou a regressão de injeção do rate limit, mas ainda não valida o JAR final em uso pelo PM2.
+
+
+## Preparacao na VM local - 2026-09-30
+
+- O JAR target/satelite-0.0.1-SNAPSHOT.jar foi empacotado com JDK 17 e Maven 3.9.14, usando -DskipTests. Isso nao representa execucao dos testes ou aceite operacional.
+- Nenhum processo do Satelite foi iniciado nesta VM. As configuracoes existentes habilitam workers e transmissoes; o acesso ao SQL local ainda precisa ser validado. Nao houve envio/reenvio, migration ou alteracao do SQL Server.
+- A conta SQL existente no ambiente clonado nao foi validada para esta nova instancia, que permanece em autenticacao Windows e com TCP desabilitado. O banco exclusivo SATELITE_TMS_AUDITORIA foi preservado como alvo do projeto, sem criacao ou acesso confirmado.
+
+## Alinhamento de caminhos e conexao nesta VM - 2026-10-01
+
+- scripts/instalar_correcao_comprovantes.ps1 agora resolve o Dashboard irmao em ../dashboards-etl, em vez da topologia antiga ../etl-dash/dashboards. O instalador nao foi executado; candidatos, historicos e guardas de publicacao preservados.
+- .env ja aponta para localhost:1433/SATELITE_TMS_AUDITORIA. Login usuario_etl validado em master por leitura; banco nao encontrado no catalogo local e CREATE ANY DATABASE=0.
+- database/subir_database.bat usa DB_ADMIN_USER/DB_ADMIN_PASSWORD para DDL; DB_USER da aplicacao sozinho nao configura esse acesso. A autenticacao administrativa permanece pendente da equipe SQL. Nao foram copiados segredos de outro projeto nem alterado o .env.
+- Nenhum setup SQL, integracao, carga, servico ou restart executado. Backup do script anterior e evidencia em C:\Users\suporte\Documents\Codex\2026-10-01\configure-nesta-vm-windows-o-ai\outputs.
+
+## Recuperação do banco e API PM2 - 2026-10-02
+
+- O banco existente `SATELITE_TMS_AUDITORIA` estava sem tabelas. Após disponibilização de acesso administrativo para concluir a migração, foi criado e verificado backup `COPY_ONLY/CHECKSUM` antes de qualquer escrita. A versão SQL Server 16.0.1000.6, o serviço MSSQLSERVER/PID 13284, as opções do banco e seus usuários foram preservados.
+- Recuperados os 13 objetos de tabela originais e 78.347 registros do pacote `SQL2022-migracao-20260929-130252-8b8d4702`, com conferência SHA-256/tamanho dos 13 BCPs, paridade das colunas, contagens exatas, índices e constraints confiáveis. Os dois triggers de proteção histórica foram restaurados com ANSI_NULLS/QUOTED_IDENTIFIER ON. O script de deployment original não foi executado integralmente: não foram aplicados seus comandos de ALTER DATABASE, usuários ou roles. Nenhum dado foi apagado ou substituído.
+- As 3.598 confirmações duráveis e 702 ajustes históricos foram recuperados antes da ativação da API. Recibo auditável: `C:\CloudflareMigracao\preparado-WIN-00NEDIJ1R5P\pm2\db-recovery-SATELITE_TMS_AUDITORIA-8c728bc195124d4396e39cd95882cc33.json`. Falha de schema teria rollback transacional; os backups e recibos foram preservados, sem rollback destrutivo automático.
+- `Satelite-API-19090` está online no daemon PM2 existente, PID 12620, ligado somente a `127.0.0.1:19090`. Usa o JDK 17 instalado nesta VM em lugar do caminho `.tools` inexistente, heap de até 384 MiB e pool de até cinco conexões. Foram mantidos `APP_DASHBOARD_API_ONLY=true`, scheduler/reconciliações/ciclo único/retry noturno/repescagem desativados. O resumo de tabelas para 23/09 respondeu HTTP 200 consultando o banco recuperado. Este JAR não expõe `/actuator/health` (404); esse endereço não é seu healthcheck.
+- O processo da API foi salvo com Dashboard UI/API no dump e manifesto de boot PM2 validado às 14:13:42Z, sem reiniciar a VM, o SQL ou processos existentes. A Avaliação está sob responsabilidade de outro agente e foi preservada.
+- [ ] Confirmar se houve envios na origem após 23/09, data final dos registros recuperados, e obter histórico mais recente se necessário antes de habilitar `WORK-SFTP-CLIENTES` e `RECONCILIACAO-CLIENTES`. Não houve transmissão externa ou replay nesta validação. O pacote PM2 informa que a VM antiga estava parada, mas isso não comprova que o histórico de setembro contém todos os envios até o desligamento.
+- Não houve alteração no código Java nem execução nova da suíte completa de testes. A evidência desta etapa cobre restauração, constraints, startup com validação Hibernate e consulta HTTP de leitura. Antes de ampliar processos residentes, revisar a memória disponível: com as APIs atuais e aplicações interativas abertas, foram observados menos de 500 MiB livres.
