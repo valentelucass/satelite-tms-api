@@ -1,0 +1,21 @@
+
+
+# MCP: ferramentas e dados operacionais fora do mapa.
+.agents/
+.codex/
+.maestri/
+.graphify/
+.tools/
+graphify-out/
+AGENTS.md.bak-*
+**/target/
+**/node_modules/
+**/.next*/
+**/dist*/
+**/coverage/
+**/logs/
+**/storage/
+**/uploads/
+**/backups/
+**/.runtime/
+**/.tmp/

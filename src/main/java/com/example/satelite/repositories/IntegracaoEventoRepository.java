@@ -47,4 +47,14 @@ public class IntegracaoEventoRepository {
             """, new MapSqlParameterSource("agora",agora), Boolean.class));
     }
     private static boolean preenchido(String valor) { return valor != null && !valor.isBlank(); }
+
+    @Transactional(readOnly=true)
+    public boolean existeInicioEnvio(String etapa, String documento, Long logId) {
+        return Boolean.TRUE.equals(jdbc.queryForObject("""
+            SELECT CASE WHEN EXISTS (SELECT 1 FROM dbo.tb_integracao_etapa_evento
+              WHERE sistema_destino='VEDACIT' AND etapa=:etapa AND documento=:documento
+                AND tipo='ENVIO_INICIADO' AND (:log IS NULL OR log_id=:log)) THEN 1 ELSE 0 END
+            """, new MapSqlParameterSource("etapa", etapa).addValue("documento", documento)
+                .addValue("log", logId, java.sql.Types.BIGINT), Boolean.class));
+    }
 }

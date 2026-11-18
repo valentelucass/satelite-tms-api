@@ -45,6 +45,8 @@ Fonte: TMS ESL Cloud — Consultar Listagem das Ocorrências.
 
 O cliente RodogarciaClient já suporta a rota, o filtro de ocorrência, cursor start, consulta por NF-e e consulta por período. Nenhuma nova API de origem é necessária.
 
+Atualização de comprovantes em 05/10/2026: SELIA consulta `GET /api/customer/freight_delivery_receipts?cte_key=...` com `RODOGARCIA_TOKEN_SELIA`, o mesmo token de cliente das ocorrências. A rota geral com `RODOGARCIA_TOKEN_SELIA_COMPROVANTE` retornou HTTP 401 nas 20 ocorrências do primeiro ciclo; três dessas amostras responderam HTTP 200 na rota de cliente, com imagem e CT-e exatos. O token documental antigo deixou de ser usado pelo código SELIA. Somente itens com `freight.cte_key` igual ao solicitado e imagem presente seguem para o envio; identidade divergente ou ausente mantém o comprovante pendente. Uma recusa de acesso não dispara fallback para outro contrato.
+
 Campos usados no evento:
 
 | Campo ESL | Uso |

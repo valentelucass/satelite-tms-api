@@ -1121,6 +1121,40 @@ public class EtlRepescagemService {
         return resultado;
     }
 
+    public ResultadoReprocessamentoCanhotoVedacit reprocessarCanhotosDirigidosSftpVedacit(
+            List<AlvosComprovanteVedacit.Alvo> alvos,
+            List<com.example.satelite.services.origem.sftp.vedacit.VedacitSftpDocument> documentos,
+            long intervaloMs
+    ) throws InterruptedException {
+        if (alvos == null || alvos.isEmpty() || alvos.size() > 100 || documentos == null
+                || intervaloMs < 0 || intervaloMs > 60000) throw new IllegalArgumentException("Lote dirigido inválido.");
+        int enviados = 0, pendentes = 0, erros = 0, ignorados = 0, processados = 0;
+        for (var alvo : alvos) {
+            if (Thread.currentThread().isInterrupted()) break;
+            boolean arquivoExato = documentos.stream().anyMatch(documento ->
+                    documento.tipo() == com.example.satelite.services.origem.sftp.vedacit.VedacitSftpDocument.Tipo.COMPROVANTE
+                            && alvo.chaveNfe().equals(documento.chaveNfe()) && alvo.chaveCte().equals(documento.chaveCte())
+                            && documento.tamanhoBytes() > 0);
+            if (!arquivoExato) { pendentes++; processados++; continue; }
+            var registro = logIntegracaoRepository
+                    .findTopBySistemaDestinoAndChaveNfeAndChaveCteAndArquivadoFalseOrderByDataProcessamentoDescIdDesc(
+                            "VEDACIT", alvo.chaveNfe(), alvo.chaveCte());
+            if (registro.isEmpty()) { pendentes++; processados++; continue; }
+            if (processados > 0 && intervaloMs > 0) Thread.sleep(intervaloMs);
+            try (var escopo = AlvosComprovanteVedacit.restringir(alvo)) {
+                // O serviço existente refaz os controles e adquire o lock SQL do documento.
+                ResultadoRegistro resultado = etlRegistroService.reprocessarCanhotoVedacitPorCte(registro.get());
+                if (resultado == ResultadoRegistro.ENVIADO) enviados++;
+                else if (resultado == ResultadoRegistro.JA_PROCESSADO || resultado == ResultadoRegistro.IGNORADO) ignorados++;
+                else if (resultado.erro()) erros++;
+                else pendentes++;
+            }
+            processados++;
+        }
+        pendentes += alvos.size() - processados;
+        return new ResultadoReprocessamentoCanhotoVedacit(alvos.size(), enviados, pendentes, erros, ignorados);
+    }
+
     public record ResultadoReprocessamentoCanhotoVedacit(
             int selecionados,
             int enviados,

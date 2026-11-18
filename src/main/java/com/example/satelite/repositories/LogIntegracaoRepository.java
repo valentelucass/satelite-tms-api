@@ -17,6 +17,21 @@ import com.example.satelite.models.LogIntegracaoModel;
 
 public interface LogIntegracaoRepository extends JpaRepository<LogIntegracaoModel, Long> {
 
+    @Query("""
+            SELECT l FROM LogIntegracaoModel l WHERE l.sistemaDestino = 'VEDACIT'
+              AND COALESCE(l.arquivado, false) = false
+              AND l.chaveNfe = :chaveNfe AND l.chaveCte = :chaveCte ORDER BY l.id
+            """)
+    List<LogIntegracaoModel> findAtivosVedacitPorParExato(@Param("chaveNfe") String chaveNfe,
+            @Param("chaveCte") String chaveCte, Pageable pageable);
+
+    @Query("""
+            SELECT l FROM LogIntegracaoModel l WHERE l.sistemaDestino = 'VEDACIT'
+              AND l.chaveCte = :chaveCte AND l.statusDados = 'SUCESSO'
+              AND l.dataProcessamentoDados IS NOT NULL ORDER BY l.dataProcessamentoDados, l.id
+            """)
+    List<LogIntegracaoModel> findXmlVedacitConfirmadoDatado(@Param("chaveCte") String chaveCte, Pageable pageable);
+
     long countBySistemaDestinoAndCanhotoClassificacaoOperacional(String sistemaDestino, String canhotoClassificacaoOperacional);
 
     long countBySistemaDestinoAndSftpClienteAndCanhotoClassificacaoOperacional(

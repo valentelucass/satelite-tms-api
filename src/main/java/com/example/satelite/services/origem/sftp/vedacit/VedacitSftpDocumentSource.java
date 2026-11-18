@@ -5,6 +5,12 @@ import java.util.Optional;
 
 /** Fonte documental isolada da Vedacit. A implementação SFTP não conhece SOAP nem regras de auditoria. */
 public interface VedacitSftpDocumentSource {
+    /** Origem real do documento fornecido; não habilita fallback nem altera política de envio. */
+    default String origemComprovante() { return "SFTP"; }
+
+    /** Referência técnica opcional da fonte explícita; não substitui chaves fiscais. */
+    default String referenciaComprovante(String chaveCte, String chaveNfe) { return null; }
+
     Optional<VedacitSftpDocument> buscarXmlCte(String chaveCte, String chaveNfe);
 
     Optional<VedacitSftpDocument> buscarComprovante(String chaveCte, String chaveNfe);

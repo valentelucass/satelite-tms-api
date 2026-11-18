@@ -64,9 +64,6 @@ public class EtlRegistroService {
     @Value("${APP_E2E_TEST_IMAGE_URL:" + URL_IMAGEM_TESTE_PADRAO + "}")
     private String urlImagemTesteE2e;
 
-    @Value("${RODOGARCIA_TOKEN_SELIA_COMPROVANTE:}")
-    private String tokenSeliaComprovanteEsl;
-
     @Value("${RODOGARCIA_TOKEN_SUPPORTE_COMPROVANTE:}")
     private String tokenSupporteComprovanteEsl;
 
@@ -407,6 +404,12 @@ public class EtlRegistroService {
                 return ResultadoRegistro.JA_PROCESSADO;
             if (etlEstadoIntegracaoService.canhotoVedacitRetidoPorPar(chaveNfe, obterChaveCte(ocorrencia)))
                 return ResultadoRegistro.RETIDO;
+            if (fonteSftp != null) {
+                String origem = fonteSftp.origemComprovante();
+                logIntegracao.setCanhotoOrigem(origem == null || origem.isBlank() ? "SFTP" : origem);
+                String referencia = fonteSftp.referenciaComprovante(obterChaveCte(ocorrencia), chaveNfe);
+                if (referencia != null && !referencia.isBlank()) logIntegracao.setCanhotoReferencia(referencia);
+            }
             etlEstadoIntegracaoService.registrarInicioEnvioCanhoto(logIntegracao);
             logDetalheSftpVedacit.info(
                     "🎯 [VEDACIT] NF {}: reprocessamento cirúrgico do canhoto. CTe={}",
@@ -1098,12 +1101,6 @@ public class EtlRegistroService {
     }
 
     String obterHeaderComprovante(String destino, String headerAuth) {
-        if (DESTINO_SELIA.equals(destino)
-                && tokenSeliaComprovanteEsl != null
-                && !tokenSeliaComprovanteEsl.isBlank()) {
-            return "Bearer " + tokenSeliaComprovanteEsl.trim();
-        }
-
         if (DESTINO_SUPPORTE.equals(destino)
                 && tokenSupporteComprovanteEsl != null
                 && !tokenSupporteComprovanteEsl.isBlank()) {
@@ -1121,6 +1118,20 @@ public class EtlRegistroService {
 
     ComprovanteEslDTO consultarComprovante(String destino, String headerAuth, String chaveCte) {
         String header = obterHeaderComprovante(destino, headerAuth);
+        // SELIA usa o contrato de cliente e o mesmo token das ocorrencias.
+        // A credencial documental antiga pertence a outra rota e nao deve substituir esse token.
+        if (DESTINO_SELIA.equals(destino)) {
+            ComprovanteEslDTO resposta = rodogarciaClient.buscarComprovanteCliente(header, chaveCte);
+            if (resposta == null || resposta.data() == null) {
+                return resposta;
+            }
+            List<ComprovanteEslItemDTO> itensExatos = resposta.data().stream()
+                    .filter(item -> item != null && item.freight() != null)
+                    .filter(item -> chaveCte != null && chaveCte.equals(item.freight().cteKey()))
+                    .filter(item -> item.imageUrl() != null && !item.imageUrl().isBlank())
+                    .toList();
+            return new ComprovanteEslDTO(itensExatos, resposta.paging());
+        }
         // Sem credencial documental explicita, Vedacit usa o contrato e o token de cliente.
         if (DESTINO_VEDACIT.equals(destino)
                 && (tokenVedacitComprovanteEsl == null || tokenVedacitComprovanteEsl.isBlank())) {

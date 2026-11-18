@@ -11,16 +11,31 @@ $envAnterior = @{}
 $localAnterior = Get-Location
 $jar = Join-Path $repo 'target/satelite-0.0.1-SNAPSHOT.jar'
 $hashAntes = if (Test-Path $jar) { (Get-FileHash -LiteralPath $jar -Algorithm SHA256).Hash } else { $null }
+function Invoke-MavenLogged([string[]]$Argumentos, [string]$Log) {
+    # Avisos nativos em stderr nao sao erros PowerShell; o exit code decide o resultado.
+    $ErrorActionPreference = 'Continue'
+    & $mvn @Argumentos *> $Log
+    return $LASTEXITCODE
+}
 try {
     if ([string]::IsNullOrWhiteSpace($JavaHome)) { throw 'Informe -JavaHome apontando para um JDK 17.' }
     $JavaHome = (Resolve-Path -LiteralPath $JavaHome).ProviderPath
     $java = Join-Path $JavaHome 'bin/java.exe'
     $javac = Join-Path $JavaHome 'bin/javac.exe'
-    $versao = (& $java -version 2>&1 | Out-String)
-    if ($versao -notmatch 'version "17\.') { throw 'O bloqueio de rede desta suite exige JDK 17.' }
+    # Java escreve a versao em stderr; no Windows PowerShell 5 isso nao e falha.
+    $preferenciaVersao = $ErrorActionPreference
+    try {
+        $ErrorActionPreference = 'Continue'
+        $versao = (& $java -version 2>&1 | Out-String)
+        $codigoVersao = $LASTEXITCODE
+    } finally { $ErrorActionPreference = $preferenciaVersao }
+    if ($codigoVersao -ne 0 -or $versao -notmatch 'version "17\.') { throw 'O bloqueio de rede desta suite exige JDK 17.' }
     $mvn = (Get-Command $Maven -ErrorAction Stop).Source
     $agent = Join-Path $env:USERPROFILE '.m2/repository/org/jacoco/org.jacoco.agent/0.8.15/org.jacoco.agent-0.8.15-runtime.jar'
     if (!(Test-Path $agent)) { throw 'JaCoCo 0.8.15 deve estar no cache Maven local antes da execucao offline.' }
+    # Capture the explicit test-only instrumentation before environment isolation.
+    $testByteBuddyAgent = $env:SATELITE_TEST_BYTE_BUDDY_AGENT
+    $testByteBuddyAgentSha256 = $env:SATELITE_TEST_BYTE_BUDDY_AGENT_SHA256
     foreach ($key in @((Get-ChildItem Env: | Where-Object { $_.Name -match '^(APP_|DB_|SATELITE_|SFTP_|VEDACIT_|SELIA_|SUPPORTE_|PPG_|RECONCILIACAO_|RODOGARCIA_|ESL_|WORK_|SPRING_|INTEGRATION_|RETROACTIVE_|JAVA_TOOL_OPTIONS$|_JAVA_OPTIONS$|JDK_JAVA_OPTIONS$|MAVEN_OPTS$|JAVA_HOME$)' }).Name)) {
         $envAnterior[$key] = [Environment]::GetEnvironmentVariable($key, 'Process')
         [Environment]::SetEnvironmentVariable($key, $null, 'Process')
@@ -72,6 +87,22 @@ public final class NoNetworkSecurityManager extends SecurityManager {
     $conf = Add-Element $surefire 'configuration' $null
     Add-Element $conf 'workingDirectory' "$saida/work" | Out-Null
     Add-Element $conf 'argLine' ('-Xbootclasspath/a:"' + $saida + '/safety" -Djava.security.manager=NoNetworkSecurityManager -Djava.awt.headless=true -javaagent:"' + $agent + '"=destfile=' + $saida + '/jacoco.exec,append=false') | Out-Null
+    # Opt-in local: instrumentation starts with the test JVM, after the clean environment is prepared.
+    if ($testByteBuddyAgent) {
+        $instrumentationPath = [IO.Path]::GetFullPath($testByteBuddyAgent)
+        if (!(Test-Path -LiteralPath $instrumentationPath -PathType Leaf) -or
+            $instrumentationPath -notmatch '[\\/]net[\\/]bytebuddy[\\/]byte-buddy-agent[\\/]' -or
+            !$testByteBuddyAgentSha256 -or
+            (Get-FileHash -LiteralPath $instrumentationPath -Algorithm SHA256).Hash -ine $testByteBuddyAgentSha256) {
+            throw 'TEST_INSTRUMENTATION_AGENT_INVALID'
+        }
+        $testJvmArguments = $conf.SelectSingleNode("./*[local-name()='argLine']")
+        if (!$testJvmArguments -or !$testJvmArguments.InnerText.Contains('-Djava.security.manager=')) {
+            throw 'TEST_NETWORK_GUARD_REQUIRED'
+        }
+        $testJvmArguments.InnerText += ' -javaagent:"' + $instrumentationPath + '"'
+    }
+
     Add-Element $conf 'forkCount' '1' | Out-Null
     Add-Element $conf 'reuseForks' 'true' | Out-Null
     Add-Element $conf 'forkedProcessTimeoutInSeconds' '240' | Out-Null
@@ -95,12 +126,11 @@ public final class NoNetworkSecurityManager extends SecurityManager {
     Add-Element $excludes 'exclude' 'com/example/satelite/vedacit/**' | Out-Null
     $pom.Save("$saida/test-pom.xml")
     # Goals diretos evitam initialize/clean e wsimport remoto ligado ao lifecycle.
-    & $mvn -o -B -ntp "-Dsatelite.build.directory=$saida" resources:resources build-helper:add-source@add-wsimport-generated-sources compiler:compile resources:testResources compiler:testCompile *> "$saida/compile.log"
-    if ($LASTEXITCODE -ne 0) { throw "Compilacao falhou; consulte $saida/compile.log" }
-    & $mvn -o -B -ntp -f "$saida/test-pom.xml" "-Dsatelite.build.directory=$saida" "-Dtest=$Testes" surefire:test *> "$saida/tests.log"
-    $testExit = $LASTEXITCODE
-    & $mvn -o -B -ntp -f "$saida/test-pom.xml" "-Dsatelite.build.directory=$saida" org.jacoco:jacoco-maven-plugin:0.8.15:report *> "$saida/coverage.log"
-    if ($LASTEXITCODE -ne 0) { throw "Relatorio falhou; consulte $saida/coverage.log" }
+    $compileExit = Invoke-MavenLogged -Argumentos @('-o', '-B', '-ntp', "-Dsatelite.build.directory=$saida", 'resources:resources', 'build-helper:add-source@add-wsimport-generated-sources', 'compiler:compile', 'resources:testResources', 'compiler:testCompile') -Log "$saida/compile.log"
+    if ($compileExit -ne 0) { throw "Compilacao falhou; consulte $saida/compile.log" }
+    $testExit = Invoke-MavenLogged -Argumentos @('-o', '-B', '-ntp', '-f', "$saida/test-pom.xml", "-Dsatelite.build.directory=$saida", "-Dtest=$Testes", 'surefire:test') -Log "$saida/tests.log"
+    $coverageExit = Invoke-MavenLogged -Argumentos @('-o', '-B', '-ntp', '-f', "$saida/test-pom.xml", "-Dsatelite.build.directory=$saida", 'org.jacoco:jacoco-maven-plugin:0.8.15:report') -Log "$saida/coverage.log"
+    if ($coverageExit -ne 0) { throw "Relatorio falhou; consulte $saida/coverage.log" }
     $guardAtivo = Select-String -LiteralPath "$saida/tests.log" -SimpleMatch '[UNIT_NETWORK_GUARD] active' -Quiet
     if (!$guardAtivo) { throw 'Execucao nao comprovou o bloqueio de rede na JVM de teste.' }
     $total=0; $falhas=0; $erros=0; $ignorados=0

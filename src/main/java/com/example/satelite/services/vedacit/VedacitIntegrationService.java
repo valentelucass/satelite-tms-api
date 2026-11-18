@@ -126,6 +126,9 @@ public class VedacitIntegrationService {
     private final EslRequestPolicyService eslRequestPolicyService;
     private final VedacitSftpDocumentSource vedacitSftpDocumentSource;
 
+    @Autowired(required = false)
+    private VedacitXmlDocumentSource xmlDocumentSource;
+
     @Value("${VEDACIT_XML_SEND_INTERVAL_MS:1000}")
     private long intervaloXmlMs = 1000;
     private long ultimaTentativaXmlNanos;
@@ -542,6 +545,7 @@ public class VedacitIntegrationService {
     }
 
     private void enviarCanhoto(Canhoto canhoto, String chaveNfe, String cteKey) throws Exception {
+        com.example.satelite.services.etl.AlvosComprovanteVedacit.validarEnvio(chaveNfe, cteKey);
         var cicloAuditoria = com.example.satelite.utils.ContextoCicloIntegracao.atual();
         logDetalheSftpVedacit.info("📤 [VEDACIT] NF {}: Enviando digitalização do canhoto...", chaveNfe);
         RetornoOfboolean retorno;
@@ -593,6 +597,25 @@ public class VedacitIntegrationService {
         if (xmlSftp.isPresent()) {
         logDetalheSftpVedacit.info("[VEDACIT][DETALHE] NF {}: XML CT-e obtido via SFTP. CTe={}", chaveNfe, chaveCte);
             return xmlSftp.get();
+        }
+
+        if (xmlDocumentSource != null) {
+            var documento = xmlDocumentSource.buscar(chaveCte, chaveNfe);
+            if (documento.isPresent()) {
+                var fonte = documento.get();
+                byte[] xml = fonte.conteudo();
+                try {
+                    String hash = java.util.HexFormat.of().formatHex(
+                            java.security.MessageDigest.getInstance("SHA-256").digest(xml));
+                    if (!"ESL_UI_DOWNLOAD".equals(fonte.origem()) || !hash.equals(fonte.sha256())
+                            || !com.example.satelite.utils.CteXmlValidator.corresponde(xml, chaveCte, chaveNfe))
+                        throw new IllegalStateException("XML local recusado por validação");
+                    log.info("XML oficial recuperado: origem={}, sha256={}", fonte.origem(), hash);
+                    return xml;
+                } catch (java.security.NoSuchAlgorithmException e) {
+                    throw new IllegalStateException("SHA-256 indisponível", e);
+                }
+            }
         }
 
         if (System.currentTimeMillis() < xmlEslLiberadoEm || (transmissaoAuditoria != null && transmissaoAuditoria.acessoXmlEmEspera()))

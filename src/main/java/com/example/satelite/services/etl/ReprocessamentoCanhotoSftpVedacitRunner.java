@@ -54,9 +54,13 @@ public class ReprocessamentoCanhotoSftpVedacitRunner implements CommandLineRunne
     @Override
     public void run(String... args) {
         try {
+            List<AlvosComprovanteVedacit.Alvo> alvosDirigidos = environment.containsProperty(AlvosComprovanteVedacit.PROPRIEDADE)
+                    ? AlvosComprovanteVedacit.carregar(environment.getProperty(AlvosComprovanteVedacit.PROPRIEDADE)) : null;
+            int limite = obterInteiro("vedacit.sftp-receipt-batch.max-items", LIMITE_PADRAO_SEGURO, LIMITE_MAXIMO);
+            if (alvosDirigidos != null && alvosDirigidos.size() > limite) throw new IllegalArgumentException("Lista dirigida excede o limite configurado.");
             validarModoSftpExclusivo();
             vedacitSftpClient.verificarDisponibilidade();
-            int limite = obterInteiro("vedacit.sftp-receipt-batch.max-items", LIMITE_PADRAO_SEGURO, LIMITE_MAXIMO);
+
             long intervaloMs = obterInteiro("vedacit.sftp-receipt-batch.interval-ms", 1000, 60000);
             boolean drenarAteOcioso = environment.getProperty(
                     "vedacit.sftp-receipt-batch.drain-until-idle",
@@ -87,6 +91,16 @@ public class ReprocessamentoCanhotoSftpVedacitRunner implements CommandLineRunne
             int limiteErrosTecnicos = obterInteiro(
                     "vedacit.sftp-receipt-batch.technical-max-errors", 3, limiteTecnico
             );
+            if (alvosDirigidos != null) {
+
+                VedacitSftpInventory inventarioDirigido = vedacitSftpClient.listarInventarioComprovantes();
+                var dirigido = etlRepescagemService.reprocessarCanhotosDirigidosSftpVedacit(
+                        alvosDirigidos, inventarioDirigido.documentosValidos(), intervaloMs);
+                exitCode = dirigido.erros() == 0 ? 0 : 1;
+                log.info("Lote dirigido de comprovantes: selecionados={}, enviados={}, pendentes={}, erros={}, ignorados={}",
+                        dirigido.selecionados(), dirigido.enviados(), dirigido.pendentes(), dirigido.erros(), dirigido.ignorados());
+                return;
+            }
             VedacitSftpInventory inventarioSftp = vedacitSftpClient.listarInventarioComprovantes();
             var comprovantesSftp = inventarioSftp.documentosValidos();
             EtlRepescagemService.ResultadoInventarioSftpVedacit inventario =

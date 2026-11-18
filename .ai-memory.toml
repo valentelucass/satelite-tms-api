@@ -1,0 +1,7 @@
+# Memória exclusiva deste repositório, inclusive em subpastas.
+workspace = "default"
+project = "satelite-tms-api"
+project_strategy = "repo-root"
+
+[recall]
+default_global = false

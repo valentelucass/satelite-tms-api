@@ -24,6 +24,7 @@ import com.example.satelite.services.ResultadoIntegracao;
 public class EtlEstadoIntegracaoService {
 
     private static final String DESTINO_PPG = "PPG";
+    private static final String DESTINO_VEDACIT = "VEDACIT";
     private static final String STATUS_IGNORADO = ResultadoIntegracao.STATUS_IGNORADO;
     private static final String STATUS_ENVIADO = ResultadoIntegracao.STATUS_ENVIADO;
     private static final String STATUS_ERRO_DESTINO = ResultadoIntegracao.STATUS_ERRO_DESTINO;
@@ -75,6 +76,25 @@ public class EtlEstadoIntegracaoService {
             registrarAvaliacao(logIntegracao, salvo.getId(), true);
             registrarAvaliacao(logIntegracao, salvo.getId(), false);
         }
+        return salvo;
+    }
+
+    /** Conciliação técnica de XML já aceito, sem registrar tentativa de transmissão. */
+    @Transactional
+    public LogIntegracaoModel salvarConciliacaoXmlSemEnvio(
+            LogIntegracaoModel registro, Long logFonte, Long eventoEntrega) {
+        if (eventosRepository == null || logFonte == null || eventoEntrega == null
+                || !DESTINO_VEDACIT.equals(registro.getSistemaDestino())
+                || !STATUS_SUCESSO.equals(registro.getStatusDados())
+                || registro.getDataProcessamentoDados() == null) {
+            throw new IllegalArgumentException("Provas técnicas de conciliação incompletas");
+        }
+        LogIntegracaoModel salvo = salvar(registro);
+        eventosRepository.registrar(new IntegracaoEventoRepository.Evento(java.util.UUID.randomUUID(),
+                ContextoCicloIntegracao.atual(), salvo.getId(), DESTINO_VEDACIT, "DADOS",
+                "CTE:" + salvo.getChaveCte(), "AVALIACAO", "CONFIRMADO",
+                "XML_CONCILIADO_LOG_FONTE:" + logFonte + ";ENTREGA_EVENTO:" + eventoEntrega,
+                agoraAuditoria(), null));
         return salvo;
     }
 

@@ -139,3 +139,10 @@ scripts/probes/*
 !scripts/probes/DiagnosticoAcessoEslProbe.java
 
 /docs/contexto
+
+# Saídas e configuração local das ferramentas MCP.
+graphify-out/
+.graphify/
+.codex/
+AGENTS.md.bak-*
+*.mcp-tools.tmp

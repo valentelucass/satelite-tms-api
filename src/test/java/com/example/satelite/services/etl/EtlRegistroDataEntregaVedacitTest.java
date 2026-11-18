@@ -118,6 +118,15 @@ class EtlRegistroDataEntregaVedacitTest {
         verify(portaSoap, never()).enviarDigitalizacaoCanhoto(any());
     }
 
+    @Test void fonteManualPreservaOrigemRealNaAuditoriaSemMudarEntrega() {
+        when(dataEntrega.resolver(NFE,CTE)).thenReturn(VedacitDataEntregaService.Resolucao.encontrada(ENTREGA_REAL,313075894L));
+        when(sftp.origemComprovante()).thenReturn("ESL_CLIENT_API_VERIFICADO");
+        when(sftp.referenciaComprovante(CTE,NFE)).thenReturn("origem-validada/ESL_CLIENT_API_DOWNLOAD/photo.jpg");
+        assertEquals(ResultadoRegistro.ENVIADO,service.reprocessarCanhotoVedacitPorCte(registro,sftp));
+        assertEquals("ESL_CLIENT_API_VERIFICADO",registro.getCanhotoOrigem());
+        assertEquals("origem-validada/ESL_CLIENT_API_DOWNLOAD/photo.jpg",registro.getCanhotoReferencia());
+    }
+
     @Test
     void enviaAoProxySoapAEntregaRealESeparaDataDeEnvioDaRegressaoConhecida() {
         when(dataEntrega.resolver(NFE, CTE)).thenReturn(
