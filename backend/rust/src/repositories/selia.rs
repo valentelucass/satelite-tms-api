@@ -4,9 +4,18 @@ use jiff::{civil::DateTime, tz::TimeZone, Timestamp};
 use rusqlite::{params, OptionalExtension, TransactionBehavior};
 use std::collections::BTreeSet;
 
+const RECEIVE_SQL_SERVER: &str = concat!(
+    "DECLARE @lista bigint = CONVERT(bigint, ?), @mapas nvarchar(max) = CONVERT(nvarchar(max), ?), ",
+    "@recibo bigint, @data datetime2(7);\n",
+    include_str!("selia_receber.sql"),
+    "\nSELECT @recibo AS id, CONVERT(varchar(32), @data, 121) AS data ",
+    "FOR JSON PATH, WITHOUT_ARRAY_WRAPPER;"
+);
+
 #[derive(Debug, PartialEq, Eq)]
 pub enum ReceiveError {
     Conflict,
+    MissingProviderId,
     Storage,
 }
 
@@ -22,6 +31,18 @@ impl Repository {
         list_id: i64,
         correlations: &[Correlation],
     ) -> Result<Receipt, ReceiveError> {
+        if let Some(db) = self.sql_server() {
+            // Um único lote mantém o lock, o cabeçalho e os vínculos na mesma conexão.
+            let mappings =
+                serde_json::to_string(correlations).map_err(|_| ReceiveError::Storage)?;
+            let row = db
+                .json(RECEIVE_SQL_SERVER, &[list_id.to_string(), mappings])
+                .map_err(|_| ReceiveError::Storage)?;
+            return Ok(Receipt {
+                provider_list_id: row["id"].as_i64().ok_or(ReceiveError::MissingProviderId)?,
+                created_at: receipt_date(row["data"].as_str().ok_or(ReceiveError::Storage)?)?,
+            });
+        }
         let proposed: BTreeSet<_> = correlations.iter().collect();
         let mut db = self.connection()?;
         // Em SQLite BEGIN IMMEDIATE serializa os escritores inclusive em processos distintos.
@@ -244,5 +265,95 @@ mod tests {
         db.execute_batch("DROP TRIGGER fault").unwrap();
         assert!(data.repository.receive(38, &maps).is_ok());
         assert_eq!(data.row_count(38), 3);
+    }
+
+    #[test]
+    #[ignore = "requer SATELITE_TEST_PROPERTIES e uma conexão SQL Server"]
+    fn sql_server_reenvio_preserva_recibo_e_vinculos_e_falha_desfaz_a_lista() {
+        let path = std::env::var_os("SATELITE_TEST_PROPERTIES").expect("SATELITE_TEST_PROPERTIES");
+        let settings =
+            crate::config::Settings::from_properties(std::path::Path::new(&path)).unwrap();
+        let server = super::super::SqlServer::new(&settings).unwrap();
+        let query =
+            include_str!("selia_receber.sql").replace("dbo.tb_log_integracao", "#plp_satelite");
+        assert!(!query.contains("dbo."));
+        let mut first = mapping(1);
+        first.order_number = "Ação".into();
+        first.volume_number = "B".into();
+        let mut second = mapping(2);
+        second.order_number = "P2".into();
+        second.volume_number = "A".into();
+        let original = serde_json::to_string(&[&first, &second]).unwrap();
+        let changed = serde_json::to_string(&[mapping(3)]).unwrap();
+        second.order_number = "FALHAR".into();
+        let invalid = serde_json::to_string(&[&first, &second]).unwrap();
+        let result = server
+            .json(
+                include_str!("../../tests/fixtures/selia_sql_server_temporario.sql"),
+                &[query, original, changed, invalid],
+            )
+            .unwrap();
+        assert_eq!(result["verificado"], true);
+    }
+
+    #[test]
+    #[ignore = "requer SATELITE_TEST_PROPERTIES e uma conexão SQL Server"]
+    fn sql_server_concorrencia_entre_conexoes_gera_um_unico_aceite() {
+        let path = std::env::var_os("SATELITE_TEST_PROPERTIES").expect("SATELITE_TEST_PROPERTIES");
+        let settings =
+            crate::config::Settings::from_properties(std::path::Path::new(&path)).unwrap();
+        let server = super::super::SqlServer::new(&settings).unwrap();
+        let row = server.json(
+            "SELECT REPLACE(CONVERT(char(36), NEWID()), '-', '') AS guid FOR JSON PATH, WITHOUT_ARRAY_WRAPPER",
+            &[],
+        ).unwrap();
+        let guid = row["guid"].as_str().unwrap();
+        assert!(guid.len() == 32 && guid.bytes().all(|b| b.is_ascii_hexdigit()));
+        let table = format!("##satelite_plp_teste_{guid}");
+        // Apenas o identificador aleatório da tabela é interpolado. Os dados da lista são parâmetros.
+        let setup = format!("SET NOCOUNT ON; SELECT TOP (0) id, intelipost_pre_shipment_list, logistics_provider_shipment_list,
+            chave_nfe, order_number, volume_number, sistema_destino, status, status_dados, status_canhoto, tentativas_dados,
+            tentativas_canhoto, data_processamento, arquivado INTO {table} FROM dbo.tb_log_integracao;
+            SELECT 1 AS criada FOR JSON PATH, WITHOUT_ARRAY_WRAPPER;");
+        assert_eq!(server.json(&setup, &[]).unwrap()["criada"], 1);
+        let query = RECEIVE_SQL_SERVER.replace("dbo.tb_log_integracao", &table);
+        assert!(!query.contains("dbo."));
+        let list = (i64::from_str_radix(&guid[..14], 16).unwrap() + (1_i64 << 62)).to_string();
+        let barrier = Arc::new(Barrier::new(8));
+        let tasks: Vec<_> = (1..=8)
+            .map(|i| {
+                let (db, sql, list, barrier) =
+                    (server.clone(), query.clone(), list.clone(), barrier.clone());
+                thread::spawn(move || {
+                    let correlations = serde_json::to_string(&[mapping(i)]).unwrap();
+                    barrier.wait();
+                    db.json(&sql, &[list, correlations])
+                })
+            })
+            .collect();
+        let responses: Vec<_> = tasks.into_iter().map(|t| t.join()).collect();
+        let verify = format!("SELECT COUNT(*) AS linhas, COUNT(DISTINCT logistics_provider_shipment_list) AS recibos,
+            COUNT(DISTINCT order_number) AS pedidos FROM {table} FOR JSON PATH, WITHOUT_ARRAY_WRAPPER");
+        let counts = server.json(&verify, &[]);
+        server
+            .json(
+                &format!("SET NOCOUNT ON; DROP TABLE {table}; SELECT 1 AS removida FOR JSON PATH"),
+                &[],
+            )
+            .unwrap();
+        let counts = counts.unwrap();
+        assert_eq!(
+            counts,
+            serde_json::json!({ "linhas": 2, "recibos": 1, "pedidos": 1 })
+        );
+        let ids: BTreeSet<_> = responses
+            .into_iter()
+            .map(|r| {
+                let receipt = r.unwrap().unwrap();
+                receipt_date(receipt["data"].as_str().unwrap()).unwrap();
+                receipt["id"].as_i64().unwrap()
+            })
+            .collect();
+        assert_eq!(ids.len(), 1);
     }
 }

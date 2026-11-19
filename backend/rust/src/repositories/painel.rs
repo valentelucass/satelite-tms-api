@@ -1,6 +1,7 @@
 use crate::models::painel::{Metrica, Pendencia};
 use crate::repositories::Repository;
 use crate::services::painel::Filtros;
+mod sql_server;
 use rusqlite::{
     params_from_iter,
     types::{Type, Value},
@@ -73,12 +74,17 @@ fn coluna(nome: &str) -> Option<(&'static str, Tipo)> {
 struct Condicoes {
     clausulas: Vec<String>,
     valores: Vec<Value>,
+    sql_server: bool,
 }
 
 impl Condicoes {
     fn parametro(&mut self, valor: impl Into<Value>) -> String {
         self.valores.push(valor.into());
-        format!("?{}", self.valores.len())
+        format!(
+            "{}{}",
+            if self.sql_server { "@filtro" } else { "?" },
+            self.valores.len()
+        )
     }
 
     fn lista(&mut self, itens: &[String]) -> String {
@@ -106,7 +112,11 @@ impl Condicoes {
             _ => {
                 // Igual a CONVERT(VARCHAR(19), data, 120) na busca por coluna do Java.
                 let texto = if matches!(tipo, Tipo::Data) {
-                    format!("substr({expr},1,19)")
+                    if self.sql_server {
+                        format!("CONVERT(varchar(19), {expr}, 120)")
+                    } else {
+                        format!("substr({expr},1,19)")
+                    }
                 } else {
                     expr.to_owned()
                 };
@@ -123,13 +133,17 @@ impl Condicoes {
         self.clausulas.push(cond);
     }
 
-    fn pendencias(filtros: &Filtros) -> Self {
-        let mut cond = Self::default();
+    fn pendencias(filtros: &Filtros, sql_server: bool) -> Self {
+        let mut cond = Self {
+            sql_server,
+            ..Default::default()
+        };
         let destinos = cond.lista(&filtros.destinos);
         cond.clausulas.push(format!("destino IN ({destinos})"));
         match filtros.escopo.as_str() {
             "TODOS" => (),
             "SUCESSO" => cond.clausulas.push(SUCESSOS.to_owned()),
+            _ if sql_server => cond.clausulas.push(sql_server::PENDENTES.to_owned()),
             _ => cond.clausulas.push(PENDENTES.to_owned()),
         }
         if let Some((inicio, fim)) = limites(filtros) {
@@ -265,11 +279,34 @@ impl Repository {
     pub fn consultar_painel(
         &self,
         f: &Filtros,
+    ) -> Result<(Vec<Metrica>, Vec<Pendencia>, i64), String> {
+        if let Some(db) = self.sql_server() {
+            return sql_server::consultar(db, f);
+        }
+        self.consultar_painel_sqlite(f)
+            .map_err(|_| "Falha na consulta ao painel da bancada".into())
+    }
+
+    pub fn exportar_pendencias(
+        &self,
+        filtros: &Filtros,
+        linha: impl FnMut(Pendencia) -> Result<(), String>,
+    ) -> Result<(), String> {
+        sql_server::exportar(
+            self.sql_server().ok_or("Exportação requer SQL Server")?,
+            filtros,
+            linha,
+        )
+    }
+
+    fn consultar_painel_sqlite(
+        &self,
+        f: &Filtros,
     ) -> rusqlite::Result<(Vec<Metrica>, Vec<Pendencia>, i64)> {
         let mut db = self.connection()?;
         let tx = db.transaction()?;
         let metricas = obter_metricas(&tx, f)?;
-        let mut cond = Condicoes::pendencias(f);
+        let mut cond = Condicoes::pendencias(f, false);
         let base = format!("FROM painel WHERE {}", cond.clausulas.join(" AND "));
         let total = tx.query_row(
             &format!("{PAINEL} SELECT count(*) {base}"),

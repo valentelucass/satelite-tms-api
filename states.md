@@ -1,5 +1,13 @@
 # Estado Atual do Sistema
 
+## API Rust em produção, 18/11/2026 às 23h12
+
+O PM2 iniciou `api-integracoes-19090` com `satelite-tms-api.exe` em `127.0.0.1:19090` e `SATELITE-TMS-CLIENTES` seguiu online em Java. A API acessa diretamente o SQL Server da auditoria. O dashboard conserva a rota `GET /api/auditoria/integracoes-clientes`. O executável publicado tem SHA-256 `b5b02ecd50a1ea385d328928b705ace8689693bfec60f8f42db4ed51408f874f`. O PM2 guardou a configuração principal e a de reserva. O JAR Java anterior fica disponível para reversão.
+
+A mediana de nove amostras, com os dois programas respondendo às mesmas consultas no mesmo servidor, foi 569,7 MiB na API Java e 14,8 MiB na API Rust. A redução observada foi de 554,9 MiB (97,4%). Após a publicação a API Rust ocupou 14,3 MiB na primeira conferência. A memória varia com a carga.
+
+Os 26 testes Rust passaram, incluindo SQL Server com dados fictícios e recebimento simultâneo da mesma lista SELIA. As comparações HTTP cobriram painel, indicadores, CSV, SFTP, reconciliação, quarentena e imagens. A ordenação por ID funcionou no Rust em um cenário que retornava 500 no Java. Os registros reais consultados da PPG estavam sem imagem. Uma imagem fictícia de 16 KiB confirmou a leitura no SQL Server. Depois da troca, as 21 rotas anunciaram os métodos esperados, as 19 consultas responderam como previsto e o recebimento SELIA recusou requisições sem chave e com dados inválidos.
+
 ## Dois programas ativos no PM2, 18/11/2026
 
 O grupo `satelite-tms` contém `api-integracoes-19090` e `SATELITE-TMS-CLIENTES`. A API Java atende as 21 rotas em `127.0.0.1:19090`. O JAR de clientes executa SFTP/Vedacit, SELIA e a reconciliação. Os cinco controladores HTTP e as bibliotecas do Tomcat foram retirados desse JAR. O Rust continua em bancada.

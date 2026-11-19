@@ -1,6 +1,6 @@
 use axum::{
-    extract::{Path, State},
-    http::{header, StatusCode},
+    extract::{rejection::PathRejection, Path, State},
+    http::{header, StatusCode, Uri},
     response::{IntoResponse, Response},
     routing::get,
     Router,
@@ -12,11 +12,28 @@ use crate::services::imagem::extrair_imagem;
 
 pub fn router(repo: Repository) -> Router {
     Router::new()
-        .route("/api/auditoria/logs/{id}/imagem", get(consultar))
+        .route(
+            "/api/auditoria/logs/{id}/imagem",
+            get(consultar).options(|| async { [(header::ALLOW, "GET,HEAD,OPTIONS")] }),
+        )
         .with_state(repo)
 }
 
-async fn consultar(State(repo): State<Repository>, Path(id): Path<i64>) -> Response {
+async fn consultar(
+    State(repo): State<Repository>,
+    uri: Uri,
+    id: Result<Path<i64>, PathRejection>,
+) -> Response {
+    let Ok(Path(id)) = id else {
+        return (
+            StatusCode::BAD_REQUEST,
+            axum::Json(serde_json::json!({
+                "timestamp": jiff::Timestamp::now().strftime("%Y-%m-%dT%H:%M:%S%.3fZ").to_string(),
+                "status":400,"error":"Bad Request","path":uri.path()
+            })),
+        )
+            .into_response();
+    };
     let row = match task::spawn_blocking(move || repo.get_image_row(id)).await {
         Ok(Ok(row)) => row,
         _ => return StatusCode::INTERNAL_SERVER_ERROR.into_response(),

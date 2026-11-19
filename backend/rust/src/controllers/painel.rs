@@ -26,7 +26,12 @@ fn erro_http(status: StatusCode) -> Response {
 }
 
 pub fn router(repo: Repository) -> Router {
-    Router::new().route(ROTA, get(painel)).with_state(repo)
+    Router::new()
+        .route(
+            ROTA,
+            get(painel).options(|| async { [(axum::http::header::ALLOW, "GET,HEAD,OPTIONS")] }),
+        )
+        .with_state(repo)
 }
 
 async fn painel(State(repo): State<Repository>, RawQuery(query): RawQuery) -> Response {

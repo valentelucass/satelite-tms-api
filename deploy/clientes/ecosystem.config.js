@@ -1,5 +1,6 @@
 const fs = require('node:fs');
 const path = require('node:path');
+const { createHash } = require('node:crypto');
 const { execFileSync } = require('node:child_process');
 
 const repo = path.resolve(__dirname, '../..');
@@ -12,6 +13,16 @@ if (!/^[a-f0-9]{32}$/.test(versao)) {
 }
 const api = path.join(base, 'versoes', versao, 'satelite-api.jar');
 const clientes = path.join(base, 'versoes', versao, 'satelite-clientes.jar');
+const selecaoRust = path.join(base, 'api-rust.txt');
+let executavelRust;
+if (fs.existsSync(selecaoRust)) {
+  const hash = fs.readFileSync(selecaoRust, 'utf8').trim();
+  if (!/^[a-f0-9]{64}$/.test(hash)) throw new Error('Identificador do pacote Rust inválido.');
+  executavelRust = path.join(base, 'rust', hash, 'satelite-tms-api.exe');
+  if (createHash('sha256').update(fs.readFileSync(executavelRust)).digest('hex') !== hash) {
+    throw new Error('O executável da API Rust diverge do pacote testado.');
+  }
+}
 
 for (const file of [java, path.join(repo, '.env'), api, clientes]) {
   if (!fs.statSync(file, { throwIfNoEntry: false })?.isFile()) {
@@ -80,18 +91,24 @@ module.exports = {
       min_uptime: 120000,
       max_restarts: 2,
       kill_timeout: 30000,
-      args: [
-        ...commonArgs(api),
-        '--satelite.logs.papel=api-integracoes',
-        '--server.address=127.0.0.1',
-        '--server.port=19090',
-        '--spring.datasource.hikari.maximum-pool-size=5',
-        '--APP_DASHBOARD_API_ONLY=true',
-        '--APP_CLIENTES_WORKER_ENABLED=false',
-        '--APP_RECONCILIACAO_ENABLED=false',
-        '--APP_LOG_RETENTION_ENABLED=false',
-        '--SELIA_INTELIPOST_PLP_ENABLED=true'
-      ]
+      ...(executavelRust ? {
+        script: executavelRust,
+        args: ['19090', '--sql-server'],
+        env: { ...common.env, SELIA_INTELIPOST_PLP_ENABLED: 'true' }
+      } : {
+        args: [
+          ...commonArgs(api),
+          '--satelite.logs.papel=api-integracoes',
+          '--server.address=127.0.0.1',
+          '--server.port=19090',
+          '--spring.datasource.hikari.maximum-pool-size=5',
+          '--APP_DASHBOARD_API_ONLY=true',
+          '--APP_CLIENTES_WORKER_ENABLED=false',
+          '--APP_RECONCILIACAO_ENABLED=false',
+          '--APP_LOG_RETENTION_ENABLED=false',
+          '--SELIA_INTELIPOST_PLP_ENABLED=true'
+        ]
+      })
     },
     {
       ...common,

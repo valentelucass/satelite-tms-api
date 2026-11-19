@@ -46,7 +46,7 @@ pub struct Paginacao {
     pub ultima_pagina: bool,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Pendencia {
     pub id: i64,

@@ -5,6 +5,18 @@ use jiff::{civil::Date, Timestamp};
 use crate::models::painel::{AuditoriaIntegracoes, Paginacao, Pendencias};
 use crate::repositories::Repository;
 
+// O JPA da API Java aplica hibernate.jdbc.time_zone=UTC às métricas. A tabela
+// de pendências usa JdbcTemplate, que mantém o horário civil de São Paulo.
+pub(crate) fn limite_metricas_utc(data: jiff::civil::Date) -> Result<String, String> {
+    Ok(data
+        .in_tz("America/Sao_Paulo")
+        .map_err(|_| "Data fora do intervalo das métricas")?
+        .timestamp()
+        .to_zoned(jiff::tz::TimeZone::UTC)
+        .datetime()
+        .to_string())
+}
+
 pub const DESTINOS: [&str; 4] = ["PPG", "VEDACIT", "SELIA", "SUPPORTE"];
 
 fn data_sql(texto: &str) -> Option<Date> {
@@ -101,7 +113,7 @@ impl Filtros {
     }
 }
 
-pub fn consultar(repo: &Repository, filtros: &Filtros) -> rusqlite::Result<AuditoriaIntegracoes> {
+pub fn consultar(repo: &Repository, filtros: &Filtros) -> Result<AuditoriaIntegracoes, String> {
     let (metricas_consolidadas, itens, total_elementos) = repo.consultar_painel(filtros)?;
     let tamanho = i64::from(filtros.tamanho);
     let total_paginas = total_elementos / tamanho + i64::from(total_elementos % tamanho != 0);
@@ -115,7 +127,7 @@ pub fn consultar(repo: &Repository, filtros: &Filtros) -> rusqlite::Result<Audit
     };
     let agora = Timestamp::now()
         .in_tz("America/Sao_Paulo")
-        .map_err(|_| rusqlite::Error::InvalidQuery)?;
+        .map_err(|_| "Fuso horário indisponível")?;
     Ok(AuditoriaIntegracoes {
         gerado_em: agora.datetime().to_string(),
         metricas_consolidadas,

@@ -2,14 +2,14 @@
 
 | Pasta | O que contém |
 |---|---|
-| [backend/java](backend/java) | Projeto Spring e Maven. A API usa os controladores em `src/api/java`. O programa de clientes usa `src/clientes/java` e os serviços de integração e reconciliação em `src/main/java`. |
-| [backend/rust](backend/rust/README.md) | Versão local da API. Atende a consulta principal do dashboard, a imagem de comprovante e o recebimento de listas da SELIA. |
+| [backend/java](backend/java) | Programa de clientes em `src/clientes/java`, com integrações e reconciliação em `src/main/java`. A API Java guardada para reversão tem seus controladores em `src/api/java`. |
+| [backend/rust](backend/rust/README.md) | API do dashboard e do recebimento SELIA. O executável Windows atende as rotas diretamente no SQL Server. O modo com SQLite serve aos testes locais. |
 | [backend/rust/contracts](backend/rust/contracts/api-integracoes.json) | Catálogo das 21 rotas do Satélite, com os campos de entrada e saída, os consumidores identificados e a origem dos dados. |
 | [database](database) | Scripts SQL de criação e atualização do banco de auditoria. |
 | [deploy/clientes](deploy/clientes/README.md) | Configuração dos dois programas ativos no PM2, `satelite-tms/api-integracoes-19090` e `satelite-tms/SATELITE-TMS-CLIENTES`. |
 | [scripts](scripts) | Comandos de operação e de teste. |
 
-Os processos usam JARs próprios em `deploy/clientes/pacotes/versoes` e gravam seus logs separadamente em `logs-residentes`. O comando `node deploy/clientes/operar.cjs status` mostra os dois serviços. O histórico de versões está em [states.md](states.md).
+A API usa um executável Rust e o programa de clientes usa um JAR Java. Os pacotes ficam em `deploy/clientes/pacotes`. O comando `node deploy/clientes/operar.cjs status` mostra os dois serviços. O histórico de versões está em [states.md](states.md).
 
 ## Testes locais
 

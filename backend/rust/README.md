@@ -1,6 +1,18 @@
-# Piloto da API de integrações
+# API de integrações em Rust
 
-O executável de bancada atende três rotas do Satélite.
+O executável atende as 21 rotas do Satélite ao usar SQL Server. O Dashboard consulta a auditoria e baixa relatórios pela porta 19090. A SELIA envia as listas de pré-embarque à mesma API. O [catálogo de contratos](contracts/api-integracoes.json) identifica o método, os parâmetros e os campos de cada rota.
+
+## Banco do Satélite
+
+O modo `--sql-server` escuta em `127.0.0.1` e usa o Microsoft ODBC Driver 18 para SQL Server. O processo lê as propriedades do arquivo `.env` em seu diretório de trabalho. `SATELITE_DB_URL`, `SATELITE_DB_USER` e `SATELITE_DB_PASSWORD` seguem os nomes usados no Spring, com fallback para `DB_URL`, `DB_USER` e `DB_PASSWORD`. A URL JDBC precisa apontar para `SATELITE_TMS_AUDITORIA`. A conexão usa criptografia e respeita a configuração de certificado da URL. O limite é de cinco conexões por processo.
+
+O [procedimento do PM2](../../deploy/clientes/README.md) descreve a operação na máquina do Satélite. Para conferir uma instância em uma porta local disponível, execute o binário com `<porta> --sql-server` a partir da raiz do projeto. O SQL das métricas usa o período do painel em São Paulo com conversão para UTC, como o acesso JPA da aplicação Java. A tabela de pendências e os arquivos CSV usam datas locais, como nas consultas JDBC correspondentes.
+
+Uma lista SELIA repetida no SQL Server recebe o número e a data do aceite anterior e preserva os vínculos já gravados. Essa regra também vale quando o conteúdo reenviado mudou.
+
+## Bancada SQLite
+
+A bancada com arquivo SQLite exercita três rotas.
 
 | Rota | Comportamento exercitado |
 |---|---|
@@ -8,9 +20,7 @@ O executável de bancada atende três rotas do Satélite.
 | `POST /api/selia/intelipost/pre-shipment-list` | Autenticação e recebimento das listas de pré-embarque SELIA, com gravação transacional e tratamento de repetição. |
 | `GET /api/auditoria/logs/{id}/imagem` | Leitura pelo Dashboard de um canhoto PPG salvo na auditoria. Entrega o texto da imagem ou HTTP 404. |
 
-O Rust escuta em `127.0.0.1` e acessa diretamente um arquivo SQLite de teste. O [projeto Java](../java) contém a API de referência e o processamento dos clientes. A homologação com SQL Server e as demais 18 rotas fazem parte da avaliação para uma futura substituição.
-
-No recebimento SELIA, uma lista repetida com os mesmos vínculos recebe o número e a hora do aceite anterior. Se o mesmo número chegar com vínculos diferentes, o piloto responde `409` e preserva os dados gravados. O Java atual responde `200` nessa situação. A adoção dessa mudança depende do comportamento esperado pela SELIA.
+O modo SQLite usa um arquivo de teste indicado na linha de comando. Na bancada, um reenvio com vínculos diferentes responde `409`. O [projeto Java](../java) contém a implementação de referência e o processamento dos clientes.
 
 ## Onde encontrar cada parte
 

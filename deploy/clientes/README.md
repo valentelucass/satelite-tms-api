@@ -5,9 +5,9 @@
 | `api-integracoes-19090` | Consultas do dashboard e recepção das listas de pré-embarque SELIA/Intelipost em `127.0.0.1:19090`. |
 | `SATELITE-TMS-CLIENTES` | Integração de eventos e comprovantes SELIA, processamento documental Vedacit por SFTP e reconciliação de Vedacit, PPG, SELIA e SUPPORTE. |
 
-A API inicia em modo dashboard com `satelite-api.jar`. O segundo processo usa `satelite-clientes.jar`, compilado com o perfil Maven `clientes-worker`, e inicia sem porta HTTP. Os controladores do painel e do recebimento SELIA pertencem ao pacote da API. SFTP e SELIA têm uma agenda por rotina e cada uma aguarda 30 minutos depois do próprio término. A reconciliação conserva as janelas de revisão por cliente. A seleção explícita de SELIA mantém a leitura do seu cursor e evita iniciar uma segunda passagem de Vedacit. PPG e SUPPORTE participam da revisão local. Seus envios continuam desabilitados neste perfil.
+A API Rust inicia com `satelite-tms-api.exe 19090 --sql-server` e lê a configuração de conexão e autenticação do `.env` do projeto. O PM2 habilita o recebimento de listas da SELIA. O segundo processo usa `satelite-clientes.jar`, compilado com o perfil Maven `clientes-worker`, e inicia sem porta HTTP. Os controladores do painel e do recebimento SELIA pertencem ao pacote da API. SFTP e SELIA têm uma agenda por rotina e cada uma aguarda 30 minutos depois do próprio término. A reconciliação conserva as janelas de revisão por cliente. A seleção explícita de SELIA mantém a leitura do seu cursor e evita iniciar uma segunda passagem de Vedacit. PPG e SUPPORTE participam da revisão local. Seus envios continuam desabilitados neste perfil.
 
-O worker registra o resultado de cada ciclo no log. Uma falha normal da integração termina o lote e permite a próxima tentativa. Uma falha fatal do agendador provoca saída do processo para recuperação pelo PM2. O índice de XML da passagem SFTP é liberado ao terminar. Os dois papéis gravam logs separados em `logs-residentes`, com rotação diária e por tamanho.
+O worker registra o resultado de cada ciclo no log. Uma falha normal da integração termina o lote e permite a próxima tentativa. Uma falha fatal do agendador provoca saída do processo para recuperação pelo PM2. O índice de XML da passagem SFTP é liberado ao terminar. O log da API está em `pm2 logs api-integracoes-19090`. Os ciclos do worker ficam em `logs-residentes/clientes`, com rotação diária e por tamanho.
 
 ## Preparação local
 
@@ -28,6 +28,14 @@ node -e "console.log(require('./deploy/clientes/ecosystem.config.js').apps.map(a
 ```
 
 O empacotador cria os dois arquivos na mesma pasta em `deploy/clientes/pacotes/versoes` e mostra os caminhos e hashes SHA-256. Depois da conferência, `deploy/clientes/pacotes/atual.txt` identifica a versão completa usada pelo manifesto. Uma falha durante a preparação mantém a seleção anterior. A última linha inspeciona os dois pacotes. A pasta de pacotes fica fora da saída de compilação do Maven. O cadastro no PM2 é uma etapa operacional separada.
+
+Para preparar a API nativa no Windows, instale o Microsoft ODBC Driver 18 para SQL Server e use um ambiente de compilação Rust. Na raiz, execute:
+
+```powershell
+.\deploy\clientes\empacotar-api-rust.ps1
+```
+
+O script testa e compila o executável em modo release. A pasta do executável e a seleção em `deploy/clientes/pacotes/api-rust.txt` identificam seu SHA-256. O manifesto confere essa assinatura antes de iniciar a API. A publicação dos pacotes Java continua independente da seleção Rust. Para voltar à API Java guardada, pare a API, retire o arquivo de seleção Rust, remova apenas o cadastro da API no PM2 e inicie novamente com o manifesto. Confirme a consulta do painel na 19090 antes de persistir a configuração de reinício. O worker conserva seu cadastro durante a troca.
 
 ## Operação
 

@@ -1566,8 +1566,8 @@
       },
       "regras": [
         "Transação com um cabeçalho SELIA_PLP e vínculos únicos SELIA_PLP_MAP por chave de NF-e, pedido e volume.",
-        "Reenvio usa o número e data do primeiro aceite, compondo pedidos a partir do novo corpo. Java responde 200 inclusive se os vínculos mudaram e mantém os gravados. O piloto Rust retorna 409 nesse caso.",
-        "O protótipo Rust aceita número inteiro de lista em texto e rejeita lista fracionária; o desserializador Java pode converter números fracionários para inteiros."
+        "Reenvio usa o número e a data do primeiro aceite e compõe os pedidos a partir do novo corpo. Java e Rust com SQL Server respondem 200 inclusive se os vínculos mudaram e mantêm os já gravados. A bancada Rust com SQLite retorna 409 nesse caso.",
+        "O Rust aceita número inteiro de lista em texto e rejeita lista fracionária. O desserializador Java pode converter números fracionários para inteiros."
       ]
     }
   ],

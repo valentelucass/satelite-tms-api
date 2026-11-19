@@ -1,3 +1,4 @@
+use crate::config::Settings;
 use crate::dto::selia::PreShipment;
 use crate::repositories::selia::ReceiveError;
 use crate::repositories::Repository;
@@ -11,7 +12,6 @@ use axum::{Json, Router};
 use serde_json::json;
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
-use std::env;
 use std::net::{IpAddr, SocketAddr};
 use std::str::FromStr;
 use std::sync::{Arc, Mutex};
@@ -33,8 +33,10 @@ pub struct SeliaSettings {
 }
 
 impl SeliaSettings {
-    pub fn from_env() -> Result<Self, String> {
-        let key = env::var("SELIA_INTELIPOST_LOGISTIC_PROVIDER_API_KEY").unwrap_or_default();
+    pub fn from_config(config: &Settings) -> Result<Self, String> {
+        let key = config
+            .get("SELIA_INTELIPOST_LOGISTIC_PROVIDER_API_KEY")
+            .unwrap_or_default();
         let key_hash = if key.trim().is_empty() {
             None
         } else {
@@ -42,24 +44,40 @@ impl SeliaSettings {
         };
         Ok(Self {
             key_hash,
-            enabled: setting("SELIA_INTELIPOST_PLP_ENABLED", false)?,
-            max_body: setting("SELIA_INTELIPOST_PLP_MAX_BODY_BYTES", 5_242_880usize)?.max(1024),
-            rate_enabled: setting("SELIA_INTELIPOST_PLP_RATE_LIMIT_ENABLED", true)?,
+            enabled: setting(config, "SELIA_INTELIPOST_PLP_ENABLED", false)?,
+            max_body: setting(
+                config,
+                "SELIA_INTELIPOST_PLP_MAX_BODY_BYTES",
+                5_242_880usize,
+            )?
+            .max(1024),
+            rate_enabled: setting(config, "SELIA_INTELIPOST_PLP_RATE_LIMIT_ENABLED", true)?,
             window: Duration::from_millis(
-                setting("SELIA_INTELIPOST_PLP_RATE_LIMIT_WINDOW_MS", 60_000u64)?.max(1000),
+                setting(
+                    config,
+                    "SELIA_INTELIPOST_PLP_RATE_LIMIT_WINDOW_MS",
+                    60_000u64,
+                )?
+                .max(1000),
             ),
             max_per_key: setting(
+                config,
                 "SELIA_INTELIPOST_PLP_RATE_LIMIT_MAX_REQUESTS_PER_KEY",
                 60usize,
             )?
             .max(1),
             max_per_ip: setting(
+                config,
                 "SELIA_INTELIPOST_PLP_RATE_LIMIT_MAX_REQUESTS_PER_IP",
                 120usize,
             )?
             .max(1),
-            max_buckets: setting("SELIA_INTELIPOST_PLP_RATE_LIMIT_MAX_BUCKETS", 10_000usize)?
-                .max(100),
+            max_buckets: setting(
+                config,
+                "SELIA_INTELIPOST_PLP_RATE_LIMIT_MAX_BUCKETS",
+                10_000usize,
+            )?
+            .max(100),
         })
     }
 
@@ -70,14 +88,13 @@ impl SeliaSettings {
     }
 }
 
-fn setting<T: FromStr>(name: &str, default: T) -> Result<T, String> {
-    match env::var(name) {
-        Ok(value) => value
+fn setting<T: FromStr>(config: &Settings, name: &str, default: T) -> Result<T, String> {
+    match config.get(name) {
+        Some(value) => value
             .trim()
             .parse()
             .map_err(|_| format!("Configuração inválida: {name}")),
-        Err(env::VarError::NotPresent) => Ok(default),
-        Err(_) => Err(format!("Configuração inválida: {name}")),
+        None => Ok(default),
     }
 }
 
@@ -297,6 +314,11 @@ async fn receive(
             StatusCode::CONFLICT,
             id,
             "A lista já foi recebida com associações diferentes.",
+        ),
+        Ok(Err(ReceiveError::MissingProviderId)) => problem(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            id,
+            "Não foi possível gerar a lista técnica da transportadora.",
         ),
         _ => problem(
             StatusCode::INTERNAL_SERVER_ERROR,

@@ -4,13 +4,18 @@ if not "%~2"=="" goto uso
 if "%~1"=="" goto escolher
 if /I "%~1"=="api-integracoes-19090" goto api
 if /I "%~1"=="clientes" goto clientes
+if /I "%~1"=="SATELITE-TMS-CLIENTES" goto clientes
 :uso
-echo Uso: logs.bat [api-integracoes-19090^|clientes]
+echo Uso: logs.bat [api-integracoes-19090^|SATELITE-TMS-CLIENTES]
 exit /b 2
 :escolher
 choice /c 12 /n /m "Logs do Satelite: 1 API, 2 Clientes: "
 if errorlevel 2 goto clientes
 :api
+if exist "%~dp0..\deploy\clientes\pacotes\api-rust.txt" (
+    call pm2.cmd logs api-integracoes-19090 --lines 50
+    exit /b
+)
 set "SATELITE_LOG_ATUAL=%~dp0..\logs-residentes\api-integracoes\atual.log"
 goto acompanhar
 :clientes
