@@ -47,6 +47,7 @@ set "CONFIRMACOES_ONLY="
 set "SANEAMENTO_VEDACIT_ONLY="
 set "RECONCILIACAO_ONLY="
 set "EVENTOS_ETAPAS_ONLY="
+set "RESUMO_PAINEL_ONLY="
 if /I "%~1"=="--rodizio" (
     set "RODIZIO_ONLY=1"
 ) else if /I "%~1"=="--confirmacoes" (
@@ -57,8 +58,10 @@ if /I "%~1"=="--rodizio" (
     set "RECONCILIACAO_ONLY=1"
 ) else if /I "%~1"=="--eventos-etapas" (
     set "EVENTOS_ETAPAS_ONLY=1"
+) else if /I "%~1"=="--resumo-painel" (
+    set "RESUMO_PAINEL_ONLY=1"
 ) else if not "%~1"=="" (
-    echo [ERRO] Opcao invalida. Use sem argumentos, --rodizio, --confirmacoes, --saneamento-vedacit, --reconciliacao ou --eventos-etapas.
+    echo [ERRO] Opcao invalida. Use sem argumentos, --rodizio, --confirmacoes, --saneamento-vedacit, --reconciliacao, --eventos-etapas ou --resumo-painel.
     exit /b 1
 )
 
@@ -93,6 +96,7 @@ if "%SQLCMD_TLS_ARGS%"=="" (
 echo.
 
 if defined RODIZIO_ONLY goto :rodizio_only
+if defined RESUMO_PAINEL_ONLY goto :resumo_painel_only
 if defined CONFIRMACOES_ONLY goto :confirmacoes_only
 if defined SANEAMENTO_VEDACIT_ONLY goto :saneamento_vedacit_only
 if defined RECONCILIACAO_ONLY goto :reconciliacao_only
@@ -184,6 +188,10 @@ if errorlevel 1 (
 )
 
 exit /b 0
+
+:resumo_painel_only
+call :run_sql "%SCRIPT_ROOT%\maintenance\02_resumo_integracoes_painel.sql"
+exit /b %errorlevel%
 
 :saneamento_vedacit_only
 rem Preserva aceites e corrige somente classificacoes comprovadamente residuais.

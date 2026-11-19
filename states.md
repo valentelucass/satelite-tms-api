@@ -38,6 +38,11 @@ Pacote `target/clientes-candidato/satelite-clientes.jar`, SHA-256 `92aeb9e429aca
 
 Em três pares de ensaios com a mesma compilação Java, 24 pares de XML/JPEG Vedacit e 120 pedidos SELIA produziram saídas idênticas. A mediana do pico residente somado dos processos de clientes caiu de 1.661,9 para 595,9 MiB. Nos segundos seguintes ao fim dos lotes, a mediana passou de 484,9 para 515,4 MiB. A API foi excluída da comparação por existir nas duas topologias. Métodos, resultados e limites em `target/clientes-candidato/evidencias`. O banco e os destinos reais, a execução noturna, a vazão sob carga real e a atualização da restauração no boot ficam para a implantação operacional. Nenhum componente Rust foi introduzido.
 
+## Consulta dos indicadores do dashboard em 18/11/2026
+
+O Query Store registrou até 94 s para o resumo dos quatro destinos, com espera por paralelismo. O ajuste do plano limita apenas esse resumo a um processador por execução. As seis linhas do resumo conferiram com a execução de referência. O DEV exibiu a consulta na primeira tentativa após a aplicação. O comando restrito `database\subir_database.bat --resumo-painel` reaplica o ajuste pela assinatura do SQL. Os processos do Satélite seguiram em execução.
+
+
 ## Verificação do fluxo interno — 2026-10-05, 14:35 BRT
 
 Atualização às 14:47 BRT: segundo início automático SELIA confirmado, sem intervenção: JVM PID 10588 às 14:40:44, ciclo 14:41:05–14:42:52. Duas páginas/40 notas: 20 classificadas pelo serviço como já processadas, 20 falhas por pedido/correlação PLP, zero novos envios e zero pendência de foto. Cursor avançou uma página para 312658642 e ficou preservado diante da segunda página com erros; saída 1, erro crítico false. O reinício periódico está comprovado, mas ainda não existe confirmação de envio produtivo novo. Nenhuma consulta externa adicional foi disparada pelo agente.
