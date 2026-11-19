@@ -47,7 +47,7 @@ dump.pm2
 target/
 /target-build-*/
 *.class
-.mvn/wrapper/maven-wrapper.jar
+backend/java/.mvn/wrapper/maven-wrapper.jar
 !**/src/main/**/target/
 !**/src/test/**/target/
 
@@ -56,13 +56,13 @@ target/
 
 # Official SOAP snapshots required by the packaged proxies are versioned.
 # Other local contract dumps remain ignored.
-src/main/resources/wsdl/**
-!src/main/resources/wsdl/vedacit/
-!src/main/resources/wsdl/vedacit/cte/
-!src/main/resources/wsdl/vedacit/nfe/
-!src/main/resources/wsdl/vedacit/ocorrencias/
-!src/main/resources/wsdl/vedacit/*/*.wsdl
-!src/main/resources/wsdl/vedacit/*/*.xsd
+backend/java/src/main/resources/wsdl/**
+!backend/java/src/main/resources/wsdl/vedacit/
+!backend/java/src/main/resources/wsdl/vedacit/cte/
+!backend/java/src/main/resources/wsdl/vedacit/nfe/
+!backend/java/src/main/resources/wsdl/vedacit/ocorrencias/
+!backend/java/src/main/resources/wsdl/vedacit/*/*.wsdl
+!backend/java/src/main/resources/wsdl/vedacit/*/*.xsd
 
 # Generated reports and crash dumps
 hs_err_pid*

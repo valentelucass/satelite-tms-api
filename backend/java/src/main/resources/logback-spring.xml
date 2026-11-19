@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<configuration>
+    <include resource="org/springframework/boot/logging/logback/defaults.xml"/>
+
+    <springProperty scope="context" name="SATELITE_LOG_LEVEL" source="logging.level.com.example.satelite" defaultValue="INFO"/>
+
+    <timestamp key="EXECUTION_DATE" datePattern="yyyy-MM-dd"/>
+    <timestamp key="EXECUTION_TIME" datePattern="HH-mm-ss"/>
+
+    <property name="LOG_PATH" value="${LOG_PATH:-logs}"/>
+
+    <property name="FILE_LOG_PATTERN"
+              value="%d{yyyy-MM-dd HH:mm:ss.SSS} %-5level [%thread] %logger{36} - %msg%n%ex{full}"/>
+
+    <appender name="FILE" class="ch.qos.logback.core.FileAppender">
+        <file>${LOG_PATH}/${EXECUTION_DATE}/etl-execucao-${EXECUTION_TIME}.log</file>
+        <append>false</append>
+        <encoder>
+            <charset>UTF-8</charset>
+            <pattern>${FILE_LOG_PATTERN}</pattern>
+        </encoder>
+    </appender>
+
+    <include resource="logback-categorias.xml"/>
+</configuration>

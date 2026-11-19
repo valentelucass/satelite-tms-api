@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<configuration>
+    <include resource="org/springframework/boot/logging/logback/defaults.xml"/>
+    <springProperty scope="context" name="SATELITE_LOG_LEVEL" source="logging.level.com.example.satelite" defaultValue="INFO"/>
+    <springProperty scope="context" name="PAPEL" source="satelite.logs.papel"/>
+    <springProperty scope="context" name="PASTA" source="satelite.logs.diretorio" defaultValue="logs-residentes"/>
+    <springProperty scope="context" name="TAMANHO" source="satelite.logs.tamanho-arquivo" defaultValue="32MB"/>
+
+    <appender name="FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
+        <file>${PASTA}/${PAPEL}/atual.log</file>
+        <append>true</append>
+        <rollingPolicy class="ch.qos.logback.core.rolling.SizeAndTimeBasedRollingPolicy">
+            <fileNamePattern>${PASTA}/${PAPEL}/historico/%d{yyyy-MM-dd}.%i.log</fileNamePattern>
+            <maxFileSize>${TAMANHO}</maxFileSize>
+            <maxHistory>30</maxHistory>
+            <totalSizeCap>240MB</totalSizeCap>
+            <cleanHistoryOnStart>true</cleanHistoryOnStart>
+        </rollingPolicy>
+        <encoder>
+            <charset>UTF-8</charset>
+            <pattern>%d{yyyy-MM-dd HH:mm:ss.SSS} %-5level [%thread] %logger{36} - %msg%n%ex{full}</pattern>
+        </encoder>
+    </appender>
+
+    <include resource="logback-categorias.xml"/>
+</configuration>

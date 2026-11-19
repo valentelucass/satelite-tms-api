@@ -1,12 +1,15 @@
 [CmdletBinding()]
 param(
-    [string]$Maven = 'mvn.cmd',
+    [string]$Maven,
     [string]$JavaHome = $env:JAVA_HOME,
-    [string]$Testes = '*'
+    [string]$Testes = '*',
+    [ValidateSet('api', 'clientes')][string]$Papel = 'api'
 )
 $ErrorActionPreference = 'Stop'
 $repo = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
-$saida = Join-Path $repo ('target/unit-tests/coverage-' + (Get-Date -Format 'yyyyMMdd-HHmmss-fff'))
+$moduloJava = Join-Path $repo 'backend/java'
+$prefixo = if ($Papel -eq 'clientes') { 'coverage-clientes-' } else { 'coverage-' }
+$saida = Join-Path $repo ('target/unit-tests/' + $prefixo + (Get-Date -Format 'yyyyMMdd-HHmmss-fff'))
 $envAnterior = @{}
 $localAnterior = Get-Location
 $jar = Join-Path $repo 'target/satelite-0.0.1-SNAPSHOT.jar'
@@ -30,6 +33,7 @@ try {
         $codigoVersao = $LASTEXITCODE
     } finally { $ErrorActionPreference = $preferenciaVersao }
     if ($codigoVersao -ne 0 -or $versao -notmatch 'version "17\.') { throw 'O bloqueio de rede desta suite exige JDK 17.' }
+    if (!$Maven) { $Maven = Join-Path $moduloJava 'mvnw.cmd' }
     $mvn = (Get-Command $Maven -ErrorAction Stop).Source
     $agent = Join-Path $env:USERPROFILE '.m2/repository/org/jacoco/org.jacoco.agent/0.8.15/org.jacoco.agent-0.8.15-runtime.jar'
     if (!(Test-Path $agent)) { throw 'JaCoCo 0.8.15 deve estar no cache Maven local antes da execucao offline.' }
@@ -42,7 +46,7 @@ try {
     }
     if (!$envAnterior.ContainsKey('JAVA_HOME')) { $envAnterior['JAVA_HOME'] = $null }
     $env:JAVA_HOME = $JavaHome
-    Set-Location $repo
+    Set-Location $moduloJava
     New-Item -ItemType Directory -Path "$saida/work", "$saida/safety", "$saida/generated-sources" -Force | Out-Null
     foreach ($nome in @('wsimport', 'wsimport-nfe', 'wsimport-cte')) {
         $origem = Join-Path $repo "target/generated-sources/$nome"
@@ -69,7 +73,7 @@ public final class NoNetworkSecurityManager extends SecurityManager {
     & $javac -d "$saida/safety" "$saida/safety/NoNetworkSecurityManager.java"
     if ($LASTEXITCODE -ne 0) { throw 'Falha ao compilar bloqueio de rede.' }
     # POM temporario: nao modifica o pom.xml do repositorio nem o JAR operacional.
-    [xml]$pom = Get-Content (Join-Path $repo 'pom.xml') -Raw
+    [xml]$pom = Get-Content (Join-Path $moduloJava 'pom.xml') -Raw
     $ns = $pom.DocumentElement.NamespaceURI
     function Add-Element($parent, [string]$name, [string]$value) {
         $node = $pom.CreateElement($name, $ns)
@@ -78,8 +82,8 @@ public final class NoNetworkSecurityManager extends SecurityManager {
         return $node
     }
     $build = $pom.project.build
-    Add-Element $build 'sourceDirectory' (Join-Path $repo 'src/main/java') | Out-Null
-    Add-Element $build 'testSourceDirectory' (Join-Path $repo 'src/test/java') | Out-Null
+    Add-Element $build 'sourceDirectory' (Join-Path $moduloJava 'src/main/java') | Out-Null
+    Add-Element $build 'testSourceDirectory' (Join-Path $moduloJava 'src/test/java') | Out-Null
     $surefire = Add-Element $build.plugins 'plugin' $null
     Add-Element $surefire 'groupId' 'org.apache.maven.plugins' | Out-Null
     Add-Element $surefire 'artifactId' 'maven-surefire-plugin' | Out-Null
@@ -126,10 +130,13 @@ public final class NoNetworkSecurityManager extends SecurityManager {
     Add-Element $excludes 'exclude' 'com/example/satelite/vedacit/**' | Out-Null
     $pom.Save("$saida/test-pom.xml")
     # Goals diretos evitam initialize/clean e wsimport remoto ligado ao lifecycle.
-    $compileExit = Invoke-MavenLogged -Argumentos @('-o', '-B', '-ntp', "-Dsatelite.build.directory=$saida", 'resources:resources', 'build-helper:add-source@add-wsimport-generated-sources', 'compiler:compile', 'resources:testResources', 'compiler:testCompile') -Log "$saida/compile.log"
+    $opcoesBuild = @('-o', '-B', '-ntp', "-Dsatelite.build.directory=$saida")
+    if ($Papel -eq 'clientes') { $opcoesBuild += '-Pclientes-worker' }
+    $compileExit = Invoke-MavenLogged -Argumentos ($opcoesBuild + @('resources:resources', 'build-helper:add-source@add-wsimport-generated-sources', 'compiler:compile', 'resources:testResources', 'build-helper:add-test-source@testes-do-papel', 'compiler:testCompile')) -Log "$saida/compile.log"
     if ($compileExit -ne 0) { throw "Compilacao falhou; consulte $saida/compile.log" }
-    $testExit = Invoke-MavenLogged -Argumentos @('-o', '-B', '-ntp', '-f', "$saida/test-pom.xml", "-Dsatelite.build.directory=$saida", "-Dtest=$Testes", 'surefire:test') -Log "$saida/tests.log"
-    $coverageExit = Invoke-MavenLogged -Argumentos @('-o', '-B', '-ntp', '-f', "$saida/test-pom.xml", "-Dsatelite.build.directory=$saida", 'org.jacoco:jacoco-maven-plugin:0.8.15:report') -Log "$saida/coverage.log"
+    $testExit = Invoke-MavenLogged -Argumentos ($opcoesBuild + @('-f', "$saida/test-pom.xml", "-Dtest=$Testes", 'surefire:test')) -Log "$saida/tests.log"
+    $fonteDoPapel = Join-Path $moduloJava "src/$Papel/java"
+    $coverageExit = Invoke-MavenLogged -Argumentos ($opcoesBuild + @('-f', "$saida/test-pom.xml", "-Dsatelite.papel.sources=$fonteDoPapel", 'build-helper:add-source@add-wsimport-generated-sources', 'org.jacoco:jacoco-maven-plugin:0.8.15:report')) -Log "$saida/coverage.log"
     if ($coverageExit -ne 0) { throw "Relatorio falhou; consulte $saida/coverage.log" }
     $guardAtivo = Select-String -LiteralPath "$saida/tests.log" -SimpleMatch '[UNIT_NETWORK_GUARD] active' -Quiet
     if (!$guardAtivo) { throw 'Execucao nao comprovou o bloqueio de rede na JVM de teste.' }
@@ -143,9 +150,10 @@ public final class NoNetworkSecurityManager extends SecurityManager {
         $covered=[int]$_.GetAttribute('covered'); $missed=[int]$_.GetAttribute('missed')
         [pscustomobject]@{Type=$_.GetAttribute('type');Covered=$covered;Missed=$missed;Percent=if($covered+$missed){[math]::Round(100*$covered/($covered+$missed),2)}else{100}}
     })
-    $summary=[pscustomobject]@{Tests=$total;Passed=$total-$falhas-$erros-$ignorados;Failures=$falhas;Errors=$erros;Skipped=$ignorados;ExitCode=$testExit;Coverage=$counters;Output=$saida;SelectedTests=$Testes}
+    $summary=[pscustomobject]@{Papel=$Papel;Tests=$total;Passed=$total-$falhas-$erros-$ignorados;Failures=$falhas;Errors=$erros;Skipped=$ignorados;ExitCode=$testExit;Coverage=$counters;Output=$saida;SelectedTests=$Testes}
     $summary | ConvertTo-Json -Depth 5 | Set-Content "$saida/summary.json"
-    Set-Content (Join-Path $repo 'target/unit-tests/latest-coverage.txt') $saida
+    $ponteiro = if ($Papel -eq 'clientes') { 'latest-coverage-clientes.txt' } else { 'latest-coverage.txt' }
+    Set-Content (Join-Path (Join-Path $repo 'target/unit-tests') $ponteiro) $saida
     $summary | ConvertTo-Json -Depth 5
     if ($testExit -ne 0 -or $falhas -gt 0 -or $erros -gt 0) { throw "Suite reprovada: consulte $saida/tests.log" }
 } finally {

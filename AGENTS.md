@@ -23,7 +23,7 @@ ETL Java 17/Spring Boot: lê ocorrências e documentos ESL/Rodogarcia e integra 
 - Preserve o fluxo principal em scheduler/runners; não crie `@RestController` para dispará-lo. A API auxiliar permanece separada.
 - Entrega/comprovante usa `occurrence.code == 1`; XML Vedacit tem fluxo próprio para `110`. Outros eventos dependem dos mapeamentos e fluxos habilitados do destino. Consulte as regras consolidadas em `states.md` ao alterar filtros ou DePara.
 - **PPG:** preserve o cache em memória do token LoopBack de 14 dias e imagem JPEG, fundo branco sem alfa, 1536x240 pixels e prefixo `data:image/jpeg;base64,`.
-- **Vedacit:** contratos SOAP são gerados pelo `jaxws-maven-plugin` a partir dos WSDLs oficiais, nunca escritos/editados manualmente. Saídas: `target/generated-sources/wsimport*`; contratos empacotados: `src/main/resources/wsdl/vedacit`.
+- **Vedacit:** contratos SOAP são gerados pelo `jaxws-maven-plugin` a partir dos WSDLs oficiais, nunca escritos/editados manualmente. Saídas: `target/generated-sources/wsimport*`; contratos empacotados: `backend/java/src/main/resources/wsdl/vedacit`.
 - Isole falhas por documento e registre o resultado sem derrubar o lote. Preserve correlação exata NF-e/CT-e, locks, aceites e primeiras datas. Timeout, ausência de data ou arquivo encontrado não autorizam inventar confirmação ou reenviar aceites. Respeite o modo SFTP exclusivo quando habilitado.
 
 ## Banco e rastreabilidade
@@ -34,6 +34,8 @@ ETL Java 17/Spring Boot: lê ocorrências e documentos ESL/Rodogarcia e integra 
 - Mudanças de banco exigem `.sql` versionado e idempotente. Após `USE`, inclua `SET ANSI_NULLS ON;` e `SET QUOTED_IDENTIFIER ON;`. Disponibilize a atualização por `database/subir_database.bat`, preferindo o modo restrito pertinente para evitar reaplicar saneamentos históricos.
 
 ## Validação e estado
+
+- Ao concluir alterações solicitadas, faça commit do trabalho validado e confirme o push nos destinos já configurados para o projeto.
 
 - Para Java, use [scripts/testar_com_cobertura.ps1](scripts/testar_com_cobertura.ps1) com JDK 17 e `-Testes` para as classes afetadas. O script usa saída isolada, fontes SOAP locais e bloqueio de rede na JVM de testes. Execute/corrija sem aprovação entre rodadas; amplie os testes quando risco ou falha justificar.
 - Para documentação, revise diff, links e consistência; não execute suíte Java, banco ou serviços. Runners operacionais e testes externos são fluxos distintos da suíte isolada.

@@ -1,3 +1,4 @@
 @echo off
-cd /d "%~dp0.."
-pm2 stop WORK-SFTP-CLIENTES
+setlocal EnableExtensions
+node "%~dp0..\deploy\clientes\operar.cjs" parar clientes
+exit /b %errorlevel%

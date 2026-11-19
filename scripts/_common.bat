@@ -5,12 +5,8 @@ for %%I in ("%SCRIPT_DIR%..") do set "PROJECT_ROOT=%%~fI"
 
 set "ALLOWED_DB_NAME=SATELITE_TMS_AUDITORIA"
 set "DEFAULT_DB_URL=jdbc:sqlserver://localhost:1433;databaseName=SATELITE_TMS_AUDITORIA;encrypt=true;trustServerCertificate=true"
-set "JAR_PATH=%PROJECT_ROOT%\target\satelite-0.0.1-SNAPSHOT.jar"
+set "JAR_PATH="
 set "JAVA_17_EXECUTABLE=%PROJECT_ROOT%\.tools\temurin17\jdk-17.0.19+10\bin\java.exe"
-set "SATELITE_RUNTIME_CLASSES=%PROJECT_ROOT%\target\classes"
-set "SATELITE_RUNTIME_LIBS=%PROJECT_ROOT%\target\selia-worker-inspect\BOOT-INF\lib\*"
-set "SATELITE_CLASS_PATH=%SATELITE_RUNTIME_CLASSES%;%SATELITE_RUNTIME_LIBS%"
-set "SATELITE_RUNTIME_CLASSPATH_AVAILABLE=false"
 set "PORTA_API=9090"
 set "LOGS_DIR=%PROJECT_ROOT%\logs"
 set "BACKGROUND_INTERVAL_MS=900000"
@@ -45,20 +41,28 @@ if /I "%COMMON_VALIDATE_DB%"=="true" call :validar_database_permitida
 if errorlevel 1 exit /b 1
 
 if /I "%COMMON_REQUIRE_JAR%"=="true" (
-    if not exist "%JAR_PATH%" (
-        echo.
-        echo [ERRO] JAR nao encontrado: %JAR_PATH%
-        echo Execute mvn package antes de iniciar o robo.
-        exit /b 1
-    )
+    call :selecionar_pacote_clientes
+    if errorlevel 1 exit /b 1
 )
 
 if exist "%JAVA_17_EXECUTABLE%" set "JAVA_EXECUTABLE=%JAVA_17_EXECUTABLE%"
 if not defined JAVA_EXECUTABLE set "JAVA_EXECUTABLE=java"
-if exist "%SATELITE_RUNTIME_CLASSES%\com\example\satelite\SateliteApplication.class" if exist "%PROJECT_ROOT%\target\selia-worker-inspect\BOOT-INF\lib\sshj-0.39.0.jar" set "SATELITE_RUNTIME_CLASSPATH_AVAILABLE=true"
 
 if not exist "%LOGS_DIR%" mkdir "%LOGS_DIR%" >nul 2>&1
 
+exit /b 0
+
+:selecionar_pacote_clientes
+set "JAR_PATH="
+for /f "delims=" %%J in ('node -e "const p=require(process.argv[1]).apps.find(x=>x.name==='clientes'); console.log(p.args[p.args.indexOf('-jar')+1])" "%PROJECT_ROOT%\deploy\clientes\ecosystem.config.js"') do set "JAR_PATH=%%J"
+if not defined JAR_PATH (
+    echo [ERRO] Pacote de clientes indisponivel. Confira deploy\clientes\pacotes.
+    exit /b 1
+)
+if not exist "%JAR_PATH%" exit /b 1
+rem Os comandos manuais solicitam uma tarefa explicita, sem iniciar as agendas residentes.
+set "APP_CLIENTES_WORKER_ENABLED=false"
+set "APP_RECONCILIACAO_ENABLED=false"
 exit /b 0
 
 :carregar_env

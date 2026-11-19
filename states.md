@@ -1,5 +1,35 @@
 # Estado Atual do Sistema
 
+## Dois programas ativos no PM2, 18/11/2026
+
+O grupo `satelite-tms` contém `api-integracoes-19090` e `clientes`. A API Java atende as 21 rotas em `127.0.0.1:19090`. O JAR de clientes executa SFTP/Vedacit, SELIA e a reconciliação. Os cinco controladores HTTP e as bibliotecas do Tomcat foram retirados desse JAR. O Rust continua em bancada.
+
+O primeiro ciclo SELIA do novo worker terminou com código 0. Os cadastros antigos foram removidos depois da confirmação dos novos processos. O dump principal e o de reserva do PM2 foram conferidos e preservam as 13 aplicações alheias. Foi mantido backup criptografado das quatro definições anteriores. A configuração de restauração foi validada no disco, sem reiniciar o Windows.
+
+Versão instalada `19e229eda41545809e7932beb5dab011`. SHA-256 da API `f35a24ef91abf7e131b37845ce78325a62549bfd2c9273131ebe8e2be44b1a69` e do worker `baf6718387ddbb02336b333a35e98bdec12111075f82b3b849ca5816ff1f19f9`. A suíte da API passou em 608 testes, a do worker em 513 e a do Rust em 14. Cada suíte Java ignorou três testes. Os JARs instalados também foram usados no teste local de recebimento e correlação SELIA. A API respondeu a uma consulta do painel no SQL Server antes e depois da troca.
+
+## Backend Java e Rust reorganizado em 18/11/2026
+
+O projeto Maven ficou em [backend/java](backend/java/pom.xml) e a API Rust em [backend/rust](backend/rust/README.md). Os dois têm seu próprio `src`. Os 350 arquivos de origem, recursos e testes do Java foram conferidos com hash na movimentação. Depois da mudança de pasta, a identificação do Spring e do projeto Maven foi corrigida para `satelite-tms-api`. O nome físico do JAR continua compatível com os scripts de operação.
+
+O [catálogo das 21 rotas](backend/rust/contracts/api-integracoes.json) liga atributos da API aos DTOs do Java, aos consumidores do Dashboard e ao DDL das nove tabelas. Ele inclui os campos transitórios do Java e os tipos de dados opcionais. A consulta principal `GET /api/auditoria/integracoes-clientes` agora também funciona no Rust de bancada, além do recebimento SELIA e da imagem do canhoto. Em 18 cenários HTTP com os mesmos dados fictícios, o Java em H2 e o Rust em SQLite apresentaram os mesmos resultados de negócio, paginação, status e estrutura dos erros. Compararam-se as datas dos registros e validou-se separadamente o formato do relógio da resposta. O restante das 18 rotas e a integração Rust com SQL Server continuam para a homologação. Os processos da produção seguiram em execução.
+
+## Primeira medição do piloto da API em Rust em 18/11/2026
+
+Nesta primeira medição, o [piloto em Rust](backend/rust/README.md) atendia o recebimento de listas da SELIA e a consulta de imagem de canhoto PPG do Dashboard. A reconciliação continuou no programa Java de clientes. O JAR da API completa e o executável Rust foram testados separadamente em portas locais com dados fictícios e bancos SQLite. Os dois devolveram o mesmo recibo mesmo após a troca de executável. O serviço Java usado pelo worker leu os pedidos e volumes gravados pelo Rust.
+
+Em três rodadas por versão, com 120 requisições em cada carga, a mediana de RAM física em repouso foi de 501,57 MiB no Java e 7,09 MiB no Rust. As medianas dos picos observados foram 530,70 e 7,28 MiB. O resultado mede o JAR completo em modo API e o piloto de duas rotas. O executável Rust testado tem SHA-256 `694a6eb3ac18d95e79e7ac86041b32249b2740510dc90d945ca8a41bd2473509`.
+
+Os testes verificaram recusa de acesso sem chave válida, limites de tamanho e frequência, gravação completa após nova tentativa e ausência de registros parciais diante de falha. Em 12 reenvios concorrentes do mesmo conteúdo ao Rust houve apenas um aceite. Para uma lista reenviada com pedido diferente, o JAR devolveu 200 e manteve os vínculos antigos. O piloto devolveu 409. Essa mudança precisa ser alinhada com a SELIA. Naquela medição do piloto de duas rotas ainda faltavam 19, incluindo o painel principal.
+
+## Candidato local com API e worker de clientes em 18/11/2026
+
+O candidato [deploy/clientes](deploy/clientes/README.md) define o grupo PM2 `satelite-tms`. A API `api-integracoes-19090` atende o Dashboard e a rota de pré-embarque da SELIA na porta 19090. O processo `clientes` reúne SFTP/Vedacit, o ETL incremental SELIA e a reconciliação de Vedacit, PPG, SELIA e SUPPORTE. SELIA e SFTP têm agendas independentes com intervalo de 30 minutos após o fim de cada ciclo. O fonte conserva o tratamento de comprovante do JAR corrigido do SELIA. A produção continua com as quatro definições anteriores.
+
+Pacote `target/clientes-candidato/satelite-clientes.jar`, SHA-256 `92aeb9e429aca27e5a0375a89a657078a4e9d842b89acfd86c6031363ea6c0e1`. A suíte offline `target/unit-tests/coverage-20261118-212059-076` passou em 608 testes, com 3 testes manuais/visuais ignorados e zero falhas ou erros. A API empacotada respondeu em porta de teste com H2 e bloqueio de saída de rede. Consultas de quarentena, validação do período e proteção da rota SELIA foram verificadas.
+
+Em três pares de ensaios com a mesma compilação Java, 24 pares de XML/JPEG Vedacit e 120 pedidos SELIA produziram saídas idênticas. A mediana do pico residente somado dos processos de clientes caiu de 1.661,9 para 595,9 MiB. Nos segundos seguintes ao fim dos lotes, a mediana passou de 484,9 para 515,4 MiB. A API foi excluída da comparação por existir nas duas topologias. Métodos, resultados e limites em `target/clientes-candidato/evidencias`. O banco e os destinos reais, a execução noturna, a vazão sob carga real e a atualização da restauração no boot ficam para a implantação operacional. Nenhum componente Rust foi introduzido.
+
 ## Verificação do fluxo interno — 2026-10-05, 14:35 BRT
 
 Atualização às 14:47 BRT: segundo início automático SELIA confirmado, sem intervenção: JVM PID 10588 às 14:40:44, ciclo 14:41:05–14:42:52. Duas páginas/40 notas: 20 classificadas pelo serviço como já processadas, 20 falhas por pedido/correlação PLP, zero novos envios e zero pendência de foto. Cursor avançou uma página para 312658642 e ficou preservado diante da segunda página com erros; saída 1, erro crítico false. O reinício periódico está comprovado, mas ainda não existe confirmação de envio produtivo novo. Nenhuma consulta externa adicional foi disparada pelo agente.

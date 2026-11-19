@@ -1,0 +1,4902 @@
+{
+  "versao": 1,
+  "api": "Satélite TMS — integrações, porta 19090",
+  "referencia": "Contratos implementados pelo Java e chamadores encontrados no código local. O catálogo cobre as 21 rotas próprias dos controladores do Satélite. A cobertura executável do módulo Rust é informada em backend/rust/README.md.",
+  "convencoes": {
+    "nomes": "As chaves de campos são os nomes no JSON HTTP, inclusive os definidos por @JsonProperty. campoJava identifica uma diferença. Campos JDBC vindos de SELECT * seguem os rótulos do SQL Server.",
+    "tipos": {
+      "int64": "inteiro JSON assinado de 64 bits no Java/SQL; leitores devem preservar a precisão",
+      "int32": "inteiro JSON assinado de 32 bits",
+      "decimal": "número JSON de precisão decimal, BigDecimal no Java",
+      "date": "dia no formato yyyy-MM-dd",
+      "local-date-time": "data e hora locais ISO, sem offset",
+      "date JDBC": "DATE vindo por JDBC, com serialização do framework",
+      "timestamp JDBC": "DATETIME2 vindo por JDBC, com serialização do framework",
+      "array<T>": "lista ordenada de T",
+      "array": "lista do framework sem valores nas rotas especificadas"
+    },
+    "nulos": "tipoJava indica tipos primitivos e de referência. Um tipo de referência por si só não garante que um valor seja produzido ou aceito como nulo. As anotações NON_NULL omitem propriedades nulas na saída. A nulabilidade SQL está registrada separadamente.",
+    "parametros": "repete permite repetir o nome na URL; os demais parâmetros têm um valor lógico. Filtros fora da lista são tratados conforme o controller. As datas em consultas com período usam limite final exclusivo no banco.",
+    "erros": "Erros indicados são os previstos no código. O Spring também pode rejeitar conversão de parâmetros, formato de corpo ou negociação de conteúdo antes de chamar o controller; erros de infraestrutura podem ocorrer em qualquer rota.",
+    "csv": "UTF-8, ponto e vírgula, campos entre aspas, aspas internas duplicadas, valor nulo vira campo vazio. O escritor prefixa apóstrofo em campos iniciados por =, +, - ou @.",
+    "fontes": "Caminhos do Satélite são relativos à raiz do repositório; # identifica classe ou método. O Dashboard é o repositório irmão. O DDL deriva dos scripts versionados, sem introspecção da base produtiva.",
+    "conferenciaSQLite": {
+      "fonte": "backend/rust/tests/fixtures/schema_bancada.sql:4",
+      "tabela": "tb_log_integracao",
+      "colunasVerificadas": 42,
+      "camposAusentes": [],
+      "camposExtras": [],
+      "divergenciasDeNulabilidade": [],
+      "tipos": "O PRAGMA table_info do SQLite confirma nomes e nulabilidade dos 42 campos. A coluna id é obrigatória por ser a identidade inteira e chave primária. A precisão e os limites SQL Server vêm das declarações versionadas."
+    },
+    "ligacoesDePersistencia": [
+      {
+        "uso": "Recebimento SELIA",
+        "camposHttp": [
+          "intelipost_pre_shipment_list",
+          "shipment_order_array[].order_number",
+          "shipment_order_array[].shipment_order_volume_array[].shipment_order_volume_number",
+          "shipment_order_array[].shipment_order_volume_array[].shipment_order_volume_invoice_array[].invoice_key"
+        ],
+        "destino": [
+          "intelipost_pre_shipment_list",
+          "order_number",
+          "volume_number",
+          "chave_nfe"
+        ],
+        "regra": "A lista externa identifica um cabeçalho SELIA_PLP. O id desse cabeçalho fornece logistics_provider_shipment_list. Cada tripla distinta NF-e/pedido/volume gera um SELIA_PLP_MAP associado por ambos os identificadores. A relação entre essas linhas é lógica.",
+        "fontes": [
+          "backend/java/src/api/java/com/example/satelite/services/selia/SeliaPreShipmentListService.java:86",
+          "backend/java/src/api/java/com/example/satelite/services/selia/SeliaPreShipmentListService.java:105",
+          "backend/rust/src/repositories/selia.rs:33"
+        ]
+      },
+      {
+        "uso": "Consumo pelo worker SELIA",
+        "regra": "Pela chave da NF-e, procura SELIA_PLP_MAP com status ACEITO_PLP, ordena por data de processamento e id decrescentes. Usa os pares de pedido e volume da lista mais recente, remove repetições preservando a ordem e ignora valores vazios. Uma nota sem vínculo produz coleção vazia.",
+        "fontes": [
+          "backend/java/src/main/java/com/example/satelite/services/selia/SeliaPlpCorrelationService.java:24",
+          "backend/java/src/main/java/com/example/satelite/services/selia/SeliaIntegrationService.java:193"
+        ]
+      },
+      {
+        "uso": "Imagem para o dashboard",
+        "regra": "Consulta por id, exige destino PPG e extrai o conteúdo de request_payload. O endpoint retorna 404 quando não há uma imagem utilizável segundo o extrator. Esta leitura é diferente do sinal possuiImagemPayload apresentado na tabela do painel.",
+        "fontes": [
+          "backend/java/src/api/java/com/example/satelite/services/auditoria/IntegracaoAuditoriaService.java:275",
+          "backend/rust/src/services/imagem.rs:18"
+        ]
+      }
+    ],
+    "sqlServer": "tipoSql conserva o DDL, incluindo MAX e limites. DATETIME2 sem precisão escrita usa a precisão padrão 7. linhaSql aponta para a definição efetiva; linhaJava para o atributo no arquivo entidade."
+  },
+  "rotas": [
+    {
+      "metodo": "GET",
+      "caminho": "/api/auditoria/integracoes-clientes",
+      "controller": "backend/java/src/api/java/com/example/satelite/controllers/IntegracaoAuditoriaController.java#consultarIntegracoesClientes",
+      "parametros": [
+        {
+          "nome": "pagina",
+          "em": "query",
+          "tipo": "int32",
+          "obrigatorio": false,
+          "padrao": 0,
+          "normalizacao": "mínimo 0"
+        },
+        {
+          "nome": "tamanho",
+          "em": "query",
+          "tipo": "int32",
+          "obrigatorio": false,
+          "padrao": 100,
+          "normalizacao": "máximo 500; valor <= 0 resulta em 100"
+        },
+        {
+          "nome": "dataInicial",
+          "em": "query",
+          "tipo": "date",
+          "obrigatorio": false
+        },
+        {
+          "nome": "dataFinal",
+          "em": "query",
+          "tipo": "date",
+          "obrigatorio": false
+        },
+        {
+          "nome": "destino",
+          "em": "query",
+          "tipo": "string",
+          "obrigatorio": false,
+          "repete": true,
+          "valores": [
+            "PPG",
+            "VEDACIT",
+            "SELIA",
+            "SUPPORTE"
+          ],
+          "padrao": [
+            "PPG",
+            "VEDACIT",
+            "SELIA",
+            "SUPPORTE"
+          ],
+          "normalizacao": "trim, maiúsculas, descarta vazios e duplicados"
+        },
+        {
+          "nome": "escopo",
+          "em": "query",
+          "tipo": "string",
+          "obrigatorio": false,
+          "padrao": "PENDENCIAS",
+          "valoresComRegraPropria": [
+            "TODOS",
+            "SUCESSO"
+          ],
+          "demaisValores": "somente pendências"
+        },
+        {
+          "nome": "f.tabelaBusca",
+          "em": "query",
+          "tipo": "string",
+          "obrigatorio": false,
+          "efeito": "LIKE no destino, chave NF-e, número NF, série e status das duas etapas"
+        },
+        {
+          "nome": "f.tabelaCodigo",
+          "em": "query",
+          "tipo": "string",
+          "obrigatorio": false,
+          "efeito": "inteiro válido compara número da NF; demais valores buscam por LIKE na chave e no número textual"
+        },
+        {
+          "nome": "f.tabelaStatus",
+          "em": "query",
+          "tipo": "string",
+          "obrigatorio": false,
+          "repete": true,
+          "efeito": "IN nos estados de dados ou comprovante"
+        },
+        {
+          "nome": "f.tabelaColuna.{coluna}",
+          "em": "query",
+          "tipo": "string",
+          "obrigatorio": false,
+          "repete": true,
+          "colunas": [
+            "id",
+            "sistemaDestino",
+            "occurrenceId",
+            "freightId",
+            "chaveNfe",
+            "numeroNf",
+            "serieNf",
+            "statusDados",
+            "statusCanhoto",
+            "dataProcessamento",
+            "dataProcessamentoDados",
+            "dataProcessamentoCanhoto"
+          ],
+          "efeito": "ignora coluna desconhecida; OR entre valores da mesma coluna e AND entre colunas"
+        },
+        {
+          "nome": "sortField",
+          "em": "query",
+          "tipo": "string",
+          "obrigatorio": false,
+          "valores": [
+            "id",
+            "sistemaDestino",
+            "occurrenceId",
+            "freightId",
+            "chaveNfe",
+            "numeroNf",
+            "serieNf",
+            "statusDados",
+            "statusCanhoto",
+            "dataProcessamento",
+            "dataProcessamentoDados",
+            "dataProcessamentoCanhoto"
+          ],
+          "ausenteOuDesconhecido": "data_processamento DESC, id DESC"
+        },
+        {
+          "nome": "sortDirection",
+          "em": "query",
+          "tipo": "string",
+          "obrigatorio": false,
+          "padrao": "desc",
+          "efeito": "asc sem distinção de caixa; qualquer outro valor usa desc; desempate id DESC"
+        }
+      ],
+      "resposta": {
+        "status": 200,
+        "conteudo": "application/json",
+        "tipo": "AuditoriaIntegracoesClientesResponseDTO"
+      },
+      "erros": {
+        "400": "datas ausentes/inválidas, incompletas ou invertidas onde aplicável, ou destino fora da lista"
+      },
+      "rastreio": [
+        "backend/java/src/api/java/com/example/satelite/services/auditoria/IntegracaoAuditoriaService.java#consultarIntegracoesClientes",
+        "backend/java/src/main/java/com/example/satelite/repositories/LogIntegracaoRepository.java#buscarMetricasIntegracoesClientes",
+        "backend/java/src/main/java/com/example/satelite/repositories/IntegracaoAuditoriaQueryRepository.java#buscarPendencias"
+      ],
+      "tabelas": [
+        "dbo.tb_log_integracao"
+      ],
+      "consumo": {
+        "projeto": "dashboards-etl",
+        "metodo": "GET",
+        "rotaDoPainel": "/api/painel/integracoes",
+        "controller": "../dashboards-etl/backend/src/main/java/com/dashboard/api/controller/IntegracoesController.java",
+        "clienteHttp": "../dashboards-etl/backend/src/main/java/com/dashboard/api/client/IntegracaoSateliteClient.java#buscarIntegracoesClientes",
+        "chamadasFrontend": [
+          "../dashboards-etl/frontend/src/api/endpoints/integracoesServico.ts#buscarIntegracoesAuditoria"
+        ]
+      },
+      "regras": [
+        "O início e o fim devem ser informados juntos. Formato yyyy-MM-dd; fim >= início. Início inclusivo, até o início do dia seguinte ao fim, exclusivo.",
+        "Métricas respeitam período e destino. A tabela também respeita escopo, busca, filtros e ordem. O total é calculado antes de paginar."
+      ]
+    },
+    {
+      "metodo": "GET",
+      "caminho": "/api/auditoria/integracoes-clientes/exportacao",
+      "controller": "backend/java/src/api/java/com/example/satelite/controllers/IntegracaoAuditoriaController.java#exportarIntegracoesClientes",
+      "parametros": [
+        {
+          "nome": "dataInicial",
+          "em": "query",
+          "tipo": "date",
+          "obrigatorio": false
+        },
+        {
+          "nome": "dataFinal",
+          "em": "query",
+          "tipo": "date",
+          "obrigatorio": false
+        },
+        {
+          "nome": "destino",
+          "em": "query",
+          "tipo": "string",
+          "obrigatorio": false,
+          "repete": true,
+          "valores": [
+            "PPG",
+            "VEDACIT",
+            "SELIA",
+            "SUPPORTE"
+          ],
+          "padrao": [
+            "PPG",
+            "VEDACIT",
+            "SELIA",
+            "SUPPORTE"
+          ],
+          "normalizacao": "trim, maiúsculas, descarta vazios e duplicados"
+        },
+        {
+          "nome": "escopo",
+          "em": "query",
+          "tipo": "string",
+          "obrigatorio": false,
+          "padrao": "PENDENCIAS",
+          "valoresComRegraPropria": [
+            "TODOS",
+            "SUCESSO"
+          ],
+          "demaisValores": "somente pendências"
+        },
+        {
+          "nome": "f.tabelaBusca",
+          "em": "query",
+          "tipo": "string",
+          "obrigatorio": false,
+          "efeito": "LIKE no destino, chave NF-e, número NF, série e status das duas etapas"
+        },
+        {
+          "nome": "f.tabelaCodigo",
+          "em": "query",
+          "tipo": "string",
+          "obrigatorio": false,
+          "efeito": "inteiro válido compara número da NF; demais valores buscam por LIKE na chave e no número textual"
+        },
+        {
+          "nome": "f.tabelaStatus",
+          "em": "query",
+          "tipo": "string",
+          "obrigatorio": false,
+          "repete": true,
+          "efeito": "IN nos estados de dados ou comprovante"
+        },
+        {
+          "nome": "f.tabelaColuna.{coluna}",
+          "em": "query",
+          "tipo": "string",
+          "obrigatorio": false,
+          "repete": true,
+          "colunas": [
+            "id",
+            "sistemaDestino",
+            "occurrenceId",
+            "freightId",
+            "chaveNfe",
+            "numeroNf",
+            "serieNf",
+            "statusDados",
+            "statusCanhoto",
+            "dataProcessamento",
+            "dataProcessamentoDados",
+            "dataProcessamentoCanhoto"
+          ],
+          "efeito": "ignora coluna desconhecida; OR entre valores da mesma coluna e AND entre colunas"
+        },
+        {
+          "nome": "sortField",
+          "em": "query",
+          "tipo": "string",
+          "obrigatorio": false,
+          "valores": [
+            "id",
+            "sistemaDestino",
+            "occurrenceId",
+            "freightId",
+            "chaveNfe",
+            "numeroNf",
+            "serieNf",
+            "statusDados",
+            "statusCanhoto",
+            "dataProcessamento",
+            "dataProcessamentoDados",
+            "dataProcessamentoCanhoto"
+          ],
+          "ausenteOuDesconhecido": "data_processamento DESC, id DESC"
+        },
+        {
+          "nome": "sortDirection",
+          "em": "query",
+          "tipo": "string",
+          "obrigatorio": false,
+          "padrao": "desc",
+          "efeito": "asc sem distinção de caixa; qualquer outro valor usa desc; desempate id DESC"
+        }
+      ],
+      "resposta": {
+        "status": 200,
+        "conteudo": "text/csv; charset=UTF-8",
+        "tipo": "csv"
+      },
+      "erros": {
+        "400": "condições de período/destino; a validação ocorre durante a escrita do StreamingResponseBody, portanto a resposta pode já ter começado"
+      },
+      "rastreio": [
+        "backend/java/src/api/java/com/example/satelite/services/auditoria/IntegracaoAuditoriaService.java#exportarIntegracoesClientes",
+        "backend/java/src/main/java/com/example/satelite/repositories/IntegracaoAuditoriaQueryRepository.java#exportarPendencias"
+      ],
+      "tabelas": [
+        "dbo.tb_log_integracao"
+      ],
+      "consumo": {
+        "projeto": "dashboards-etl",
+        "metodo": "GET",
+        "rotaDoPainel": "/api/painel/integracoes/exportacao",
+        "controller": "../dashboards-etl/backend/src/main/java/com/dashboard/api/controller/IntegracoesController.java",
+        "clienteHttp": "../dashboards-etl/backend/src/main/java/com/dashboard/api/client/IntegracaoSateliteClient.java#exportarIntegracoesClientes",
+        "chamadasFrontend": [
+          "../dashboards-etl/frontend/src/api/endpoints/integracoesServico.ts#exportarIntegracoesCsv"
+        ]
+      },
+      "csv": {
+        "nomeArquivo": "integracoes.csv",
+        "colunas": [
+          {
+            "titulo": "ID",
+            "campo": "id"
+          },
+          {
+            "titulo": "Sistema destino",
+            "campo": "sistemaDestino"
+          },
+          {
+            "titulo": "Ocorrencia",
+            "campo": "occurrenceId"
+          },
+          {
+            "titulo": "Frete",
+            "campo": "freightId"
+          },
+          {
+            "titulo": "Chave NF-e",
+            "campo": "chaveNfe"
+          },
+          {
+            "titulo": "NF",
+            "campo": "numeroNf"
+          },
+          {
+            "titulo": "Serie",
+            "campo": "serieNf"
+          },
+          {
+            "titulo": "Status XML",
+            "campo": "statusDados"
+          },
+          {
+            "titulo": "Status comprovante",
+            "campo": "statusCanhoto"
+          },
+          {
+            "titulo": "Mensagem XML",
+            "campo": "mensagemErroDados"
+          },
+          {
+            "titulo": "Mensagem comprovante",
+            "campo": "mensagemErroCanhoto"
+          },
+          {
+            "titulo": "Data processamento",
+            "campo": "dataProcessamento"
+          },
+          {
+            "titulo": "Data XML",
+            "campo": "dataProcessamentoDados"
+          },
+          {
+            "titulo": "Data comprovante",
+            "campo": "dataProcessamentoCanhoto"
+          },
+          {
+            "titulo": "Canhoto disponivel",
+            "campo": "possuiImagemPayload"
+          }
+        ],
+        "serializador": "backend/java/src/api/java/com/example/satelite/utils/CsvStreamWriter.java#escreverLinha",
+        "modeloLinha": "PendenciaDTO"
+      },
+      "regras": [
+        "O início e o fim devem ser informados juntos. Formato yyyy-MM-dd; fim >= início. Início inclusivo, até o início do dia seguinte ao fim, exclusivo.",
+        "Exportação das linhas filtradas, sem página."
+      ]
+    },
+    {
+      "metodo": "GET",
+      "caminho": "/api/auditoria/integracoes-clientes/evolucao-diaria",
+      "controller": "backend/java/src/api/java/com/example/satelite/controllers/IntegracaoAuditoriaController.java#consultarEvolucaoDiaria",
+      "parametros": [
+        {
+          "nome": "dataInicial",
+          "em": "query",
+          "tipo": "date",
+          "obrigatorio": true
+        },
+        {
+          "nome": "dataFinal",
+          "em": "query",
+          "tipo": "date",
+          "obrigatorio": true
+        },
+        {
+          "nome": "destino",
+          "em": "query",
+          "tipo": "string",
+          "obrigatorio": false,
+          "repete": true,
+          "valores": [
+            "PPG",
+            "VEDACIT",
+            "SELIA",
+            "SUPPORTE"
+          ],
+          "padrao": [
+            "PPG",
+            "VEDACIT",
+            "SELIA",
+            "SUPPORTE"
+          ],
+          "normalizacao": "trim, maiúsculas, descarta vazios e duplicados"
+        }
+      ],
+      "resposta": {
+        "status": 200,
+        "conteudo": "application/json",
+        "tipo": "array<IntegracaoEvolucaoDiariaDTO>"
+      },
+      "erros": {
+        "400": "datas ausentes/inválidas, incompletas ou invertidas onde aplicável, ou destino fora da lista"
+      },
+      "rastreio": [
+        "backend/java/src/api/java/com/example/satelite/services/auditoria/IntegracaoAuditoriaService.java#consultarEvolucaoDiaria",
+        "backend/java/src/main/java/com/example/satelite/repositories/LogIntegracaoRepository.java#buscarEvolucaoDiariaIntegracoes"
+      ],
+      "tabelas": [
+        "dbo.tb_log_integracao"
+      ],
+      "consumo": {
+        "projeto": "dashboards-etl",
+        "metodo": "GET",
+        "rotaDoPainel": "/api/painel/integracoes/evolucao-diaria",
+        "controller": "../dashboards-etl/backend/src/main/java/com/dashboard/api/controller/IntegracoesController.java",
+        "clienteHttp": "../dashboards-etl/backend/src/main/java/com/dashboard/api/client/IntegracaoSateliteClient.java#buscarEvolucaoDiaria",
+        "chamadasFrontend": [
+          "../dashboards-etl/frontend/src/api/endpoints/integracoesServico.ts#buscarIntegracoesEvolucaoDiaria"
+        ]
+      },
+      "regras": [
+        "Datas ISO obrigatórias e ordenadas, com dia final incluído.",
+        "O cliente do dashboard também encaminha escopo; o controller desta rota não o usa."
+      ]
+    },
+    {
+      "metodo": "GET",
+      "caminho": "/api/auditoria/integracoes-clientes/indicadores-etapas",
+      "controller": "backend/java/src/api/java/com/example/satelite/controllers/IntegracaoAuditoriaController.java#consultarIndicadoresEtapas",
+      "parametros": [
+        {
+          "nome": "dataInicial",
+          "em": "query",
+          "tipo": "date",
+          "obrigatorio": true
+        },
+        {
+          "nome": "dataFinal",
+          "em": "query",
+          "tipo": "date",
+          "obrigatorio": true
+        },
+        {
+          "nome": "destino",
+          "em": "query",
+          "tipo": "string",
+          "obrigatorio": false,
+          "repete": true,
+          "valores": [
+            "PPG",
+            "VEDACIT",
+            "SELIA",
+            "SUPPORTE"
+          ],
+          "padrao": [
+            "PPG",
+            "VEDACIT",
+            "SELIA",
+            "SUPPORTE"
+          ],
+          "normalizacao": "trim, maiúsculas, descarta vazios e duplicados"
+        }
+      ],
+      "resposta": {
+        "status": 200,
+        "conteudo": "application/json",
+        "tipo": "IndicadoresEtapasDTO"
+      },
+      "erros": {
+        "400": "datas ausentes/inválidas, incompletas ou invertidas onde aplicável, ou destino fora da lista"
+      },
+      "rastreio": [
+        "backend/java/src/api/java/com/example/satelite/services/auditoria/IntegracaoAuditoriaService.java#consultarIndicadoresEtapas",
+        "backend/java/src/api/java/com/example/satelite/repositories/IntegracaoIndicadoresEtapasRepository.java#consultar"
+      ],
+      "tabelas": [
+        "dbo.tb_log_integracao",
+        "dbo.tb_confirmacao_comprovante"
+      ],
+      "consumo": {
+        "projeto": "dashboards-etl",
+        "metodo": "GET",
+        "rotaDoPainel": "/api/painel/integracoes/indicadores-etapas",
+        "controller": "../dashboards-etl/backend/src/main/java/com/dashboard/api/controller/IntegracoesController.java",
+        "clienteHttp": "../dashboards-etl/backend/src/main/java/com/dashboard/api/client/IntegracaoSateliteClient.java#buscarIndicadoresEtapas",
+        "chamadasFrontend": [
+          "../dashboards-etl/frontend/src/api/endpoints/integracoesEtapas.ts#buscarIndicadoresEtapas"
+        ]
+      },
+      "regras": [
+        "Datas ISO obrigatórias e ordenadas, com dia final incluído."
+      ]
+    },
+    {
+      "metodo": "GET",
+      "caminho": "/api/auditoria/integracoes-clientes/indicadores-operacionais",
+      "controller": "backend/java/src/api/java/com/example/satelite/controllers/IntegracaoAuditoriaController.java#consultarIndicadoresOperacionais",
+      "parametros": [
+        {
+          "nome": "dataInicial",
+          "em": "query",
+          "tipo": "date",
+          "obrigatorio": true
+        },
+        {
+          "nome": "dataFinal",
+          "em": "query",
+          "tipo": "date",
+          "obrigatorio": true
+        },
+        {
+          "nome": "destino",
+          "em": "query",
+          "tipo": "string",
+          "obrigatorio": false,
+          "repete": true,
+          "valores": [
+            "PPG",
+            "VEDACIT",
+            "SELIA",
+            "SUPPORTE"
+          ],
+          "padrao": [
+            "PPG",
+            "VEDACIT",
+            "SELIA",
+            "SUPPORTE"
+          ],
+          "normalizacao": "trim, maiúsculas, descarta vazios e duplicados"
+        }
+      ],
+      "resposta": {
+        "status": 200,
+        "conteudo": "application/json",
+        "tipo": "IndicadoresOperacionaisDTO"
+      },
+      "erros": {
+        "400": "datas ausentes/inválidas, incompletas ou invertidas onde aplicável, ou destino fora da lista"
+      },
+      "rastreio": [
+        "backend/java/src/api/java/com/example/satelite/services/auditoria/IntegracaoAuditoriaService.java#consultarIndicadoresOperacionais",
+        "backend/java/src/api/java/com/example/satelite/repositories/IntegracaoOperacionalRepository.java#consultar"
+      ],
+      "tabelas": [
+        "dbo.tb_log_integracao",
+        "dbo.tb_confirmacao_comprovante",
+        "dbo.tb_integracao_etapa_evento"
+      ],
+      "consumo": {
+        "projeto": "dashboards-etl",
+        "metodo": "GET",
+        "rotaDoPainel": "/api/painel/integracoes/indicadores-operacionais",
+        "controller": "../dashboards-etl/backend/src/main/java/com/dashboard/api/controller/IntegracoesController.java",
+        "clienteHttp": "../dashboards-etl/backend/src/main/java/com/dashboard/api/client/IntegracaoSateliteClient.java#buscarIndicadoresOperacionais",
+        "chamadasFrontend": [
+          "../dashboards-etl/frontend/src/api/endpoints/integracoesOperacionais.ts#buscarIndicadoresOperacionais"
+        ]
+      },
+      "regras": [
+        "Datas ISO obrigatórias e ordenadas, com dia final incluído."
+      ]
+    },
+    {
+      "metodo": "GET",
+      "caminho": "/api/auditoria/integracoes-clientes/pendencias-etapas",
+      "controller": "backend/java/src/api/java/com/example/satelite/controllers/IntegracaoAuditoriaController.java#consultarPendenciasEtapas",
+      "parametros": [
+        {
+          "nome": "destino",
+          "em": "query",
+          "tipo": "string",
+          "obrigatorio": false,
+          "repete": true,
+          "valores": [
+            "PPG",
+            "VEDACIT",
+            "SELIA",
+            "SUPPORTE"
+          ],
+          "padrao": [
+            "PPG",
+            "VEDACIT",
+            "SELIA",
+            "SUPPORTE"
+          ],
+          "normalizacao": "trim, maiúsculas, descarta vazios e duplicados"
+        },
+        {
+          "nome": "etapa",
+          "em": "query",
+          "tipo": "string",
+          "obrigatorio": true,
+          "valores": [
+            "DADOS",
+            "COMPROVANTE"
+          ]
+        },
+        {
+          "nome": "acao",
+          "em": "query",
+          "tipo": "string",
+          "obrigatorio": true,
+          "valores": [
+            "AGUARDANDO_PROCESSAMENTO",
+            "NOVA_TENTATIVA",
+            "AGUARDANDO_ORIGEM",
+            "AGUARDANDO_CONFIRMACAO",
+            "INTERVENCAO",
+            "A_CONFERIR"
+          ]
+        },
+        {
+          "nome": "pagina",
+          "em": "query",
+          "tipo": "int32",
+          "obrigatorio": false,
+          "padrao": 0,
+          "normalizacao": "mínimo 0"
+        },
+        {
+          "nome": "tamanho",
+          "em": "query",
+          "tipo": "int32",
+          "obrigatorio": false,
+          "padrao": 25,
+          "normalizacao": "máximo 100; valor <= 0 resulta em 100"
+        }
+      ],
+      "resposta": {
+        "status": 200,
+        "conteudo": "application/json",
+        "tipo": "PendenciasEtapasDTO"
+      },
+      "erros": {
+        "400": "etapa, ação ou destino inválido ou parâmetro obrigatório ausente"
+      },
+      "rastreio": [
+        "backend/java/src/api/java/com/example/satelite/services/auditoria/IntegracaoAuditoriaService.java#consultarPendenciasEtapas",
+        "backend/java/src/api/java/com/example/satelite/repositories/IntegracaoOperacionalRepository.java#pendencias"
+      ],
+      "tabelas": [
+        "dbo.tb_log_integracao",
+        "dbo.tb_confirmacao_comprovante",
+        "dbo.tb_integracao_etapa_evento"
+      ],
+      "consumo": {
+        "projeto": "dashboards-etl",
+        "metodo": "GET",
+        "rotaDoPainel": "/api/painel/integracoes/pendencias-etapas",
+        "controller": "../dashboards-etl/backend/src/main/java/com/dashboard/api/controller/IntegracoesController.java",
+        "clienteHttp": "../dashboards-etl/backend/src/main/java/com/dashboard/api/client/IntegracaoSateliteClient.java#buscarPendenciasEtapas",
+        "chamadasFrontend": [
+          "../dashboards-etl/frontend/src/api/endpoints/integracoesOperacionais.ts#buscarPendenciasEtapas"
+        ]
+      }
+    },
+    {
+      "metodo": "GET",
+      "caminho": "/api/auditoria/integracoes-clientes/resumo-tabelas",
+      "controller": "backend/java/src/api/java/com/example/satelite/controllers/IntegracaoAuditoriaController.java#consultarResumoTabelas",
+      "parametros": [
+        {
+          "nome": "dataInicial",
+          "em": "query",
+          "tipo": "date",
+          "obrigatorio": true
+        },
+        {
+          "nome": "dataFinal",
+          "em": "query",
+          "tipo": "date",
+          "obrigatorio": true
+        },
+        {
+          "nome": "destino",
+          "em": "query",
+          "tipo": "string",
+          "obrigatorio": false,
+          "repete": true,
+          "valores": [
+            "PPG",
+            "VEDACIT",
+            "SELIA",
+            "SUPPORTE"
+          ],
+          "padrao": [
+            "PPG",
+            "VEDACIT",
+            "SELIA",
+            "SUPPORTE"
+          ],
+          "normalizacao": "trim, maiúsculas, descarta vazios e duplicados"
+        }
+      ],
+      "resposta": {
+        "status": 200,
+        "conteudo": "application/json",
+        "tipo": "array<ResumoTabelaIntegracaoDTO>"
+      },
+      "erros": {
+        "400": "datas ausentes/inválidas, incompletas ou invertidas onde aplicável, ou destino fora da lista"
+      },
+      "rastreio": [
+        "backend/java/src/api/java/com/example/satelite/services/auditoria/IntegracaoAuditoriaService.java#consultarResumoTabelas",
+        "backend/java/src/main/java/com/example/satelite/repositories/IntegracaoAuditoriaQueryRepository.java#buscarResumoTabelas"
+      ],
+      "tabelas": [
+        "dbo.tb_log_integracao"
+      ],
+      "consumo": {
+        "projeto": "dashboards-etl",
+        "metodo": "GET",
+        "rotaDoPainel": "/api/painel/integracoes/resumo-tabelas",
+        "controller": "../dashboards-etl/backend/src/main/java/com/dashboard/api/controller/IntegracoesController.java",
+        "clienteHttp": "../dashboards-etl/backend/src/main/java/com/dashboard/api/client/IntegracaoSateliteClient.java#buscarResumoTabelas",
+        "chamadasFrontend": "Cliente HTTP do backend confirmado. Nenhum literal dessa rota encontrado nos três módulos de integração do frontend examinados."
+      },
+      "regras": [
+        "Datas ISO obrigatórias e ordenadas, com dia final incluído."
+      ]
+    },
+    {
+      "metodo": "GET",
+      "caminho": "/api/auditoria/vedacit-sftp/clientes",
+      "controller": "backend/java/src/api/java/com/example/satelite/controllers/IntegracaoAuditoriaController.java#consultarStatusVedacitSftp",
+      "parametros": [],
+      "resposta": {
+        "status": 200,
+        "conteudo": "application/json",
+        "tipo": "array<WorkSftpClienteStatusDTO>"
+      },
+      "erros": {},
+      "rastreio": [
+        "backend/java/src/api/java/com/example/satelite/services/auditoria/IntegracaoAuditoriaService.java#consultarStatusWorkSftpClientes",
+        "backend/java/src/main/java/com/example/satelite/repositories/WorkSftpClientesAuditoriaRepository.java#buscarUltimosCiclos"
+      ],
+      "tabelas": [
+        "dbo.tb_work_sftp_cliente_execucao"
+      ],
+      "consumo": {
+        "projeto": "dashboards-etl",
+        "metodo": "GET",
+        "rotaDoPainel": "/api/painel/integracoes/vedacit-sftp/clientes",
+        "controller": "../dashboards-etl/backend/src/main/java/com/dashboard/api/controller/IntegracoesController.java",
+        "clienteHttp": "../dashboards-etl/backend/src/main/java/com/dashboard/api/client/IntegracaoSateliteClient.java#buscarStatusSftpClientes",
+        "chamadasFrontend": [
+          "../dashboards-etl/frontend/src/api/endpoints/integracoesServico.ts#buscarStatusWorkSftpClientes"
+        ]
+      }
+    },
+    {
+      "metodo": "GET",
+      "caminho": "/api/auditoria/vedacit-sftp/execucoes",
+      "controller": "backend/java/src/api/java/com/example/satelite/controllers/IntegracaoAuditoriaController.java#consultarExecucoesVedacitSftp",
+      "parametros": [
+        {
+          "nome": "pagina",
+          "em": "query",
+          "tipo": "int32",
+          "obrigatorio": false,
+          "padrao": 0,
+          "normalizacao": "mínimo 0"
+        },
+        {
+          "nome": "tamanho",
+          "em": "query",
+          "tipo": "int32",
+          "obrigatorio": false,
+          "padrao": 50,
+          "normalizacao": "máximo 500; valor <= 0 resulta em 100"
+        },
+        {
+          "nome": "cliente",
+          "em": "query",
+          "tipo": "string",
+          "obrigatorio": false
+        },
+        {
+          "nome": "status",
+          "em": "query",
+          "tipo": "string",
+          "obrigatorio": false
+        },
+        {
+          "nome": "dataInicial",
+          "em": "query",
+          "tipo": "date",
+          "obrigatorio": false
+        },
+        {
+          "nome": "dataFinal",
+          "em": "query",
+          "tipo": "date",
+          "obrigatorio": false
+        },
+        {
+          "nome": "origem",
+          "em": "query",
+          "tipo": "string",
+          "obrigatorio": false
+        }
+      ],
+      "resposta": {
+        "status": 200,
+        "conteudo": "application/json",
+        "tipo": "WorkSftpClienteExecucoesPaginadasDTO"
+      },
+      "erros": {
+        "400": "período inválido ou tipo de parâmetro incompatível"
+      },
+      "rastreio": [
+        "backend/java/src/api/java/com/example/satelite/services/auditoria/IntegracaoAuditoriaService.java#consultarHistoricoWorkSftpClientes",
+        "backend/java/src/main/java/com/example/satelite/repositories/WorkSftpClientesAuditoriaRepository.java#buscarHistorico"
+      ],
+      "tabelas": [
+        "dbo.tb_work_sftp_cliente_execucao"
+      ],
+      "consumo": {
+        "projeto": "dashboards-etl",
+        "metodo": "GET",
+        "rotaDoPainel": "/api/painel/integracoes/vedacit-sftp/execucoes",
+        "controller": "../dashboards-etl/backend/src/main/java/com/dashboard/api/controller/IntegracoesController.java",
+        "clienteHttp": "../dashboards-etl/backend/src/main/java/com/dashboard/api/client/IntegracaoSateliteClient.java#buscarExecucoesSftpClientes",
+        "chamadasFrontend": [
+          "../dashboards-etl/frontend/src/api/endpoints/integracoesServico.ts#buscarExecucoesWorkSftpClientes"
+        ]
+      },
+      "regras": [
+        "O início e o fim devem ser informados juntos. Formato yyyy-MM-dd; fim >= início. Início inclusivo, até o início do dia seguinte ao fim, exclusivo.",
+        "origem descreve os comprovantes; SFTP corresponde e outra origem dá seleção vazia. SEM_PENDENCIAS filtra resultado CONCLUIDO."
+      ]
+    },
+    {
+      "metodo": "GET",
+      "caminho": "/api/auditoria/logs/{id}/imagem",
+      "controller": "backend/java/src/api/java/com/example/satelite/controllers/IntegracaoAuditoriaController.java#consultarImagemCanhoto",
+      "parametros": [
+        {
+          "nome": "id",
+          "em": "path",
+          "tipo": "int64",
+          "obrigatorio": true
+        }
+      ],
+      "resposta": {
+        "status": 200,
+        "conteudo": "text/plain",
+        "tipo": "string"
+      },
+      "erros": {
+        "400": "id incompatível com int64",
+        "404": "registro ausente, destino diferente de PPG ou payload sem imagem; corpo vazio"
+      },
+      "rastreio": [
+        "backend/java/src/api/java/com/example/satelite/services/auditoria/IntegracaoAuditoriaService.java#buscarImagemCanhoto",
+        "backend/java/src/main/java/com/example/satelite/repositories/LogIntegracaoRepository.java#findById"
+      ],
+      "tabelas": [
+        "dbo.tb_log_integracao"
+      ],
+      "consumo": {
+        "projeto": "dashboards-etl",
+        "metodo": "GET",
+        "rotaDoPainel": "/api/painel/integracoes/logs/{id}/imagem",
+        "controller": "../dashboards-etl/backend/src/main/java/com/dashboard/api/controller/IntegracoesController.java",
+        "clienteHttp": "../dashboards-etl/backend/src/main/java/com/dashboard/api/client/IntegracaoSateliteClient.java#buscarImagemLog",
+        "chamadasFrontend": "Cliente HTTP do backend confirmado. Nenhum literal dessa rota encontrado nos três módulos de integração do frontend examinados."
+      },
+      "regras": [
+        "Consulta tb_log_integracao.request_payload por id. Retorna data:image/ diretamente ou extrai na ordem foto, imagemBase64, imagem, imageBase64, canhotoBase64, conteudoBase64."
+      ]
+    },
+    {
+      "metodo": "GET",
+      "caminho": "/api/etl/quarentena/erros",
+      "controller": "backend/java/src/api/java/com/example/satelite/controllers/QuarentenaController.java#listarErrosManuais",
+      "parametros": [
+        {
+          "nome": "pagina",
+          "em": "query",
+          "tipo": "int32",
+          "obrigatorio": false,
+          "padrao": 0,
+          "normalizacao": "mínimo 0"
+        },
+        {
+          "nome": "tamanho",
+          "em": "query",
+          "tipo": "int32",
+          "obrigatorio": false,
+          "padrao": 100,
+          "normalizacao": "máximo 500; valor <= 0 resulta em 1"
+        },
+        {
+          "nome": "destino",
+          "em": "query",
+          "tipo": "string",
+          "obrigatorio": false,
+          "repete": true,
+          "valores": [
+            "PPG",
+            "VEDACIT",
+            "SELIA",
+            "SUPPORTE"
+          ],
+          "padrao": [
+            "PPG",
+            "VEDACIT",
+            "SELIA",
+            "SUPPORTE"
+          ],
+          "normalizacao": "trim, maiúsculas, descarta vazios e duplicados"
+        }
+      ],
+      "resposta": {
+        "status": 200,
+        "conteudo": "application/json",
+        "tipo": "PaginaErros"
+      },
+      "erros": {
+        "400": "destino inválido ou tipo de paginação incompatível"
+      },
+      "rastreio": [
+        "backend/java/src/main/java/com/example/satelite/services/etl/QuarentenaService.java#buscarErrosManuais",
+        "backend/java/src/main/java/com/example/satelite/repositories/LogIntegracaoRepository.java#findErrosManuais"
+      ],
+      "tabelas": [
+        "dbo.tb_log_integracao"
+      ],
+      "consumo": {
+        "dashboard": "sem chamada identificada no cliente HTTP IntegracaoSateliteClient"
+      }
+    },
+    {
+      "metodo": "GET",
+      "caminho": "/api/etl/quarentena/historico",
+      "controller": "backend/java/src/api/java/com/example/satelite/controllers/QuarentenaController.java#listarHistoricoRepescagens",
+      "parametros": [
+        {
+          "nome": "pagina",
+          "em": "query",
+          "tipo": "int32",
+          "obrigatorio": false,
+          "padrao": 0,
+          "normalizacao": "mínimo 0"
+        },
+        {
+          "nome": "tamanho",
+          "em": "query",
+          "tipo": "int32",
+          "obrigatorio": false,
+          "padrao": 100,
+          "normalizacao": "máximo 500; valor <= 0 resulta em 1"
+        },
+        {
+          "nome": "dataInicial",
+          "em": "query",
+          "tipo": "date",
+          "obrigatorio": false,
+          "ausente": "dataFinal menos 89 dias"
+        },
+        {
+          "nome": "dataFinal",
+          "em": "query",
+          "tipo": "date",
+          "obrigatorio": false,
+          "ausente": "hoje no serviço Java"
+        },
+        {
+          "nome": "destino",
+          "em": "query",
+          "tipo": "string",
+          "obrigatorio": false,
+          "repete": true,
+          "valores": [
+            "PPG",
+            "VEDACIT",
+            "SELIA",
+            "SUPPORTE"
+          ],
+          "padrao": [
+            "PPG",
+            "VEDACIT",
+            "SELIA",
+            "SUPPORTE"
+          ],
+          "normalizacao": "trim, maiúsculas, descarta vazios e duplicados"
+        }
+      ],
+      "resposta": {
+        "status": 200,
+        "conteudo": "application/json",
+        "tipo": "PaginaHistorico"
+      },
+      "erros": {
+        "400": "período invertido, data malformada, destino ou paginação inválidos"
+      },
+      "rastreio": [
+        "backend/java/src/main/java/com/example/satelite/services/etl/QuarentenaService.java#buscarHistoricoRepescagens",
+        "backend/java/src/main/java/com/example/satelite/repositories/QuarentenaEventoRepository.java#buscarHistoricoRepescagens"
+      ],
+      "tabelas": [
+        "dbo.tb_log_integracao_quarentena_evento",
+        "dbo.tb_log_integracao"
+      ],
+      "consumo": {
+        "dashboard": "sem chamada identificada no cliente HTTP IntegracaoSateliteClient"
+      }
+    },
+    {
+      "metodo": "GET",
+      "caminho": "/api/etl/quarentena/historico/exportacao",
+      "controller": "backend/java/src/api/java/com/example/satelite/controllers/QuarentenaController.java#exportarHistoricoRepescagens",
+      "parametros": [
+        {
+          "nome": "dataInicial",
+          "em": "query",
+          "tipo": "date",
+          "obrigatorio": false,
+          "ausente": "dataFinal menos 89 dias"
+        },
+        {
+          "nome": "dataFinal",
+          "em": "query",
+          "tipo": "date",
+          "obrigatorio": false,
+          "ausente": "hoje no serviço Java"
+        },
+        {
+          "nome": "destino",
+          "em": "query",
+          "tipo": "string",
+          "obrigatorio": false,
+          "repete": true,
+          "valores": [
+            "PPG",
+            "VEDACIT",
+            "SELIA",
+            "SUPPORTE"
+          ],
+          "padrao": [
+            "PPG",
+            "VEDACIT",
+            "SELIA",
+            "SUPPORTE"
+          ],
+          "normalizacao": "trim, maiúsculas, descarta vazios e duplicados"
+        }
+      ],
+      "resposta": {
+        "status": 200,
+        "conteudo": "text/csv; charset=UTF-8",
+        "tipo": "csv"
+      },
+      "erros": {
+        "400": "período/destino inválido; validação do serviço pode ocorrer após começar a escrita"
+      },
+      "rastreio": [
+        "backend/java/src/main/java/com/example/satelite/services/etl/QuarentenaService.java#exportarHistoricoRepescagens",
+        "backend/java/src/main/java/com/example/satelite/repositories/QuarentenaEventoRepository.java#exportarHistoricoRepescagens"
+      ],
+      "tabelas": [
+        "dbo.tb_log_integracao_quarentena_evento",
+        "dbo.tb_log_integracao"
+      ],
+      "consumo": {
+        "dashboard": "sem chamada identificada no cliente HTTP IntegracaoSateliteClient"
+      },
+      "csv": {
+        "nomeArquivo": "historico-repescagens-integracoes.csv",
+        "colunas": [
+          {
+            "titulo": "Destino",
+            "campo": "destino"
+          },
+          {
+            "titulo": "NF",
+            "campo": "numeroNf"
+          },
+          {
+            "titulo": "Etapa",
+            "campo": "etapa"
+          },
+          {
+            "titulo": "Entrou em quarentena",
+            "campo": "entradaQuarentenaEm"
+          },
+          {
+            "titulo": "Repescagem",
+            "campo": "reprocessadoEm"
+          },
+          {
+            "titulo": "Resultado",
+            "campo": "resultado"
+          },
+          {
+            "titulo": "Motivo",
+            "campo": "motivo"
+          }
+        ],
+        "serializador": "backend/java/src/api/java/com/example/satelite/utils/CsvStreamWriter.java#escreverLinha",
+        "modeloLinha": "QuarentenaHistoricoDTO"
+      }
+    },
+    {
+      "metodo": "GET",
+      "caminho": "/api/etl/quarentena/erros/exportacao",
+      "controller": "backend/java/src/api/java/com/example/satelite/controllers/QuarentenaController.java#exportarErrosManuais",
+      "parametros": [
+        {
+          "nome": "destino",
+          "em": "query",
+          "tipo": "string",
+          "obrigatorio": false,
+          "repete": true,
+          "valores": [
+            "PPG",
+            "VEDACIT",
+            "SELIA",
+            "SUPPORTE"
+          ],
+          "padrao": [
+            "PPG",
+            "VEDACIT",
+            "SELIA",
+            "SUPPORTE"
+          ],
+          "normalizacao": "trim, maiúsculas, descarta vazios e duplicados"
+        }
+      ],
+      "resposta": {
+        "status": 200,
+        "conteudo": "text/csv; charset=UTF-8",
+        "tipo": "csv"
+      },
+      "erros": {
+        "400": "destino inválido; validação pode ocorrer após começar a escrita"
+      },
+      "rastreio": [
+        "backend/java/src/main/java/com/example/satelite/services/etl/QuarentenaService.java#exportarErrosManuais",
+        "backend/java/src/main/java/com/example/satelite/repositories/IntegracaoAuditoriaQueryRepository.java#exportarErrosQuarentena"
+      ],
+      "tabelas": [
+        "dbo.tb_log_integracao"
+      ],
+      "consumo": {
+        "dashboard": "sem chamada identificada no cliente HTTP IntegracaoSateliteClient"
+      },
+      "csv": {
+        "nomeArquivo": "quarentena-integracoes.csv",
+        "colunas": [
+          {
+            "titulo": "Destino",
+            "campo": "destino"
+          },
+          {
+            "titulo": "NF",
+            "campo": "numeroNf"
+          },
+          {
+            "titulo": "Acao necessaria",
+            "campo": "erroLimpo"
+          },
+          {
+            "titulo": "Chave NF-e",
+            "campo": "chaveNfe"
+          },
+          {
+            "titulo": "Tentativas",
+            "campo": "tentativas"
+          },
+          {
+            "titulo": "Ultima tentativa",
+            "campo": "dataUltimaTentativa"
+          }
+        ],
+        "serializador": "backend/java/src/api/java/com/example/satelite/utils/CsvStreamWriter.java#escreverLinha",
+        "modeloLinha": "QuarentenaErroManualDTO"
+      }
+    },
+    {
+      "metodo": "POST",
+      "caminho": "/api/etl/quarentena/{destino}/reprocessar",
+      "controller": "backend/java/src/api/java/com/example/satelite/controllers/QuarentenaController.java#reprocessar",
+      "parametros": [
+        {
+          "nome": "destino",
+          "em": "path",
+          "tipo": "string",
+          "obrigatorio": true,
+          "valores": [
+            "PPG",
+            "VEDACIT"
+          ]
+        }
+      ],
+      "resposta": {
+        "status": 200,
+        "conteudo": "application/json",
+        "tipo": "QuarentenaReprocessamentoResponseDTO"
+      },
+      "erros": {
+        "400": "destino inválido; corpo QuarentenaReprocessamentoResponseDTO",
+        "403": "sempre no perfil Dashboard API Only antes de chamar a mutação"
+      },
+      "rastreio": [
+        "backend/java/src/main/java/com/example/satelite/services/etl/QuarentenaService.java#reprocessar",
+        "backend/java/src/main/java/com/example/satelite/repositories/LogIntegracaoRepository.java#resetarQuarentenaByDestino"
+      ],
+      "tabelas": [
+        "dbo.tb_log_integracao"
+      ],
+      "consumo": {
+        "dashboard": "sem chamada identificada no cliente HTTP IntegracaoSateliteClient"
+      },
+      "efeito": "Altera registros quando permitido pelo perfil; a API de consulta do dashboard bloqueia esta operação."
+    },
+    {
+      "metodo": "GET",
+      "caminho": "/api/auditoria/vedacit/reconciliacoes",
+      "controller": "backend/java/src/api/java/com/example/satelite/controllers/ReconciliacaoVedacitController.java#execucoes",
+      "parametros": [],
+      "resposta": {
+        "status": 200,
+        "conteudo": "application/json",
+        "tipo": "array<ExecucaoVedacitSQL>"
+      },
+      "erros": {},
+      "rastreio": [
+        "backend/java/src/main/java/com/example/satelite/repositories/ReconciliacaoVedacitRepository.java#execucoes"
+      ],
+      "tabelas": [
+        "dbo.tb_reconciliacao_vedacit_execucao",
+        "dbo.tb_reconciliacao_vedacit_item"
+      ],
+      "consumo": {
+        "dashboard": "sem chamada identificada no cliente HTTP IntegracaoSateliteClient"
+      },
+      "regras": [
+        "Até 30 execuções, id decrescente."
+      ]
+    },
+    {
+      "metodo": "GET",
+      "caminho": "/api/auditoria/vedacit/reconciliacoes/{id}/resumo",
+      "controller": "backend/java/src/api/java/com/example/satelite/controllers/ReconciliacaoVedacitController.java#resumo",
+      "parametros": [
+        {
+          "nome": "id",
+          "em": "path",
+          "tipo": "int64",
+          "obrigatorio": true
+        }
+      ],
+      "resposta": {
+        "status": 200,
+        "conteudo": "application/json",
+        "tipo": "array<ReconciliacaoVedacitDTO.Resumo>"
+      },
+      "erros": {
+        "400": "tipo de id incompatível"
+      },
+      "rastreio": [
+        "backend/java/src/main/java/com/example/satelite/repositories/ReconciliacaoVedacitRepository.java#resumo"
+      ],
+      "tabelas": [
+        "dbo.tb_reconciliacao_vedacit_item"
+      ],
+      "consumo": {
+        "dashboard": "sem chamada identificada no cliente HTTP IntegracaoSateliteClient"
+      }
+    },
+    {
+      "metodo": "GET",
+      "caminho": "/api/auditoria/vedacit/reconciliacoes/{id}/itens",
+      "controller": "backend/java/src/api/java/com/example/satelite/controllers/ReconciliacaoVedacitController.java#itens",
+      "parametros": [
+        {
+          "nome": "id",
+          "em": "path",
+          "tipo": "int64",
+          "obrigatorio": true
+        },
+        {
+          "nome": "depois",
+          "em": "query",
+          "tipo": "int64",
+          "obrigatorio": false,
+          "padrao": 0,
+          "normalizacao": "mínimo 0"
+        },
+        {
+          "nome": "tamanho",
+          "em": "query",
+          "tipo": "int32",
+          "obrigatorio": false,
+          "padrao": 100,
+          "normalizacao": "máximo 200; valor <= 0 resulta em 1"
+        }
+      ],
+      "resposta": {
+        "status": 200,
+        "conteudo": "application/json",
+        "tipo": "array<ItemVedacitSQL>"
+      },
+      "erros": {
+        "400": "tipo de parâmetro incompatível"
+      },
+      "rastreio": [
+        "backend/java/src/main/java/com/example/satelite/repositories/ReconciliacaoVedacitRepository.java#itens"
+      ],
+      "tabelas": [
+        "dbo.tb_reconciliacao_vedacit_item"
+      ],
+      "consumo": {
+        "dashboard": "sem chamada identificada no cliente HTTP IntegracaoSateliteClient"
+      },
+      "regras": [
+        "Somente log_id > depois da execução informada; log_id crescente."
+      ]
+    },
+    {
+      "metodo": "GET",
+      "caminho": "/api/auditoria/reconciliacoes/{cliente}",
+      "controller": "backend/java/src/api/java/com/example/satelite/controllers/ReconciliacaoClientesController.java#execucoes",
+      "parametros": [
+        {
+          "nome": "cliente",
+          "em": "path",
+          "tipo": "string",
+          "obrigatorio": true,
+          "valores": [
+            "PPG",
+            "VEDACIT",
+            "SELIA",
+            "SUPPORTE"
+          ],
+          "normalizacao": "maiúsculas; sem trim"
+        }
+      ],
+      "resposta": {
+        "status": 200,
+        "conteudo": "application/json",
+        "tipo": {
+          "VEDACIT": "array<ExecucaoVedacitSQL>",
+          "PPG|SELIA|SUPPORTE": "array<ExecucaoClienteSQL>"
+        }
+      },
+      "erros": {
+        "400": "cliente desconhecido"
+      },
+      "rastreio": [
+        "backend/java/src/main/java/com/example/satelite/repositories/ReconciliacaoLocalRepository.java#execucoes",
+        "backend/java/src/main/java/com/example/satelite/repositories/ReconciliacaoVedacitRepository.java#execucoes"
+      ],
+      "tabelas": [
+        "dbo.tb_reconciliacao_vedacit_execucao",
+        "dbo.tb_reconciliacao_vedacit_item",
+        "dbo.tb_reconciliacao_cliente_execucao",
+        "dbo.tb_reconciliacao_cliente_item"
+      ],
+      "consumo": {
+        "dashboard": "sem chamada identificada no cliente HTTP IntegracaoSateliteClient"
+      },
+      "regras": [
+        "Até 30 execuções, id decrescente. Vedacit usa tabelas legadas; os demais usam tabelas com filtro de cliente."
+      ]
+    },
+    {
+      "metodo": "GET",
+      "caminho": "/api/auditoria/reconciliacoes/{cliente}/{id}/resumo",
+      "controller": "backend/java/src/api/java/com/example/satelite/controllers/ReconciliacaoClientesController.java#resumo",
+      "parametros": [
+        {
+          "nome": "cliente",
+          "em": "path",
+          "tipo": "string",
+          "obrigatorio": true,
+          "valores": [
+            "PPG",
+            "VEDACIT",
+            "SELIA",
+            "SUPPORTE"
+          ],
+          "normalizacao": "maiúsculas; sem trim"
+        },
+        {
+          "nome": "id",
+          "em": "path",
+          "tipo": "int64",
+          "obrigatorio": true
+        }
+      ],
+      "resposta": {
+        "status": 200,
+        "conteudo": "application/json",
+        "tipo": {
+          "VEDACIT": "array<ReconciliacaoVedacitDTO.Resumo>",
+          "PPG|SELIA|SUPPORTE": "array<ResumoClienteSQL>"
+        }
+      },
+      "erros": {
+        "400": "cliente desconhecido ou id incompatível"
+      },
+      "rastreio": [
+        "backend/java/src/main/java/com/example/satelite/repositories/ReconciliacaoLocalRepository.java#resumo",
+        "backend/java/src/main/java/com/example/satelite/repositories/ReconciliacaoVedacitRepository.java#resumo"
+      ],
+      "tabelas": [
+        "dbo.tb_reconciliacao_vedacit_item",
+        "dbo.tb_reconciliacao_cliente_execucao",
+        "dbo.tb_reconciliacao_cliente_item"
+      ],
+      "consumo": {
+        "dashboard": "sem chamada identificada no cliente HTTP IntegracaoSateliteClient"
+      }
+    },
+    {
+      "metodo": "POST",
+      "caminho": "/api/selia/intelipost/pre-shipment-list",
+      "controller": "backend/java/src/api/java/com/example/satelite/controllers/SeliaPreShipmentListController.java#receber",
+      "parametros": [
+        {
+          "nome": "logistic-provider-api-key",
+          "em": "header",
+          "tipo": "string",
+          "obrigatorio": true
+        }
+      ],
+      "resposta": {
+        "status": 200,
+        "conteudo": "application/json",
+        "tipo": "SeliaPreShipmentListResponseDTO"
+      },
+      "erros": {
+        "400": "dados obrigatórios inválidos (DTO de erro SELIA) ou JSON que o Spring não consegue desserializar (erro do framework)",
+        "401": "chave ausente ou incorreta, DTO de erro SELIA",
+        "413": "corpo excede o limite, ErroFiltroSelia",
+        "429": "limite por IP/chave, ErroFiltroSelia",
+        "503": "PLP desabilitada ou chave não configurada, DTO de erro SELIA",
+        "500": "falha interna; o formato depende do ponto da falha"
+      },
+      "rastreio": [
+        "backend/java/src/api/java/com/example/satelite/config/SeliaPlpRequestSizeFilter.java#doFilterInternal",
+        "backend/java/src/api/java/com/example/satelite/controllers/SeliaPlpRateLimitInterceptor.java#preHandle",
+        "backend/java/src/api/java/com/example/satelite/services/selia/SeliaPreShipmentListService.java#receber",
+        "backend/java/src/main/java/com/example/satelite/repositories/LogIntegracaoRepository.java#findTopBySistemaDestinoAndIntelipostPreShipmentListOrderByDataProcessamentoAscIdAsc"
+      ],
+      "tabelas": [
+        "dbo.tb_log_integracao"
+      ],
+      "consumo": {
+        "integrador": "SELIA/Intelipost",
+        "usoPosterior": "backend/java/src/main/java/com/example/satelite/services/selia/SeliaPlpCorrelationService.java#buscarPorChaveNfe"
+      },
+      "corpo": {
+        "conteudo": "application/json",
+        "tipo": "SeliaPreShipmentListRequestDTO",
+        "obrigatorio": true
+      },
+      "regras": [
+        "Transação com um cabeçalho SELIA_PLP e vínculos únicos SELIA_PLP_MAP por chave de NF-e, pedido e volume.",
+        "Reenvio usa o número e data do primeiro aceite, compondo pedidos a partir do novo corpo. Java responde 200 inclusive se os vínculos mudaram e mantém os gravados. O piloto Rust retorna 409 nesse caso.",
+        "O protótipo Rust aceita número inteiro de lista em texto e rejeita lista fracionária; o desserializador Java pode converter números fracionários para inteiros."
+      ]
+    }
+  ],
+  "modelos": {
+    "AuditoriaIntegracoesClientesResponseDTO": {
+      "fonte": "backend/java/src/api/java/com/example/satelite/dto/auditoria/AuditoriaIntegracoesClientesResponseDTO.java#AuditoriaIntegracoesClientesResponseDTO",
+      "campos": {
+        "geradoEm": {
+          "tipoJava": "LocalDateTime",
+          "tipo": "local-date-time",
+          "origem": "relógio local do processo",
+          "frontend": {
+            "tipoTypeScript": "string",
+            "opcional": false
+          }
+        },
+        "metricasConsolidadas": {
+          "tipoJava": "List<MetricaConsolidadaDTO>",
+          "tipo": "array<MetricaConsolidadaDTO>",
+          "origem": "consulta de métricas agrupada por destino",
+          "frontend": {
+            "tipoTypeScript": "IntegracaoMetricaConsolidada[]",
+            "opcional": false
+          }
+        },
+        "pendencias": {
+          "tipoJava": "PendenciasPaginadasDTO",
+          "tipo": "PendenciasPaginadasDTO",
+          "origem": "consulta de pendências, contagem e paginação",
+          "frontend": {
+            "tipoTypeScript": "IntegracoesPendenciasPaginadas",
+            "opcional": false
+          }
+        }
+      },
+      "camposDesconhecidosNaEntrada": "ignorados",
+      "consumoFrontend": {
+        "fonte": "../dashboards-etl/frontend/src/api/endpoints/integracoesServico.ts#IntegracoesAuditoriaResponse"
+      }
+    },
+    "ErroFiltroSelia": {
+      "fonte": [
+        "backend/java/src/api/java/com/example/satelite/controllers/SeliaPlpRateLimitInterceptor.java",
+        "backend/java/src/api/java/com/example/satelite/config/SeliaPlpRequestSizeFilter.java"
+      ],
+      "campos": {
+        "status": {
+          "tipo": "string",
+          "constante": "ERROR"
+        },
+        "messages": {
+          "tipo": "array<MensagemFiltroSelia>"
+        }
+      }
+    },
+    "ExecucaoClienteSQL": {
+      "fonte": "database/sql/schema/05_reconciliacao_clientes.sql",
+      "campos": {
+        "id": {
+          "tipo": "int64",
+          "tipoSql": "BIGINT",
+          "aceitaNuloSql": false,
+          "origem": "tb_reconciliacao_cliente_execucao.id"
+        },
+        "cliente": {
+          "tipo": "string",
+          "tipoSql": "VARCHAR(20)",
+          "aceitaNuloSql": false,
+          "origem": "tb_reconciliacao_cliente_execucao.cliente"
+        },
+        "dia_referencia": {
+          "tipo": "date JDBC",
+          "tipoSql": "DATE",
+          "aceitaNuloSql": false,
+          "origem": "tb_reconciliacao_cliente_execucao.dia_referencia"
+        },
+        "inicio_em": {
+          "tipo": "timestamp JDBC",
+          "tipoSql": "DATETIME2",
+          "aceitaNuloSql": false,
+          "origem": "tb_reconciliacao_cliente_execucao.inicio_em"
+        },
+        "atualizado_em": {
+          "tipo": "timestamp JDBC",
+          "tipoSql": "DATETIME2",
+          "aceitaNuloSql": false,
+          "origem": "tb_reconciliacao_cliente_execucao.atualizado_em"
+        },
+        "fim_em": {
+          "tipo": "timestamp JDBC",
+          "tipoSql": "DATETIME2",
+          "aceitaNuloSql": true,
+          "origem": "tb_reconciliacao_cliente_execucao.fim_em"
+        },
+        "status": {
+          "tipo": "string",
+          "tipoSql": "VARCHAR(30)",
+          "aceitaNuloSql": false,
+          "origem": "tb_reconciliacao_cliente_execucao.status"
+        },
+        "ultimo_log_id": {
+          "tipo": "int64",
+          "tipoSql": "BIGINT",
+          "aceitaNuloSql": false,
+          "origem": "tb_reconciliacao_cliente_execucao.ultimo_log_id"
+        },
+        "limite_log_id": {
+          "tipo": "int64",
+          "tipoSql": "BIGINT",
+          "aceitaNuloSql": false,
+          "origem": "tb_reconciliacao_cliente_execucao.limite_log_id"
+        },
+        "revisados": {
+          "tipo": "int64",
+          "origem": "COUNT_BIG dos itens da execução"
+        }
+      },
+      "expansao": "SELECT * pelo JDBC. Migrações podem acrescentar propriedades. Campos listados são os declarados no SQL versionado. Datas JDBC dependem do serializador da aplicação."
+    },
+    "ExecucaoVedacitSQL": {
+      "fonte": "database/sql/migration/V27__reconciliacao_noturna_vedacit.sql",
+      "campos": {
+        "id": {
+          "tipo": "int64",
+          "tipoSql": "BIGINT",
+          "aceitaNuloSql": false,
+          "origem": "tb_reconciliacao_vedacit_execucao.id"
+        },
+        "dia_referencia": {
+          "tipo": "date JDBC",
+          "tipoSql": "DATE",
+          "aceitaNuloSql": false,
+          "origem": "tb_reconciliacao_vedacit_execucao.dia_referencia"
+        },
+        "inicio_em": {
+          "tipo": "timestamp JDBC",
+          "tipoSql": "DATETIME2",
+          "aceitaNuloSql": false,
+          "origem": "tb_reconciliacao_vedacit_execucao.inicio_em"
+        },
+        "atualizado_em": {
+          "tipo": "timestamp JDBC",
+          "tipoSql": "DATETIME2",
+          "aceitaNuloSql": false,
+          "origem": "tb_reconciliacao_vedacit_execucao.atualizado_em"
+        },
+        "fim_em": {
+          "tipo": "timestamp JDBC",
+          "tipoSql": "DATETIME2",
+          "aceitaNuloSql": true,
+          "origem": "tb_reconciliacao_vedacit_execucao.fim_em"
+        },
+        "status": {
+          "tipo": "string",
+          "tipoSql": "VARCHAR(30)",
+          "aceitaNuloSql": false,
+          "origem": "tb_reconciliacao_vedacit_execucao.status"
+        },
+        "ultimo_log_id": {
+          "tipo": "int64",
+          "tipoSql": "BIGINT",
+          "aceitaNuloSql": false,
+          "origem": "tb_reconciliacao_vedacit_execucao.ultimo_log_id"
+        },
+        "limite_log_id": {
+          "tipo": "int64",
+          "tipoSql": "BIGINT",
+          "aceitaNuloSql": false,
+          "origem": "tb_reconciliacao_vedacit_execucao.limite_log_id"
+        },
+        "bloqueio_sftp": {
+          "tipo": "string",
+          "tipoSql": "VARCHAR(60)",
+          "aceitaNuloSql": true,
+          "origem": "tb_reconciliacao_vedacit_execucao.bloqueio_sftp"
+        },
+        "bloqueio_consulta_xml": {
+          "tipo": "string",
+          "tipoSql": "VARCHAR(60)",
+          "aceitaNuloSql": true,
+          "origem": "tb_reconciliacao_vedacit_execucao.bloqueio_consulta_xml"
+        },
+        "bloqueio_consulta_pod": {
+          "tipo": "string",
+          "tipoSql": "VARCHAR(60)",
+          "aceitaNuloSql": true,
+          "origem": "tb_reconciliacao_vedacit_execucao.bloqueio_consulta_pod"
+        },
+        "bloqueio_origem_xml": {
+          "tipo": "string",
+          "tipoSql": "VARCHAR(60)",
+          "aceitaNuloSql": true,
+          "origem": "tb_reconciliacao_vedacit_execucao.bloqueio_origem_xml"
+        },
+        "bloqueio_envio_xml": {
+          "tipo": "string",
+          "tipoSql": "VARCHAR(60)",
+          "aceitaNuloSql": true,
+          "origem": "tb_reconciliacao_vedacit_execucao.bloqueio_envio_xml"
+        },
+        "bloqueio_envio_pod": {
+          "tipo": "string",
+          "tipoSql": "VARCHAR(60)",
+          "aceitaNuloSql": true,
+          "origem": "tb_reconciliacao_vedacit_execucao.bloqueio_envio_pod"
+        },
+        "fontes_dia": {
+          "tipo": "date JDBC",
+          "tipoSql": "DATE",
+          "aceitaNuloSql": false,
+          "origem": "tb_reconciliacao_vedacit_execucao.fontes_dia"
+        },
+        "motivo": {
+          "tipo": "string",
+          "tipoSql": "VARCHAR(200)",
+          "aceitaNuloSql": true,
+          "origem": "tb_reconciliacao_vedacit_execucao.motivo"
+        },
+        "retomadas": {
+          "tipo": "int32",
+          "tipoSql": "INT",
+          "aceitaNuloSql": false,
+          "origem": "tb_reconciliacao_vedacit_execucao.retomadas"
+        },
+        "revisados": {
+          "tipo": "int64",
+          "origem": "COUNT_BIG dos itens da execução"
+        }
+      },
+      "expansao": "SELECT * pelo JDBC. Migrações podem acrescentar propriedades. Campos listados são os declarados no SQL versionado. Datas JDBC dependem do serializador da aplicação."
+    },
+    "IndicadoresEtapasDTO": {
+      "fonte": "backend/java/src/api/java/com/example/satelite/dto/auditoria/IndicadoresEtapasDTO.java#IndicadoresEtapasDTO",
+      "campos": {
+        "versao": {
+          "tipoJava": "int",
+          "tipo": "int32",
+          "origem": "constante 2",
+          "frontend": {
+            "tipoTypeScript": "2",
+            "opcional": false
+          }
+        },
+        "dataInicial": {
+          "tipoJava": "LocalDate",
+          "tipo": "date",
+          "origem": "início solicitado",
+          "frontend": {
+            "tipoTypeScript": "string",
+            "opcional": false
+          }
+        },
+        "dataFinal": {
+          "tipoJava": "LocalDate",
+          "tipo": "date",
+          "origem": "fim solicitado",
+          "frontend": {
+            "tipoTypeScript": "string",
+            "opcional": false
+          }
+        },
+        "etapas": {
+          "tipoJava": "List<Etapa>",
+          "tipo": "array<IndicadoresEtapasDTO.Etapa>",
+          "origem": "consulta RESUMO",
+          "frontend": {
+            "tipoTypeScript": "IndicadorEtapa[]",
+            "opcional": false
+          }
+        },
+        "evolucao": {
+          "tipoJava": "List<Dia>",
+          "tipo": "array<IndicadoresEtapasDTO.Dia>",
+          "origem": "consulta EVOLUCAO",
+          "frontend": {
+            "tipoTypeScript": "DiaEtapa[]",
+            "opcional": false
+          }
+        }
+      },
+      "camposDesconhecidosNaEntrada": "ignorados",
+      "consumoFrontend": {
+        "fonte": "../dashboards-etl/frontend/src/api/endpoints/integracoesEtapas.ts#IndicadoresEtapas"
+      }
+    },
+    "IndicadoresEtapasDTO.Dia": {
+      "fonte": "backend/java/src/api/java/com/example/satelite/dto/auditoria/IndicadoresEtapasDTO.java#Dia",
+      "campos": {
+        "data": {
+          "tipoJava": "LocalDate",
+          "tipo": "date",
+          "origem": "dia",
+          "frontend": {
+            "tipoTypeScript": "string",
+            "opcional": false
+          }
+        },
+        "etapa": {
+          "tipoJava": "String",
+          "tipo": "string",
+          "origem": "etapa",
+          "frontend": {
+            "tipoTypeScript": "EtapaIntegracao",
+            "opcional": false
+          }
+        },
+        "sucessos": {
+          "tipoJava": "long",
+          "tipo": "int64",
+          "origem": "sucessos",
+          "frontend": {
+            "tipoTypeScript": "number",
+            "opcional": false
+          }
+        },
+        "falhas": {
+          "tipoJava": "long",
+          "tipo": "int64",
+          "origem": "falhas",
+          "frontend": {
+            "tipoTypeScript": "number",
+            "opcional": false
+          }
+        }
+      },
+      "consumoFrontend": {
+        "fonte": "../dashboards-etl/frontend/src/api/endpoints/integracoesEtapas.ts#DiaEtapa"
+      }
+    },
+    "IndicadoresEtapasDTO.Etapa": {
+      "fonte": "backend/java/src/api/java/com/example/satelite/dto/auditoria/IndicadoresEtapasDTO.java#Etapa",
+      "campos": {
+        "sistemaDestino": {
+          "tipoJava": "String",
+          "tipo": "string",
+          "origem": "sistema_destino",
+          "frontend": {
+            "tipoTypeScript": "string",
+            "opcional": false
+          }
+        },
+        "etapa": {
+          "tipoJava": "String",
+          "tipo": "string",
+          "origem": "etapa",
+          "frontend": {
+            "tipoTypeScript": "EtapaIntegracao",
+            "opcional": false
+          }
+        },
+        "sucessosPeriodo": {
+          "tipoJava": "long",
+          "tipo": "int64",
+          "origem": "sucessos",
+          "frontend": {
+            "tipoTypeScript": "number",
+            "opcional": false
+          }
+        },
+        "falhasPeriodo": {
+          "tipoJava": "long",
+          "tipo": "int64",
+          "origem": "falhas",
+          "frontend": {
+            "tipoTypeScript": "number",
+            "opcional": false
+          }
+        },
+        "pendentesAtuais": {
+          "tipoJava": "long",
+          "tipo": "int64",
+          "origem": "pendentes",
+          "frontend": {
+            "tipoTypeScript": "number",
+            "opcional": false
+          }
+        },
+        "bloqueadosAtuais": {
+          "tipoJava": "long",
+          "tipo": "int64",
+          "origem": "bloqueados",
+          "frontend": {
+            "tipoTypeScript": "number",
+            "opcional": false
+          }
+        },
+        "semConfirmacaoDatada": {
+          "tipoJava": "long",
+          "tipo": "int64",
+          "origem": "sem_confirmacao",
+          "frontend": {
+            "tipoTypeScript": "number",
+            "opcional": false
+          }
+        },
+        "confirmadosSemDataConfiavel": {
+          "tipoJava": "long",
+          "tipo": "int64",
+          "origem": "confirmados_sem_data",
+          "frontend": {
+            "tipoTypeScript": "number",
+            "opcional": false
+          }
+        }
+      },
+      "consumoFrontend": {
+        "fonte": "../dashboards-etl/frontend/src/api/endpoints/integracoesEtapas.ts#IndicadorEtapa"
+      }
+    },
+    "IndicadoresOperacionaisDTO": {
+      "fonte": "backend/java/src/api/java/com/example/satelite/dto/auditoria/IndicadoresOperacionaisDTO.java#IndicadoresOperacionaisDTO",
+      "campos": {
+        "versao": {
+          "tipoJava": "int",
+          "tipo": "int32",
+          "origem": "constante 3",
+          "frontend": {
+            "tipoTypeScript": "3",
+            "opcional": false
+          }
+        },
+        "dataInicial": {
+          "tipoJava": "LocalDate",
+          "tipo": "date",
+          "origem": "início solicitado",
+          "frontend": {
+            "tipoTypeScript": "string",
+            "opcional": false
+          }
+        },
+        "dataFinal": {
+          "tipoJava": "LocalDate",
+          "tipo": "date",
+          "origem": "fim solicitado",
+          "frontend": {
+            "tipoTypeScript": "string",
+            "opcional": false
+          }
+        },
+        "etapas": {
+          "tipoJava": "List<Etapa>",
+          "tipo": "array<IndicadoresOperacionaisDTO.Etapa>",
+          "origem": "consulta RESUMO",
+          "frontend": {
+            "tipoTypeScript": "EtapaOperacional[]",
+            "opcional": false
+          }
+        },
+        "evolucao": {
+          "tipoJava": "List<Dia>",
+          "tipo": "array<IndicadoresOperacionaisDTO.Dia>",
+          "origem": "consulta CONFIRMACOES",
+          "frontend": {
+            "tipoTypeScript": "{ data: string; etapa: EtapaIntegracao; sucessos: number }[]",
+            "opcional": false
+          }
+        },
+        "atividade": {
+          "tipoJava": "List<Atividade>",
+          "tipo": "array<IndicadoresOperacionaisDTO.Atividade>",
+          "origem": "consulta ATIVIDADE",
+          "frontend": {
+            "tipoTypeScript": "AtividadeEtapa[]",
+            "opcional": false
+          }
+        },
+        "historicoDesde": {
+          "tipoJava": "LocalDateTime",
+          "tipo": "local-date-time",
+          "origem": "MIN(tb_integracao_etapa_evento.ocorrido_em) para os destinos",
+          "frontend": {
+            "tipoTypeScript": "string | null",
+            "opcional": false
+          }
+        },
+        "escopoTransmissoes": {
+          "tipoJava": "String",
+          "tipo": "string",
+          "origem": "constante VEDACIT",
+          "frontend": {
+            "tipoTypeScript": "'VEDACIT'",
+            "opcional": false
+          }
+        }
+      },
+      "camposDesconhecidosNaEntrada": "ignorados",
+      "consumoFrontend": {
+        "fonte": "../dashboards-etl/frontend/src/api/endpoints/integracoesOperacionais.ts#IndicadoresOperacionais"
+      }
+    },
+    "IndicadoresOperacionaisDTO.Atividade": {
+      "fonte": "backend/java/src/api/java/com/example/satelite/dto/auditoria/IndicadoresOperacionaisDTO.java#Atividade",
+      "campos": {
+        "data": {
+          "tipoJava": "LocalDate",
+          "tipo": "date",
+          "origem": "dia",
+          "frontend": {
+            "tipoTypeScript": "string",
+            "opcional": false
+          }
+        },
+        "etapa": {
+          "tipoJava": "String",
+          "tipo": "string",
+          "origem": "etapa",
+          "frontend": {
+            "tipoTypeScript": "EtapaIntegracao",
+            "opcional": false
+          }
+        },
+        "avaliacoes": {
+          "tipoJava": "long",
+          "tipo": "int64",
+          "origem": "avaliacoes",
+          "frontend": {
+            "tipoTypeScript": "number",
+            "opcional": false
+          }
+        },
+        "enviosIniciados": {
+          "tipoJava": "long",
+          "tipo": "int64",
+          "origem": "envios",
+          "frontend": {
+            "tipoTypeScript": "number",
+            "opcional": false
+          }
+        },
+        "reenviosIniciados": {
+          "tipoJava": "long",
+          "tipo": "int64",
+          "origem": "reenvios",
+          "frontend": {
+            "tipoTypeScript": "number",
+            "opcional": false
+          }
+        },
+        "consultasOrigem": {
+          "tipoJava": "long",
+          "tipo": "int64",
+          "origem": "consultas",
+          "frontend": {
+            "tipoTypeScript": "number",
+            "opcional": false
+          }
+        },
+        "retencoes": {
+          "tipoJava": "long",
+          "tipo": "int64",
+          "origem": "retencoes",
+          "frontend": {
+            "tipoTypeScript": "number",
+            "opcional": false
+          }
+        },
+        "confirmacoesAvaliadas": {
+          "tipoJava": "long",
+          "tipo": "int64",
+          "origem": "confirmacoes",
+          "frontend": {
+            "tipoTypeScript": "number",
+            "opcional": false
+          }
+        }
+      },
+      "consumoFrontend": {
+        "fonte": "../dashboards-etl/frontend/src/api/endpoints/integracoesOperacionais.ts#AtividadeEtapa"
+      }
+    },
+    "IndicadoresOperacionaisDTO.Dia": {
+      "fonte": "backend/java/src/api/java/com/example/satelite/dto/auditoria/IndicadoresOperacionaisDTO.java#Dia",
+      "campos": {
+        "data": {
+          "tipoJava": "LocalDate",
+          "tipo": "date",
+          "origem": "dia",
+          "frontend": {
+            "tipoTypeScript": "string",
+            "opcional": false
+          }
+        },
+        "etapa": {
+          "tipoJava": "String",
+          "tipo": "string",
+          "origem": "etapa",
+          "frontend": {
+            "tipoTypeScript": "EtapaIntegracao",
+            "opcional": false
+          }
+        },
+        "sucessos": {
+          "tipoJava": "long",
+          "tipo": "int64",
+          "origem": "sucessos",
+          "frontend": {
+            "tipoTypeScript": "number",
+            "opcional": false
+          }
+        }
+      },
+      "consumoFrontend": {
+        "fonte": "../dashboards-etl/frontend/src/api/endpoints/integracoesOperacionais.ts#IndicadoresOperacionais.evolucao"
+      }
+    },
+    "IndicadoresOperacionaisDTO.Etapa": {
+      "fonte": "backend/java/src/api/java/com/example/satelite/dto/auditoria/IndicadoresOperacionaisDTO.java#Etapa",
+      "campos": {
+        "sistemaDestino": {
+          "tipoJava": "String",
+          "tipo": "string",
+          "origem": "sistema_destino",
+          "frontend": {
+            "tipoTypeScript": "string",
+            "opcional": false
+          }
+        },
+        "etapa": {
+          "tipoJava": "String",
+          "tipo": "string",
+          "origem": "etapa",
+          "frontend": {
+            "tipoTypeScript": "EtapaIntegracao",
+            "opcional": false
+          }
+        },
+        "sucessosPeriodo": {
+          "tipoJava": "long",
+          "tipo": "int64",
+          "origem": "sucessos",
+          "frontend": {
+            "tipoTypeScript": "number",
+            "opcional": false
+          }
+        },
+        "aguardandoProcessamento": {
+          "tipoJava": "long",
+          "tipo": "int64",
+          "origem": "processamento",
+          "frontend": {
+            "tipoTypeScript": "number",
+            "opcional": false
+          }
+        },
+        "novaTentativa": {
+          "tipoJava": "long",
+          "tipo": "int64",
+          "origem": "nova_tentativa",
+          "frontend": {
+            "tipoTypeScript": "number",
+            "opcional": false
+          }
+        },
+        "aguardandoOrigem": {
+          "tipoJava": "long",
+          "tipo": "int64",
+          "origem": "origem",
+          "frontend": {
+            "tipoTypeScript": "number",
+            "opcional": false
+          }
+        },
+        "aguardandoConfirmacao": {
+          "tipoJava": "long",
+          "tipo": "int64",
+          "origem": "confirmacao",
+          "frontend": {
+            "tipoTypeScript": "number",
+            "opcional": false
+          }
+        },
+        "intervencao": {
+          "tipoJava": "long",
+          "tipo": "int64",
+          "origem": "intervencao",
+          "frontend": {
+            "tipoTypeScript": "number",
+            "opcional": false
+          }
+        },
+        "semConfirmacaoDatada": {
+          "tipoJava": "long",
+          "tipo": "int64",
+          "origem": "conferir",
+          "frontend": {
+            "tipoTypeScript": "number",
+            "opcional": false
+          }
+        },
+        "confirmadosSemDataConfiavel": {
+          "tipoJava": "long",
+          "tipo": "int64",
+          "origem": "confirmado_sem_data",
+          "frontend": {
+            "tipoTypeScript": "number",
+            "opcional": false
+          }
+        }
+      },
+      "consumoFrontend": {
+        "fonte": "../dashboards-etl/frontend/src/api/endpoints/integracoesOperacionais.ts#EtapaOperacional"
+      }
+    },
+    "IntegracaoEvolucaoDiariaDTO": {
+      "fonte": "backend/java/src/api/java/com/example/satelite/dto/auditoria/IntegracaoEvolucaoDiariaDTO.java#IntegracaoEvolucaoDiariaDTO",
+      "campos": {
+        "data": {
+          "tipoJava": "LocalDate",
+          "tipo": "date",
+          "origem": "data",
+          "frontend": {
+            "tipoTypeScript": "string",
+            "opcional": false
+          }
+        },
+        "total": {
+          "tipoJava": "Integer",
+          "tipo": "int32",
+          "origem": "total",
+          "frontend": {
+            "tipoTypeScript": "number",
+            "opcional": false
+          }
+        },
+        "sucessos": {
+          "tipoJava": "Integer",
+          "tipo": "int32",
+          "origem": "sucessos",
+          "frontend": {
+            "tipoTypeScript": "number",
+            "opcional": false
+          }
+        },
+        "erros": {
+          "tipoJava": "Integer",
+          "tipo": "int32",
+          "origem": "erros",
+          "frontend": {
+            "tipoTypeScript": "number",
+            "opcional": false
+          }
+        }
+      },
+      "consumoFrontend": {
+        "fonte": "../dashboards-etl/frontend/src/api/endpoints/integracoesServico.ts#IntegracaoEvolucaoDiaria"
+      }
+    },
+    "ItemVedacitSQL": {
+      "fonte": "database/sql/migration/V27__reconciliacao_noturna_vedacit.sql",
+      "campos": {
+        "execucao_id": {
+          "tipo": "int64",
+          "tipoSql": "BIGINT",
+          "aceitaNuloSql": false,
+          "origem": "tb_reconciliacao_vedacit_item.execucao_id"
+        },
+        "log_id": {
+          "tipo": "int64",
+          "tipoSql": "BIGINT",
+          "aceitaNuloSql": false,
+          "origem": "tb_reconciliacao_vedacit_item.log_id"
+        },
+        "revisado_em": {
+          "tipo": "timestamp JDBC",
+          "tipoSql": "DATETIME2",
+          "aceitaNuloSql": false,
+          "origem": "tb_reconciliacao_vedacit_item.revisado_em"
+        },
+        "proxima_revisao_em": {
+          "tipo": "timestamp JDBC",
+          "tipoSql": "DATETIME2",
+          "aceitaNuloSql": false,
+          "origem": "tb_reconciliacao_vedacit_item.proxima_revisao_em"
+        },
+        "arquivado": {
+          "tipo": "boolean",
+          "tipoSql": "BIT",
+          "aceitaNuloSql": false,
+          "origem": "tb_reconciliacao_vedacit_item.arquivado"
+        },
+        "resultado_xml": {
+          "tipo": "string",
+          "tipoSql": "VARCHAR(70)",
+          "aceitaNuloSql": false,
+          "origem": "tb_reconciliacao_vedacit_item.resultado_xml"
+        },
+        "resultado_comprovante": {
+          "tipo": "string",
+          "tipoSql": "VARCHAR(70)",
+          "aceitaNuloSql": false,
+          "origem": "tb_reconciliacao_vedacit_item.resultado_comprovante"
+        },
+        "acao": {
+          "tipo": "string",
+          "tipoSql": "VARCHAR(70)",
+          "aceitaNuloSql": false,
+          "origem": "tb_reconciliacao_vedacit_item.acao"
+        },
+        "detalhe": {
+          "tipo": "string",
+          "tipoSql": "NVARCHAR(500)",
+          "aceitaNuloSql": false,
+          "origem": "tb_reconciliacao_vedacit_item.detalhe"
+        }
+      },
+      "expansao": "SELECT * pelo JDBC. Migrações podem acrescentar propriedades. Campos listados são os declarados no SQL versionado. Datas JDBC dependem do serializador da aplicação."
+    },
+    "MensagemFiltroSelia": {
+      "fonte": [
+        "backend/java/src/api/java/com/example/satelite/controllers/SeliaPlpRateLimitInterceptor.java",
+        "backend/java/src/api/java/com/example/satelite/config/SeliaPlpRequestSizeFilter.java"
+      ],
+      "campos": {
+        "type": {
+          "tipo": "string",
+          "constante": "ERROR"
+        },
+        "text": {
+          "tipo": "string"
+        },
+        "code": {
+          "tipo": "string",
+          "valores": [
+            "selia.plp.payload_too_large",
+            "selia.plp.rate_limit"
+          ]
+        }
+      }
+    },
+    "MetricaConsolidadaDTO": {
+      "fonte": "backend/java/src/api/java/com/example/satelite/dto/auditoria/MetricaConsolidadaDTO.java#MetricaConsolidadaDTO",
+      "campos": {
+        "sistemaDestino": {
+          "tipoJava": "String",
+          "tipo": "string",
+          "origem": "d.sistema_destino",
+          "frontend": {
+            "tipoTypeScript": "string",
+            "opcional": false
+          },
+          "regra": "Destino entre PPG, SELIA, SUPPORTE e VEDACIT, inclusive quando a junção externa não encontra atividade."
+        },
+        "totalRegistros": {
+          "tipoJava": "long",
+          "tipo": "int64",
+          "origem": "COUNT(l.id)",
+          "frontend": {
+            "tipoTypeScript": "number",
+            "opcional": false
+          },
+          "colunasDeOrigem": [
+            "id",
+            "sistema_destino",
+            "arquivado",
+            "data_processamento",
+            "sftp_cliente",
+            "canhoto_classificacao_operacional"
+          ],
+          "regra": "Conta logs ativos no período por destino, exceto bloqueios de SFTP Vedacit conforme o predicado original. Um destino solicitado sem atividade recebe zero.",
+          "fonteDaRegra": "backend/java/src/main/java/com/example/satelite/repositories/LogIntegracaoRepository.java:531"
+        },
+        "percentualXmlSucesso": {
+          "tipoJava": "BigDecimal",
+          "tipo": "decimal",
+          "origem": "percentualXmlSucesso",
+          "frontend": {
+            "tipoTypeScript": "number",
+            "opcional": false
+          },
+          "colunasDeOrigem": [
+            "status_dados",
+            "status"
+          ],
+          "regra": "Sobre a mesma população do total, divide a contagem de SUCESSO, ENVIADO ou PROCESSADO pelo total, multiplica por 100, arredonda a duas casas. Recebe zero quando o total é zero. O status geral é alternativa ao status de etapa vazio.",
+          "fonteDaRegra": "backend/java/src/main/java/com/example/satelite/repositories/LogIntegracaoRepository.java:543"
+        },
+        "percentualCanhotoSucesso": {
+          "tipoJava": "BigDecimal",
+          "tipo": "decimal",
+          "origem": "percentualCanhotoSucesso",
+          "frontend": {
+            "tipoTypeScript": "number",
+            "opcional": false
+          },
+          "colunasDeOrigem": [
+            "status_canhoto",
+            "status"
+          ],
+          "regra": "Cálculo equivalente sobre o status do comprovante e, quando vazio, o status geral.",
+          "fonteDaRegra": "backend/java/src/main/java/com/example/satelite/repositories/LogIntegracaoRepository.java:555"
+        },
+        "rotuloDados": {
+          "tipoJava": "String",
+          "tipo": "string",
+          "origem": "rotuloDados(sistemaDestino)",
+          "frontend": {
+            "tipoTypeScript": "string",
+            "opcional": true
+          },
+          "colunasDeOrigem": [
+            "sistema_destino"
+          ],
+          "fonteDaRegra": "backend/java/src/api/java/com/example/satelite/services/auditoria/IntegracaoAuditoriaService.java:246"
+        },
+        "rotuloComprovante": {
+          "tipoJava": "String",
+          "tipo": "string",
+          "origem": "rotuloComprovante(sistemaDestino)",
+          "frontend": {
+            "tipoTypeScript": "string",
+            "opcional": true
+          },
+          "colunasDeOrigem": [
+            "sistema_destino"
+          ],
+          "fonteDaRegra": "backend/java/src/api/java/com/example/satelite/services/auditoria/IntegracaoAuditoriaService.java:254"
+        }
+      },
+      "consumoFrontend": {
+        "fonte": "../dashboards-etl/frontend/src/api/endpoints/integracoesServico.ts#IntegracaoMetricaConsolidada"
+      }
+    },
+    "PageableSpring": {
+      "fonte": "backend/java/src/api/java/com/example/satelite/controllers/QuarentenaController.java",
+      "origem": "PageImpl do Spring Data. Campos conferidos em GET real do JAR candidato em H2 isolado, página 0, tamanho 1 vazia.",
+      "campos": {
+        "offset": {
+          "tipo": "int64"
+        },
+        "pageNumber": {
+          "tipo": "int32"
+        },
+        "pageSize": {
+          "tipo": "int32"
+        },
+        "paged": {
+          "tipo": "boolean"
+        },
+        "sort": {
+          "tipo": "array",
+          "regra": "[]; PageRequest criado sem Sort"
+        },
+        "unpaged": {
+          "tipo": "boolean"
+        }
+      }
+    },
+    "PaginaErros": {
+      "fonte": "backend/java/src/api/java/com/example/satelite/controllers/QuarentenaController.java",
+      "origem": "PageImpl do Spring Data. Campos conferidos em GET real do JAR candidato em H2 isolado, página 0, tamanho 1 vazia.",
+      "campos": {
+        "content": {
+          "tipo": "array<QuarentenaErroManualDTO>"
+        },
+        "empty": {
+          "tipo": "boolean"
+        },
+        "first": {
+          "tipo": "boolean"
+        },
+        "last": {
+          "tipo": "boolean"
+        },
+        "number": {
+          "tipo": "int32"
+        },
+        "numberOfElements": {
+          "tipo": "int32"
+        },
+        "pageable": {
+          "tipo": "PageableSpring"
+        },
+        "size": {
+          "tipo": "int32"
+        },
+        "sort": {
+          "tipo": "array",
+          "regra": "[]; PageRequest criado sem Sort"
+        },
+        "totalElements": {
+          "tipo": "int64"
+        },
+        "totalPages": {
+          "tipo": "int32"
+        }
+      }
+    },
+    "PaginaHistorico": {
+      "fonte": "backend/java/src/api/java/com/example/satelite/controllers/QuarentenaController.java",
+      "origem": "PageImpl do Spring Data. Campos conferidos em GET real do JAR candidato em H2 isolado, página 0, tamanho 1 vazia.",
+      "campos": {
+        "content": {
+          "tipo": "array<QuarentenaHistoricoDTO>"
+        },
+        "empty": {
+          "tipo": "boolean"
+        },
+        "first": {
+          "tipo": "boolean"
+        },
+        "last": {
+          "tipo": "boolean"
+        },
+        "number": {
+          "tipo": "int32"
+        },
+        "numberOfElements": {
+          "tipo": "int32"
+        },
+        "pageable": {
+          "tipo": "PageableSpring"
+        },
+        "size": {
+          "tipo": "int32"
+        },
+        "sort": {
+          "tipo": "array",
+          "regra": "[]; PageRequest criado sem Sort"
+        },
+        "totalElements": {
+          "tipo": "int64"
+        },
+        "totalPages": {
+          "tipo": "int32"
+        }
+      }
+    },
+    "PaginacaoDTO": {
+      "fonte": "backend/java/src/api/java/com/example/satelite/dto/auditoria/PaginacaoDTO.java#PaginacaoDTO",
+      "campos": {
+        "pagina": {
+          "tipoJava": "int",
+          "tipo": "int32",
+          "origem": "página normalizada",
+          "frontend": {
+            "tipoTypeScript": "number",
+            "opcional": false
+          }
+        },
+        "tamanho": {
+          "tipoJava": "int",
+          "tipo": "int32",
+          "origem": "tamanho normalizado",
+          "frontend": {
+            "tipoTypeScript": "number",
+            "opcional": false
+          }
+        },
+        "totalElementos": {
+          "tipoJava": "long",
+          "tipo": "int64",
+          "origem": "COUNT da seleção",
+          "frontend": {
+            "tipoTypeScript": "number",
+            "opcional": false
+          }
+        },
+        "totalPaginas": {
+          "tipoJava": "int",
+          "tipo": "int32",
+          "origem": "teto(totalElementos/tamanho) ou 0",
+          "frontend": {
+            "tipoTypeScript": "number",
+            "opcional": false
+          }
+        },
+        "primeiraPagina": {
+          "tipoJava": "boolean",
+          "tipo": "boolean",
+          "origem": "pagina == 0",
+          "frontend": {
+            "tipoTypeScript": "boolean",
+            "opcional": false
+          }
+        },
+        "ultimaPagina": {
+          "tipoJava": "boolean",
+          "tipo": "boolean",
+          "origem": "totalPaginas == 0 ou pagina >= totalPaginas-1",
+          "frontend": {
+            "tipoTypeScript": "boolean",
+            "opcional": false
+          }
+        }
+      },
+      "consumoFrontend": {
+        "fonte": "../dashboards-etl/frontend/src/api/endpoints/integracoesServico.ts#IntegracoesPaginacao"
+      }
+    },
+    "PendenciaDTO": {
+      "fonte": "backend/java/src/main/java/com/example/satelite/dto/auditoria/PendenciaDTO.java#PendenciaDTO",
+      "campos": {
+        "id": {
+          "tipoJava": "Long",
+          "tipo": "int64",
+          "origem": "l.id",
+          "frontend": {
+            "tipoTypeScript": "number",
+            "opcional": false
+          }
+        },
+        "sistemaDestino": {
+          "tipoJava": "String",
+          "tipo": "string",
+          "origem": "l.sistema_destino",
+          "frontend": {
+            "tipoTypeScript": "string",
+            "opcional": false
+          }
+        },
+        "occurrenceId": {
+          "tipoJava": "Long",
+          "tipo": "int64",
+          "origem": "l.occurrence_id",
+          "frontend": {
+            "tipoTypeScript": "number | null",
+            "opcional": false
+          }
+        },
+        "freightId": {
+          "tipoJava": "Long",
+          "tipo": "int64",
+          "origem": "l.freight_id",
+          "frontend": {
+            "tipoTypeScript": "number | null",
+            "opcional": false
+          }
+        },
+        "chaveNfe": {
+          "tipoJava": "String",
+          "tipo": "string",
+          "origem": "l.chave_nfe",
+          "frontend": {
+            "tipoTypeScript": "string | null",
+            "opcional": false
+          }
+        },
+        "numeroNf": {
+          "tipoJava": "Long",
+          "tipo": "int64",
+          "origem": "TRY_CAST(SUBSTRING(l.chave_nfe,26,9) AS BIGINT)",
+          "frontend": {
+            "tipoTypeScript": "number | null",
+            "opcional": false
+          },
+          "colunasDeOrigem": [
+            "chave_nfe"
+          ],
+          "regra": "Converte em BIGINT os nove caracteres da NF-e a partir da 26ª posição. Mantém NULL quando não há número conversível.",
+          "fonteDaRegra": "backend/java/src/main/java/com/example/satelite/repositories/IntegracaoAuditoriaQueryRepository.java:28"
+        },
+        "serieNf": {
+          "tipoJava": "String",
+          "tipo": "string",
+          "origem": "SUBSTRING(l.chave_nfe,23,3)",
+          "frontend": {
+            "tipoTypeScript": "string | null",
+            "opcional": false
+          },
+          "colunasDeOrigem": [
+            "chave_nfe"
+          ],
+          "regra": "Três caracteres a partir da 23ª posição. Zeros à esquerda são significativos.",
+          "fonteDaRegra": "backend/java/src/main/java/com/example/satelite/repositories/IntegracaoAuditoriaQueryRepository.java:29"
+        },
+        "statusDados": {
+          "tipoJava": "String",
+          "tipo": "string",
+          "origem": "status_dados com fallback em status",
+          "frontend": {
+            "tipoTypeScript": "string | null",
+            "opcional": false
+          },
+          "colunasDeOrigem": [
+            "status_dados",
+            "status"
+          ],
+          "regra": "Após TRIM, usa o primeiro status não vazio nessa ordem.",
+          "fonteDaRegra": "backend/java/src/main/java/com/example/satelite/repositories/IntegracaoAuditoriaQueryRepository.java:32"
+        },
+        "statusCanhoto": {
+          "tipoJava": "String",
+          "tipo": "string",
+          "origem": "status_canhoto com fallback em status e rótulo de erro parcial",
+          "frontend": {
+            "tipoTypeScript": "string | null",
+            "opcional": false
+          },
+          "colunasDeOrigem": [
+            "status",
+            "status_dados",
+            "status_canhoto",
+            "tentativas_canhoto"
+          ],
+          "regra": "Retorna ‘Erro Parcial - Aguarda Retry’ se status ERRO_DESTINO, dados SUCESSO, canhoto ERRO_DESTINO e tentativas < 3. Fora desse caso usa status_canhoto, depois status, ignorando espaços e valores vazios.",
+          "fonteDaRegra": "backend/java/src/main/java/com/example/satelite/repositories/IntegracaoAuditoriaQueryRepository.java:43"
+        },
+        "mensagemErroDados": {
+          "tipoJava": "String",
+          "tipo": "string",
+          "origem": "l.mensagem_erro_dados",
+          "frontend": {
+            "tipoTypeScript": "string | null",
+            "opcional": false
+          }
+        },
+        "mensagemErroCanhoto": {
+          "tipoJava": "String",
+          "tipo": "string",
+          "origem": "l.mensagem_erro_canhoto",
+          "frontend": {
+            "tipoTypeScript": "string | null",
+            "opcional": false
+          }
+        },
+        "canhotoReferencia": {
+          "tipoJava": "String",
+          "tipo": "string",
+          "origem": "l.canhoto_referencia",
+          "frontend": {
+            "tipoTypeScript": "string | null",
+            "opcional": false
+          }
+        },
+        "canhotoMimeType": {
+          "tipoJava": "String",
+          "tipo": "string",
+          "origem": "l.canhoto_mime_type",
+          "frontend": {
+            "tipoTypeScript": "string | null",
+            "opcional": false
+          }
+        },
+        "dataProcessamento": {
+          "tipoJava": "LocalDateTime",
+          "tipo": "local-date-time",
+          "origem": "l.data_processamento",
+          "frontend": {
+            "tipoTypeScript": "string | null",
+            "opcional": false
+          }
+        },
+        "dataProcessamentoDados": {
+          "tipoJava": "LocalDateTime",
+          "tipo": "local-date-time",
+          "origem": "l.data_processamento_dados",
+          "frontend": {
+            "tipoTypeScript": "string | null",
+            "opcional": false
+          }
+        },
+        "dataProcessamentoCanhoto": {
+          "tipoJava": "LocalDateTime",
+          "tipo": "local-date-time",
+          "origem": "l.data_processamento_canhoto",
+          "frontend": {
+            "tipoTypeScript": "string | null",
+            "opcional": false
+          }
+        },
+        "possuiImagemPayload": {
+          "tipoJava": "Boolean",
+          "tipo": "boolean",
+          "origem": "l.canhoto_referencia IS NOT NULL",
+          "frontend": {
+            "tipoTypeScript": "boolean | null",
+            "opcional": true
+          },
+          "colunasDeOrigem": [
+            "canhoto_referencia"
+          ],
+          "regra": "Verdadeiro quando a referência não é NULL, independentemente do conteúdo de request_payload.",
+          "fonteDaRegra": "backend/java/src/main/java/com/example/satelite/repositories/IntegracaoAuditoriaQueryRepository.java:117"
+        }
+      },
+      "consumoFrontend": {
+        "fonte": "../dashboards-etl/frontend/src/api/endpoints/integracoesServico.ts#IntegracaoPendencia",
+        "somenteNoTipoDoFrontend": {
+          "possuiImagem": {
+            "tipoTypeScript": "boolean | null",
+            "opcional": true
+          },
+          "possuiImagemCanhoto": {
+            "tipoTypeScript": "boolean | null",
+            "opcional": true
+          },
+          "imagemDisponivel": {
+            "tipoTypeScript": "boolean | null",
+            "opcional": true
+          }
+        }
+      }
+    },
+    "PendenciasEtapasDTO": {
+      "fonte": "backend/java/src/api/java/com/example/satelite/dto/auditoria/PendenciasEtapasDTO.java#PendenciasEtapasDTO",
+      "campos": {
+        "itens": {
+          "tipoJava": "List<Item>",
+          "tipo": "array<PendenciasEtapasDTO.Item>",
+          "origem": "consulta do repositório com OFFSET/FETCH",
+          "frontend": {
+            "tipoTypeScript": "PendenciaEtapa[]",
+            "opcional": false
+          }
+        },
+        "totalElementos": {
+          "tipoJava": "long",
+          "tipo": "int64",
+          "origem": "contagem com os mesmos critérios",
+          "frontend": {
+            "tipoTypeScript": "number",
+            "opcional": false
+          }
+        },
+        "pagina": {
+          "tipoJava": "int",
+          "tipo": "int32",
+          "origem": "página normalizada",
+          "frontend": {
+            "tipoTypeScript": "number",
+            "opcional": false
+          }
+        },
+        "tamanho": {
+          "tipoJava": "int",
+          "tipo": "int32",
+          "origem": "tamanho normalizado",
+          "frontend": {
+            "tipoTypeScript": "number",
+            "opcional": false
+          }
+        }
+      },
+      "camposDesconhecidosNaEntrada": "ignorados",
+      "consumoFrontend": {
+        "fonte": "../dashboards-etl/frontend/src/api/endpoints/integracoesOperacionais.ts#PendenciasEtapas"
+      }
+    },
+    "PendenciasEtapasDTO.Item": {
+      "fonte": "backend/java/src/api/java/com/example/satelite/dto/auditoria/PendenciasEtapasDTO.java#Item",
+      "campos": {
+        "id": {
+          "tipoJava": "long",
+          "tipo": "int64",
+          "origem": "id",
+          "frontend": {
+            "tipoTypeScript": "number",
+            "opcional": false
+          }
+        },
+        "sistemaDestino": {
+          "tipoJava": "String",
+          "tipo": "string",
+          "origem": "sistema_destino",
+          "frontend": {
+            "tipoTypeScript": "string",
+            "opcional": false
+          }
+        },
+        "etapa": {
+          "tipoJava": "String",
+          "tipo": "string",
+          "origem": "etapa",
+          "frontend": {
+            "tipoTypeScript": "EtapaIntegracao",
+            "opcional": false
+          }
+        },
+        "documento": {
+          "tipoJava": "String",
+          "tipo": "string",
+          "origem": "rotulo",
+          "frontend": {
+            "tipoTypeScript": "string",
+            "opcional": false
+          }
+        },
+        "acao": {
+          "tipoJava": "String",
+          "tipo": "string",
+          "origem": "acao",
+          "frontend": {
+            "tipoTypeScript": "AcaoEtapa",
+            "opcional": false
+          }
+        },
+        "motivo": {
+          "tipoJava": "String",
+          "tipo": "string",
+          "origem": "motivo",
+          "frontend": {
+            "tipoTypeScript": "string",
+            "opcional": false
+          }
+        },
+        "pendenteDesde": {
+          "tipoJava": "LocalDateTime",
+          "tipo": "local-date-time",
+          "origem": "pendente_desde",
+          "frontend": {
+            "tipoTypeScript": "string | null",
+            "opcional": false
+          }
+        },
+        "ultimaAvaliacao": {
+          "tipoJava": "LocalDateTime",
+          "tipo": "local-date-time",
+          "origem": "ultima_avaliacao",
+          "frontend": {
+            "tipoTypeScript": "string | null",
+            "opcional": false
+          }
+        },
+        "proximaAvaliacao": {
+          "tipoJava": "LocalDateTime",
+          "tipo": "local-date-time",
+          "origem": "proxima_avaliacao",
+          "frontend": {
+            "tipoTypeScript": "string | null",
+            "opcional": false
+          }
+        }
+      },
+      "consumoFrontend": {
+        "fonte": "../dashboards-etl/frontend/src/api/endpoints/integracoesOperacionais.ts#PendenciaEtapa"
+      }
+    },
+    "PendenciasPaginadasDTO": {
+      "fonte": "backend/java/src/api/java/com/example/satelite/dto/auditoria/PendenciasPaginadasDTO.java#PendenciasPaginadasDTO",
+      "campos": {
+        "itens": {
+          "tipoJava": "List<PendenciaDTO>",
+          "tipo": "array<PendenciaDTO>",
+          "origem": "linhas da página",
+          "frontend": {
+            "tipoTypeScript": "IntegracaoPendencia[]",
+            "opcional": false
+          }
+        },
+        "paginacao": {
+          "tipoJava": "PaginacaoDTO",
+          "tipo": "PaginacaoDTO",
+          "origem": "contagem com os mesmos filtros",
+          "frontend": {
+            "tipoTypeScript": "IntegracoesPaginacao",
+            "opcional": false
+          }
+        }
+      },
+      "consumoFrontend": {
+        "fonte": "../dashboards-etl/frontend/src/api/endpoints/integracoesServico.ts#IntegracoesPendenciasPaginadas"
+      }
+    },
+    "QuarentenaErroManualDTO": {
+      "fonte": "backend/java/src/main/java/com/example/satelite/dto/etl/QuarentenaErroManualDTO.java#QuarentenaErroManualDTO",
+      "campos": {
+        "id": {
+          "tipoJava": "Long",
+          "tipo": "int64",
+          "origem": "tb_log_integracao.id"
+        },
+        "destino": {
+          "tipoJava": "String",
+          "tipo": "string",
+          "origem": "sistema_destino"
+        },
+        "chaveNfe": {
+          "tipoJava": "String",
+          "tipo": "string",
+          "origem": "chave_nfe"
+        },
+        "numeroNf": {
+          "tipoJava": "Long",
+          "tipo": "int64",
+          "origem": "número extraído da chave NF-e"
+        },
+        "tentativas": {
+          "tipoJava": "Integer",
+          "tipo": "int32",
+          "origem": "maior de tentativas_dados e tentativas_canhoto"
+        },
+        "erroLimpo": {
+          "tipoJava": "String",
+          "tipo": "string",
+          "origem": "primeira mensagem disponível entre mensagem_erro_dados, mensagem_erro_canhoto e erro, limpa pelo serviço"
+        },
+        "dataUltimaTentativa": {
+          "tipoJava": "LocalDateTime",
+          "tipo": "local-date-time",
+          "origem": "maior data entre data_processamento, data_processamento_dados e data_processamento_canhoto"
+        }
+      },
+      "camposDesconhecidosNaEntrada": "ignorados"
+    },
+    "QuarentenaHistoricoDTO": {
+      "fonte": "backend/java/src/main/java/com/example/satelite/dto/etl/QuarentenaHistoricoDTO.java#QuarentenaHistoricoDTO",
+      "campos": {
+        "id": {
+          "tipoJava": "Long",
+          "tipo": "int64",
+          "origem": "evento.id"
+        },
+        "destino": {
+          "tipoJava": "String",
+          "tipo": "string",
+          "origem": "log.sistema_destino"
+        },
+        "chaveNfe": {
+          "tipoJava": "String",
+          "tipo": "string",
+          "origem": "log.chave_nfe"
+        },
+        "numeroNf": {
+          "tipoJava": "Long",
+          "tipo": "int64",
+          "origem": "número extraído da chave NF-e"
+        },
+        "etapa": {
+          "tipoJava": "String",
+          "tipo": "string",
+          "origem": "evento.etapa"
+        },
+        "entradaQuarentenaEm": {
+          "tipoJava": "LocalDateTime",
+          "tipo": "local-date-time",
+          "origem": "MIN(data_evento) para ENTRADA_QUARENTENA do log"
+        },
+        "reprocessadoEm": {
+          "tipoJava": "LocalDateTime",
+          "tipo": "local-date-time",
+          "origem": "evento.data_evento de REPESCAGEM"
+        },
+        "resultado": {
+          "tipoJava": "String",
+          "tipo": "string",
+          "origem": "evento.resultado"
+        },
+        "motivo": {
+          "tipoJava": "String",
+          "tipo": "string",
+          "origem": "evento.mensagem limpa pelo serviço"
+        }
+      }
+    },
+    "QuarentenaReprocessamentoResponseDTO": {
+      "fonte": "backend/java/src/api/java/com/example/satelite/dto/etl/QuarentenaReprocessamentoResponseDTO.java#QuarentenaReprocessamentoResponseDTO",
+      "campos": {
+        "destino": {
+          "tipoJava": "String",
+          "tipo": "string",
+          "origem": "destino normalizado"
+        },
+        "quantidadeNotasReprocessadas": {
+          "tipoJava": "int",
+          "tipo": "int32",
+          "origem": "linhas alteradas por resetarQuarentenaByDestino"
+        },
+        "mensagem": {
+          "tipoJava": "String",
+          "tipo": "string",
+          "origem": "mensagem do controlador"
+        }
+      }
+    },
+    "ReconciliacaoVedacitDTO.Resumo": {
+      "fonte": "backend/java/src/main/java/com/example/satelite/dto/auditoria/ReconciliacaoVedacitDTO.java#Resumo",
+      "campos": {
+        "etapa": {
+          "tipoJava": "String",
+          "tipo": "string",
+          "origem": "etapa"
+        },
+        "resultado": {
+          "tipoJava": "String",
+          "tipo": "string",
+          "origem": "resultado"
+        },
+        "quantidade": {
+          "tipoJava": "long",
+          "tipo": "int64",
+          "origem": "quantidade"
+        }
+      }
+    },
+    "ResumoClienteSQL": {
+      "fonte": "backend/java/src/main/java/com/example/satelite/repositories/ReconciliacaoLocalRepository.java#resumo",
+      "campos": {
+        "resultado_dados": {
+          "tipo": "string",
+          "origem": "i.resultado_dados"
+        },
+        "resultado_comprovante": {
+          "tipo": "string",
+          "origem": "i.resultado_comprovante"
+        },
+        "acao": {
+          "tipo": "string",
+          "origem": "i.acao"
+        },
+        "quantidade": {
+          "tipo": "int64",
+          "origem": "COUNT_BIG(*)"
+        }
+      }
+    },
+    "ResumoTabelaIntegracaoDTO": {
+      "fonte": "backend/java/src/main/java/com/example/satelite/dto/auditoria/ResumoTabelaIntegracaoDTO.java#ResumoTabelaIntegracaoDTO",
+      "campos": {
+        "entidadeTabela": {
+          "tipoJava": "String",
+          "tipo": "string",
+          "origem": "entidade_tabela",
+          "frontend": {
+            "tipoTypeScript": "string",
+            "opcional": false
+          }
+        },
+        "totalProcessado": {
+          "tipoJava": "long",
+          "tipo": "int64",
+          "origem": "total_processado",
+          "frontend": {
+            "tipoTypeScript": "number",
+            "opcional": false
+          }
+        },
+        "totalSucesso": {
+          "tipoJava": "long",
+          "tipo": "int64",
+          "origem": "total_sucesso",
+          "frontend": {
+            "tipoTypeScript": "number",
+            "opcional": false
+          }
+        },
+        "totalErro": {
+          "tipoJava": "long",
+          "tipo": "int64",
+          "origem": "total_erro",
+          "frontend": {
+            "tipoTypeScript": "number",
+            "opcional": false
+          }
+        },
+        "totalQuarentena": {
+          "tipoJava": "long",
+          "tipo": "int64",
+          "origem": "total_quarentena",
+          "frontend": {
+            "tipoTypeScript": "number",
+            "opcional": false
+          }
+        }
+      },
+      "camposDesconhecidosNaEntrada": "ignorados",
+      "consumoFrontend": {
+        "fonte": "../dashboards-etl/frontend/src/api/endpoints/integracoesServico.ts#ResumoTabelaIntegracao"
+      }
+    },
+    "SeliaPreShipmentInvoiceDTO": {
+      "fonte": "backend/java/src/api/java/com/example/satelite/dto/selia/SeliaPreShipmentInvoiceDTO.java#SeliaPreShipmentInvoiceDTO",
+      "campos": {
+        "invoice_key": {
+          "tipoJava": "String",
+          "campoJava": "invoiceKey",
+          "tipo": "string",
+          "origem": "chave da nota → chave_nfe",
+          "obrigatorio": true,
+          "formato": "44 dígitos após trim"
+        }
+      },
+      "camposDesconhecidosNaEntrada": "ignorados"
+    },
+    "SeliaPreShipmentListRequestDTO": {
+      "fonte": "backend/java/src/api/java/com/example/satelite/dto/selia/SeliaPreShipmentListRequestDTO.java#SeliaPreShipmentListRequestDTO",
+      "campos": {
+        "intelipost_pre_shipment_list": {
+          "tipoJava": "Long",
+          "campoJava": "intelipostPreShipmentList",
+          "tipo": "int64",
+          "origem": "identificador externo → intelipost_pre_shipment_list",
+          "obrigatorio": true,
+          "minimo": 1
+        },
+        "shipment_order_array": {
+          "tipoJava": "List<SeliaPreShipmentOrderDTO>",
+          "campoJava": "shipmentOrders",
+          "tipo": "array<SeliaPreShipmentOrderDTO>",
+          "origem": "pedidos enviados pela SELIA",
+          "obrigatorio": true,
+          "minItens": 1
+        }
+      },
+      "camposDesconhecidosNaEntrada": "ignorados"
+    },
+    "SeliaPreShipmentListResponseDTO": {
+      "fonte": "backend/java/src/api/java/com/example/satelite/dto/selia/SeliaPreShipmentListResponseDTO.java#SeliaPreShipmentListResponseDTO",
+      "campos": {
+        "intelipost_pre_shipment_list": {
+          "tipoJava": "Long",
+          "campoJava": "intelipostPreShipmentList",
+          "tipo": "int64",
+          "origem": "lista recebida"
+        },
+        "logistics_provider_shipment_list": {
+          "tipoJava": "Long",
+          "campoJava": "logisticsProviderShipmentList",
+          "tipo": "int64",
+          "origem": "logistics_provider_shipment_list do cabeçalho; id gerado pelo banco"
+        },
+        "shipment_list_creation_date": {
+          "tipoJava": "String",
+          "campoJava": "shipmentListCreationDate",
+          "tipo": "string",
+          "origem": "data_processamento formatada com deslocamento de America/Sao_Paulo"
+        },
+        "orders_array": {
+          "tipoJava": "List<SeliaPreShipmentResponseOrderDTO>",
+          "campoJava": "orders",
+          "tipo": "array<SeliaPreShipmentResponseOrderDTO>",
+          "origem": "pedidos e volumes recebidos"
+        },
+        "status": {
+          "tipoJava": "String",
+          "tipo": "string",
+          "origem": "OK ou ERROR"
+        },
+        "messages": {
+          "tipoJava": "List<SeliaPreShipmentMessageDTO>",
+          "tipo": "array<SeliaPreShipmentMessageDTO>",
+          "origem": "mensagens do serviço"
+        },
+        "hash": {
+          "tipoJava": "String",
+          "tipo": "string",
+          "origem": "SELIA-PLP- seguido do identificador da transportadora"
+        }
+      },
+      "nulosNaSaida": "omitidos"
+    },
+    "SeliaPreShipmentMessageDTO": {
+      "fonte": "backend/java/src/api/java/com/example/satelite/dto/selia/SeliaPreShipmentMessageDTO.java#SeliaPreShipmentMessageDTO",
+      "campos": {
+        "type": {
+          "tipoJava": "String",
+          "tipo": "string",
+          "origem": "SUCCESS ou ERROR"
+        },
+        "text": {
+          "tipoJava": "String",
+          "tipo": "string",
+          "origem": "texto do serviço"
+        },
+        "key": {
+          "tipoJava": "String",
+          "tipo": "string",
+          "origem": "success.message ou selia.plp.error"
+        }
+      },
+      "nulosNaSaida": "omitidos"
+    },
+    "SeliaPreShipmentOrderDTO": {
+      "fonte": "backend/java/src/api/java/com/example/satelite/dto/selia/SeliaPreShipmentOrderDTO.java#SeliaPreShipmentOrderDTO",
+      "campos": {
+        "order_number": {
+          "tipoJava": "String",
+          "campoJava": "orderNumber",
+          "tipo": "string",
+          "origem": "identificador externo → order_number",
+          "obrigatorio": true,
+          "formato": "1 a 100 unidades UTF-16 após trim"
+        },
+        "shipment_order_volume_array": {
+          "tipoJava": "List<SeliaPreShipmentVolumeDTO>",
+          "campoJava": "shipmentOrderVolumes",
+          "tipo": "array<SeliaPreShipmentVolumeDTO>",
+          "origem": "volumes do pedido",
+          "obrigatorio": true,
+          "minItens": 1
+        }
+      },
+      "camposDesconhecidosNaEntrada": "ignorados"
+    },
+    "SeliaPreShipmentResponseOrderDTO": {
+      "fonte": "backend/java/src/api/java/com/example/satelite/dto/selia/SeliaPreShipmentResponseOrderDTO.java#SeliaPreShipmentResponseOrderDTO",
+      "campos": {
+        "order_number": {
+          "tipoJava": "String",
+          "campoJava": "orderNumber",
+          "tipo": "string",
+          "origem": "order_number da lista recebida"
+        },
+        "shipment_order_volume_array": {
+          "tipoJava": "List<SeliaPreShipmentResponseVolumeDTO>",
+          "campoJava": "shipmentOrderVolumes",
+          "tipo": "array<SeliaPreShipmentResponseVolumeDTO>",
+          "origem": "volumes do pedido recebido"
+        }
+      },
+      "nulosNaSaida": "omitidos"
+    },
+    "SeliaPreShipmentResponseVolumeDTO": {
+      "fonte": "backend/java/src/api/java/com/example/satelite/dto/selia/SeliaPreShipmentResponseVolumeDTO.java#SeliaPreShipmentResponseVolumeDTO",
+      "campos": {
+        "shipment_order_volume_number": {
+          "tipoJava": "String",
+          "campoJava": "shipmentOrderVolumeNumber",
+          "tipo": "string",
+          "origem": "shipment_order_volume_number da lista recebida"
+        }
+      },
+      "nulosNaSaida": "omitidos"
+    },
+    "SeliaPreShipmentVolumeDTO": {
+      "fonte": "backend/java/src/api/java/com/example/satelite/dto/selia/SeliaPreShipmentVolumeDTO.java#SeliaPreShipmentVolumeDTO",
+      "campos": {
+        "shipment_order_volume_number": {
+          "tipoJava": "String",
+          "campoJava": "shipmentOrderVolumeNumber",
+          "tipo": "string",
+          "origem": "identificador externo → volume_number",
+          "obrigatorio": true,
+          "formato": "1 a 100 unidades UTF-16 após trim"
+        },
+        "shipment_order_volume_invoice_array": {
+          "tipoJava": "List<SeliaPreShipmentInvoiceDTO>",
+          "campoJava": "invoices",
+          "tipo": "array<SeliaPreShipmentInvoiceDTO>",
+          "origem": "notas por volume",
+          "obrigatorio": true,
+          "minItens": 1
+        }
+      },
+      "camposDesconhecidosNaEntrada": "ignorados"
+    },
+    "WorkSftpClienteExecucoesPaginadasDTO": {
+      "fonte": "backend/java/src/api/java/com/example/satelite/dto/auditoria/WorkSftpClienteExecucoesPaginadasDTO.java#WorkSftpClienteExecucoesPaginadasDTO",
+      "campos": {
+        "itens": {
+          "tipoJava": "List<WorkSftpClienteStatusDTO>",
+          "tipo": "array<WorkSftpClienteStatusDTO>",
+          "origem": "linhas do histórico filtrado",
+          "frontend": {
+            "tipoTypeScript": "WorkSftpClienteStatus[]",
+            "opcional": false
+          }
+        },
+        "paginacao": {
+          "tipoJava": "PaginacaoDTO",
+          "tipo": "PaginacaoDTO",
+          "origem": "contagem com os mesmos filtros",
+          "frontend": {
+            "tipoTypeScript": "IntegracoesPaginacao",
+            "opcional": false
+          }
+        }
+      },
+      "consumoFrontend": {
+        "fonte": "../dashboards-etl/frontend/src/api/endpoints/integracoesServico.ts#WorkSftpExecucoesResponse"
+      }
+    },
+    "WorkSftpClienteStatusDTO": {
+      "fonte": "backend/java/src/main/java/com/example/satelite/dto/auditoria/WorkSftpClienteStatusDTO.java#WorkSftpClienteStatusDTO",
+      "campos": {
+        "cliente": {
+          "tipoJava": "String",
+          "tipo": "string",
+          "origem": "sftp_cliente",
+          "frontend": {
+            "tipoTypeScript": "string",
+            "opcional": false
+          }
+        },
+        "inicioUltimoCiclo": {
+          "tipoJava": "LocalDateTime",
+          "tipo": "local-date-time",
+          "origem": "inicio_em",
+          "frontend": {
+            "tipoTypeScript": "string | null",
+            "opcional": false
+          }
+        },
+        "fimUltimoCiclo": {
+          "tipoJava": "LocalDateTime",
+          "tipo": "local-date-time",
+          "origem": "fim_em",
+          "frontend": {
+            "tipoTypeScript": "string | null",
+            "opcional": false
+          }
+        },
+        "conexao": {
+          "tipoJava": "String",
+          "tipo": "string",
+          "origem": "conexao",
+          "frontend": {
+            "tipoTypeScript": "string",
+            "opcional": false
+          }
+        },
+        "statusCiclo": {
+          "tipoJava": "String",
+          "tipo": "string",
+          "origem": "status_ciclo",
+          "frontend": {
+            "tipoTypeScript": "string",
+            "opcional": false
+          }
+        },
+        "arquivosValidos": {
+          "tipoJava": "int",
+          "tipo": "int32",
+          "origem": "arquivos_validos",
+          "frontend": {
+            "tipoTypeScript": "number",
+            "opcional": false
+          }
+        },
+        "arquivosRejeitados": {
+          "tipoJava": "int",
+          "tipo": "int32",
+          "origem": "arquivos_rejeitados",
+          "frontend": {
+            "tipoTypeScript": "number",
+            "opcional": false
+          }
+        },
+        "selecionados": {
+          "tipoJava": "int",
+          "tipo": "int32",
+          "origem": "selecionados",
+          "frontend": {
+            "tipoTypeScript": "number",
+            "opcional": false
+          }
+        },
+        "enviados": {
+          "tipoJava": "int",
+          "tipo": "int32",
+          "origem": "enviados",
+          "frontend": {
+            "tipoTypeScript": "number",
+            "opcional": false
+          }
+        },
+        "pendentes": {
+          "tipoJava": "int",
+          "tipo": "int32",
+          "origem": "pendentes",
+          "frontend": {
+            "tipoTypeScript": "number",
+            "opcional": false
+          }
+        },
+        "saldo": {
+          "tipoJava": "long",
+          "tipo": "int64",
+          "origem": "saldo",
+          "frontend": {
+            "tipoTypeScript": "number",
+            "opcional": false
+          }
+        },
+        "bloqueios": {
+          "tipoJava": "long",
+          "tipo": "int64",
+          "origem": "bloqueios",
+          "frontend": {
+            "tipoTypeScript": "number",
+            "opcional": false
+          }
+        },
+        "timeoutsAmbiguos": {
+          "tipoJava": "long",
+          "tipo": "int64",
+          "origem": "timeouts_ambiguos",
+          "frontend": {
+            "tipoTypeScript": "number",
+            "opcional": false
+          }
+        },
+        "duracaoMs": {
+          "tipoJava": "long",
+          "tipo": "int64",
+          "origem": "duracao_ms",
+          "frontend": {
+            "tipoTypeScript": "number",
+            "opcional": false
+          }
+        },
+        "proximaExecucaoEstimada": {
+          "tipoJava": "LocalDateTime",
+          "tipo": "local-date-time",
+          "origem": "proxima_execucao_estimada",
+          "frontend": {
+            "tipoTypeScript": "string | null",
+            "opcional": false
+          }
+        },
+        "xmlHabilitado": {
+          "tipoJava": "Boolean",
+          "tipo": "boolean",
+          "origem": "xml_habilitado",
+          "frontend": {
+            "tipoTypeScript": "boolean | null",
+            "opcional": true
+          }
+        },
+        "xmlAvaliados": {
+          "tipoJava": "Integer",
+          "tipo": "int32",
+          "origem": "xml_avaliados",
+          "frontend": {
+            "tipoTypeScript": "number | null",
+            "opcional": true
+          }
+        },
+        "xmlEnviados": {
+          "tipoJava": "Integer",
+          "tipo": "int32",
+          "origem": "xml_enviados",
+          "frontend": {
+            "tipoTypeScript": "number | null",
+            "opcional": true
+          }
+        },
+        "xmlJaProcessados": {
+          "tipoJava": "Integer",
+          "tipo": "int32",
+          "origem": "xml_ja_processados",
+          "frontend": {
+            "tipoTypeScript": "number | null",
+            "opcional": true
+          }
+        },
+        "xmlPendentes": {
+          "tipoJava": "Integer",
+          "tipo": "int32",
+          "origem": "xml_pendentes",
+          "frontend": {
+            "tipoTypeScript": "number | null",
+            "opcional": true
+          }
+        },
+        "xmlErros": {
+          "tipoJava": "Integer",
+          "tipo": "int32",
+          "origem": "xml_erros",
+          "frontend": {
+            "tipoTypeScript": "number | null",
+            "opcional": true
+          }
+        },
+        "errosComprovante": {
+          "tipoJava": "Integer",
+          "tipo": "int32",
+          "origem": "erros_comprovante",
+          "frontend": {
+            "tipoTypeScript": "number | null",
+            "opcional": true
+          }
+        },
+        "motivoFalha": {
+          "tipoJava": "String",
+          "tipo": "string",
+          "origem": "motivo_falha",
+          "frontend": {
+            "tipoTypeScript": "string | null",
+            "opcional": true
+          }
+        },
+        "atualizadoEm": {
+          "tipoJava": "LocalDateTime",
+          "tipo": "local-date-time",
+          "origem": "atualizado_em",
+          "frontend": {
+            "tipoTypeScript": "string | null",
+            "opcional": true
+          }
+        },
+        "resultadoExecucao": {
+          "tipoJava": "String",
+          "tipo": "string",
+          "origem": "resultado_exibido",
+          "frontend": {
+            "tipoTypeScript": "'EM_EXECUCAO' | 'CONCLUIDO' | 'COM_PENDENCIAS' | 'FALHA_TECNICA' | 'INTERROMPIDO' | 'NAO_CLASSIFICADO' | null",
+            "opcional": true
+          }
+        },
+        "origemComprovantes": {
+          "tipoJava": "String",
+          "origem": "constante:SFTP",
+          "constante": "SFTP",
+          "tipo": "string",
+          "frontend": {
+            "tipoTypeScript": "string | null",
+            "opcional": true
+          }
+        }
+      },
+      "consumoFrontend": {
+        "fonte": "../dashboards-etl/frontend/src/api/endpoints/integracoesServico.ts#WorkSftpClienteStatus"
+      }
+    }
+  },
+  "tabelas": {
+    "dbo.tb_confirmacao_comprovante": {
+      "colunas": {
+        "chave_nfe": {
+          "tipoSql": "VARCHAR(44)",
+          "permiteNulo": false,
+          "fonte": "database/sql/migration/V24__confirmacao_duravel_comprovante.sql",
+          "linhaSql": 9
+        },
+        "chave_cte": {
+          "tipoSql": "VARCHAR(44)",
+          "permiteNulo": false,
+          "fonte": "database/sql/migration/V24__confirmacao_duravel_comprovante.sql",
+          "linhaSql": 10
+        },
+        "primeira_confirmacao_em": {
+          "tipoSql": "DATETIME2",
+          "permiteNulo": true,
+          "fonte": "database/sql/migration/V24__confirmacao_duravel_comprovante.sql",
+          "linhaSql": 11
+        },
+        "ultima_confirmacao_em": {
+          "tipoSql": "DATETIME2",
+          "permiteNulo": true,
+          "fonte": "database/sql/migration/V24__confirmacao_duravel_comprovante.sql",
+          "linhaSql": 12
+        },
+        "data_confiavel": {
+          "tipoSql": "BIT",
+          "permiteNulo": false,
+          "fonte": "database/sql/migration/V24__confirmacao_duravel_comprovante.sql",
+          "linhaSql": 13
+        },
+        "origem": {
+          "tipoSql": "VARCHAR(40)",
+          "permiteNulo": false,
+          "fonte": "database/sql/migration/V24__confirmacao_duravel_comprovante.sql",
+          "linhaSql": 14
+        },
+        "log_origem_id": {
+          "tipoSql": "BIGINT",
+          "permiteNulo": false,
+          "fonte": "database/sql/migration/V24__confirmacao_duravel_comprovante.sql",
+          "linhaSql": 15
+        },
+        "registrado_em": {
+          "tipoSql": "DATETIME2",
+          "permiteNulo": false,
+          "fonte": "database/sql/migration/V24__confirmacao_duravel_comprovante.sql",
+          "linhaSql": 16
+        }
+      },
+      "chavePrimaria": {
+        "nome": "PK_confirmacao_comprovante",
+        "colunas": [
+          "chave_nfe",
+          "chave_cte"
+        ],
+        "fonte": "database/sql/migration/V24__confirmacao_duravel_comprovante.sql:17"
+      },
+      "chavesEstrangeiras": []
+    },
+    "dbo.tb_integracao_etapa_evento": {
+      "colunas": {
+        "id": {
+          "tipoSql": "BIGINT",
+          "permiteNulo": false,
+          "fonte": "database/sql/schema/04_eventos_etapas_integracao.sql",
+          "linhaSql": 26,
+          "identidade": true
+        },
+        "evento_id": {
+          "tipoSql": "VARCHAR(36)",
+          "permiteNulo": false,
+          "fonte": "database/sql/schema/04_eventos_etapas_integracao.sql",
+          "linhaSql": 27
+        },
+        "execucao_id": {
+          "tipoSql": "VARCHAR(36)",
+          "permiteNulo": true,
+          "fonte": "database/sql/schema/04_eventos_etapas_integracao.sql",
+          "linhaSql": 28
+        },
+        "log_id": {
+          "tipoSql": "BIGINT",
+          "permiteNulo": true,
+          "fonte": "database/sql/schema/04_eventos_etapas_integracao.sql",
+          "linhaSql": 29
+        },
+        "sistema_destino": {
+          "tipoSql": "VARCHAR(20)",
+          "permiteNulo": false,
+          "fonte": "database/sql/schema/04_eventos_etapas_integracao.sql",
+          "linhaSql": 30
+        },
+        "etapa": {
+          "tipoSql": "VARCHAR(20)",
+          "permiteNulo": false,
+          "fonte": "database/sql/schema/04_eventos_etapas_integracao.sql",
+          "linhaSql": 31
+        },
+        "documento": {
+          "tipoSql": "VARCHAR(128)",
+          "permiteNulo": false,
+          "fonte": "database/sql/schema/04_eventos_etapas_integracao.sql",
+          "linhaSql": 32
+        },
+        "tipo": {
+          "tipoSql": "VARCHAR(30)",
+          "permiteNulo": false,
+          "fonte": "database/sql/schema/04_eventos_etapas_integracao.sql",
+          "linhaSql": 33
+        },
+        "acao": {
+          "tipoSql": "VARCHAR(40)",
+          "permiteNulo": false,
+          "fonte": "database/sql/schema/04_eventos_etapas_integracao.sql",
+          "linhaSql": 34
+        },
+        "motivo": {
+          "tipoSql": "VARCHAR(80)",
+          "permiteNulo": false,
+          "fonte": "database/sql/schema/04_eventos_etapas_integracao.sql",
+          "linhaSql": 35
+        },
+        "ocorrido_em": {
+          "tipoSql": "DATETIME2",
+          "permiteNulo": false,
+          "fonte": "database/sql/schema/04_eventos_etapas_integracao.sql",
+          "linhaSql": 36
+        },
+        "proxima_avaliacao_em": {
+          "tipoSql": "DATETIME2",
+          "permiteNulo": true,
+          "fonte": "database/sql/schema/04_eventos_etapas_integracao.sql",
+          "linhaSql": 37
+        }
+      },
+      "chavePrimaria": {
+        "nome": "PK_integracao_etapa_evento",
+        "colunas": [
+          "id"
+        ],
+        "fonte": "database/sql/schema/04_eventos_etapas_integracao.sql:26"
+      },
+      "chavesEstrangeiras": []
+    },
+    "dbo.tb_log_integracao": {
+      "colunas": {
+        "id": {
+          "tipoSql": "BIGINT",
+          "permiteNulo": false,
+          "fonte": "database/sql/schema/01_create_tb_log_integracao.sql",
+          "atributoJava": "id",
+          "tipoJava": "Long",
+          "linhaSql": 13,
+          "linhaJava": 26,
+          "identidade": true
+        },
+        "occurrence_id": {
+          "tipoSql": "BIGINT",
+          "permiteNulo": true,
+          "fonte": "database/sql/schema/01_create_tb_log_integracao.sql",
+          "atributoJava": "occurrenceId",
+          "tipoJava": "Long",
+          "linhaSql": 14,
+          "linhaJava": 28
+        },
+        "chave_nfe": {
+          "tipoSql": "VARCHAR(44)",
+          "permiteNulo": true,
+          "fonte": "database/sql/schema/01_create_tb_log_integracao.sql",
+          "atributoJava": "chaveNfe",
+          "tipoJava": "String",
+          "linhaSql": 15,
+          "linhaJava": 30
+        },
+        "chave_cte": {
+          "tipoSql": "VARCHAR(44)",
+          "permiteNulo": true,
+          "fonte": "database/sql/schema/01_create_tb_log_integracao.sql",
+          "atributoJava": "chaveCte",
+          "tipoJava": "String",
+          "linhaSql": 16,
+          "linhaJava": 32
+        },
+        "freight_id": {
+          "tipoSql": "BIGINT",
+          "permiteNulo": true,
+          "fonte": "database/sql/schema/01_create_tb_log_integracao.sql",
+          "atributoJava": "freightId",
+          "tipoJava": "Long",
+          "linhaSql": 17,
+          "linhaJava": 34
+        },
+        "cursor_next_id": {
+          "tipoSql": "BIGINT",
+          "permiteNulo": true,
+          "fonte": "database/sql/schema/01_create_tb_log_integracao.sql",
+          "atributoJava": "cursorNextId",
+          "tipoJava": "Long",
+          "linhaSql": 18,
+          "linhaJava": 44
+        },
+        "status": {
+          "tipoSql": "VARCHAR(50)",
+          "permiteNulo": false,
+          "fonte": "database/sql/schema/01_create_tb_log_integracao.sql",
+          "atributoJava": "status",
+          "tipoJava": "String",
+          "linhaSql": 19,
+          "linhaJava": 46
+        },
+        "sistema_destino": {
+          "tipoSql": "VARCHAR(20)",
+          "permiteNulo": true,
+          "fonte": "database/sql/schema/01_create_tb_log_integracao.sql",
+          "atributoJava": "sistemaDestino",
+          "tipoJava": "String",
+          "linhaSql": 20,
+          "linhaJava": 48
+        },
+        "request_payload": {
+          "tipoSql": "NVARCHAR(MAX)",
+          "permiteNulo": true,
+          "fonte": "database/sql/schema/01_create_tb_log_integracao.sql",
+          "atributoJava": "requestPayload",
+          "tipoJava": "String",
+          "linhaSql": 21,
+          "linhaJava": 50
+        },
+        "response_payload": {
+          "tipoSql": "NVARCHAR(MAX)",
+          "permiteNulo": true,
+          "fonte": "database/sql/schema/01_create_tb_log_integracao.sql",
+          "atributoJava": "responsePayload",
+          "tipoJava": "String",
+          "linhaSql": 22,
+          "linhaJava": 52
+        },
+        "erro": {
+          "tipoSql": "NVARCHAR(MAX)",
+          "permiteNulo": true,
+          "fonte": "database/sql/schema/01_create_tb_log_integracao.sql",
+          "atributoJava": "erro",
+          "tipoJava": "String",
+          "linhaSql": 23,
+          "linhaJava": 54
+        },
+        "status_dados": {
+          "tipoSql": "VARCHAR(50)",
+          "permiteNulo": true,
+          "fonte": "database/sql/schema/01_create_tb_log_integracao.sql",
+          "atributoJava": "statusDados",
+          "tipoJava": "String",
+          "linhaSql": 24,
+          "linhaJava": 56
+        },
+        "status_canhoto": {
+          "tipoSql": "VARCHAR(50)",
+          "permiteNulo": true,
+          "fonte": "database/sql/schema/01_create_tb_log_integracao.sql",
+          "atributoJava": "statusCanhoto",
+          "tipoJava": "String",
+          "linhaSql": 25,
+          "linhaJava": 58
+        },
+        "mensagem_erro_dados": {
+          "tipoSql": "NVARCHAR(MAX)",
+          "permiteNulo": true,
+          "fonte": "database/sql/schema/01_create_tb_log_integracao.sql",
+          "atributoJava": "mensagemErroDados",
+          "tipoJava": "String",
+          "linhaSql": 26,
+          "linhaJava": 60
+        },
+        "mensagem_erro_canhoto": {
+          "tipoSql": "NVARCHAR(MAX)",
+          "permiteNulo": true,
+          "fonte": "database/sql/schema/01_create_tb_log_integracao.sql",
+          "atributoJava": "mensagemErroCanhoto",
+          "tipoJava": "String",
+          "linhaSql": 27,
+          "linhaJava": 62
+        },
+        "data_processamento_dados": {
+          "tipoSql": "DATETIME2(3)",
+          "permiteNulo": true,
+          "fonte": "database/sql/schema/01_create_tb_log_integracao.sql",
+          "atributoJava": "dataProcessamentoDados",
+          "tipoJava": "LocalDateTime",
+          "linhaSql": 28,
+          "linhaJava": 89
+        },
+        "data_processamento_canhoto": {
+          "tipoSql": "DATETIME2(3)",
+          "permiteNulo": true,
+          "fonte": "database/sql/schema/01_create_tb_log_integracao.sql",
+          "atributoJava": "dataProcessamentoCanhoto",
+          "tipoJava": "LocalDateTime",
+          "linhaSql": 29,
+          "linhaJava": 91
+        },
+        "tentativas_dados": {
+          "tipoSql": "INT",
+          "permiteNulo": false,
+          "fonte": "database/sql/schema/01_create_tb_log_integracao.sql",
+          "atributoJava": "tentativasDados",
+          "tipoJava": "Integer",
+          "linhaSql": 30,
+          "linhaJava": 93
+        },
+        "tentativas_canhoto": {
+          "tipoSql": "INT",
+          "permiteNulo": false,
+          "fonte": "database/sql/schema/01_create_tb_log_integracao.sql",
+          "atributoJava": "tentativasCanhoto",
+          "tipoJava": "Integer",
+          "linhaSql": 32,
+          "linhaJava": 95
+        },
+        "canhoto_referencia": {
+          "tipoSql": "NVARCHAR(2048)",
+          "permiteNulo": true,
+          "fonte": "database/sql/schema/01_create_tb_log_integracao.sql",
+          "atributoJava": "canhotoReferencia",
+          "tipoJava": "String",
+          "linhaSql": 34,
+          "linhaJava": 64
+        },
+        "canhoto_mime_type": {
+          "tipoSql": "VARCHAR(100)",
+          "permiteNulo": true,
+          "fonte": "database/sql/schema/01_create_tb_log_integracao.sql",
+          "atributoJava": "canhotoMimeType",
+          "tipoJava": "String",
+          "linhaSql": 35,
+          "linhaJava": 66
+        },
+        "canhoto_origem": {
+          "tipoSql": "VARCHAR(30)",
+          "permiteNulo": true,
+          "fonte": "database/sql/schema/01_create_tb_log_integracao.sql",
+          "atributoJava": "canhotoOrigem",
+          "tipoJava": "String",
+          "linhaSql": 36,
+          "linhaJava": 68
+        },
+        "sftp_cliente": {
+          "tipoSql": "VARCHAR(64)",
+          "permiteNulo": true,
+          "fonte": "database/sql/schema/01_create_tb_log_integracao.sql",
+          "atributoJava": "sftpCliente",
+          "tipoJava": "String",
+          "linhaSql": 37,
+          "linhaJava": 70
+        },
+        "arquivado": {
+          "tipoSql": "BIT",
+          "permiteNulo": false,
+          "fonte": "database/sql/schema/01_create_tb_log_integracao.sql",
+          "atributoJava": "arquivado",
+          "tipoJava": "Boolean",
+          "linhaSql": 38,
+          "linhaJava": 73
+        },
+        "arquivado_em": {
+          "tipoSql": "DATETIME2(3)",
+          "permiteNulo": true,
+          "fonte": "database/sql/schema/01_create_tb_log_integracao.sql",
+          "atributoJava": "arquivadoEm",
+          "tipoJava": "LocalDateTime",
+          "linhaSql": 40,
+          "linhaJava": 75
+        },
+        "arquivado_motivo": {
+          "tipoSql": "VARCHAR(100)",
+          "permiteNulo": true,
+          "fonte": "database/sql/schema/01_create_tb_log_integracao.sql",
+          "atributoJava": "arquivadoMotivo",
+          "tipoJava": "String",
+          "linhaSql": 41,
+          "linhaJava": 77
+        },
+        "data_processamento": {
+          "tipoSql": "DATETIME2(3)",
+          "permiteNulo": false,
+          "fonte": "database/sql/schema/01_create_tb_log_integracao.sql",
+          "atributoJava": "dataProcessamento",
+          "tipoJava": "LocalDateTime",
+          "linhaSql": 42,
+          "linhaJava": 97
+        },
+        "dados_acao_operacional": {
+          "tipoSql": "VARCHAR(40)",
+          "permiteNulo": true,
+          "fonte": "database/sql/schema/04_eventos_etapas_integracao.sql",
+          "atributoJava": "dadosAcaoOperacional",
+          "tipoJava": "String",
+          "linhaSql": 8,
+          "linhaJava": 100
+        },
+        "canhoto_acao_painel": {
+          "tipoSql": "VARCHAR(40)",
+          "permiteNulo": true,
+          "fonte": "database/sql/schema/04_eventos_etapas_integracao.sql",
+          "atributoJava": "canhotoAcaoPainel",
+          "tipoJava": "String",
+          "linhaSql": 10,
+          "linhaJava": 102
+        },
+        "dados_proxima_avaliacao_em": {
+          "tipoSql": "DATETIME2",
+          "permiteNulo": true,
+          "fonte": "database/sql/schema/04_eventos_etapas_integracao.sql",
+          "atributoJava": "dadosProximaAvaliacaoEm",
+          "tipoJava": "LocalDateTime",
+          "linhaSql": 12,
+          "linhaJava": 104
+        },
+        "canhoto_proxima_avaliacao_em": {
+          "tipoSql": "DATETIME2",
+          "permiteNulo": true,
+          "fonte": "database/sql/schema/04_eventos_etapas_integracao.sql",
+          "atributoJava": "canhotoProximaAvaliacaoEm",
+          "tipoJava": "LocalDateTime",
+          "linhaSql": 14,
+          "linhaJava": 106
+        },
+        "dados_pendente_desde": {
+          "tipoSql": "DATETIME2",
+          "permiteNulo": true,
+          "fonte": "database/sql/schema/04_eventos_etapas_integracao.sql",
+          "atributoJava": "dadosPendenteDesde",
+          "tipoJava": "LocalDateTime",
+          "linhaSql": 16,
+          "linhaJava": 108
+        },
+        "canhoto_pendente_desde": {
+          "tipoSql": "DATETIME2",
+          "permiteNulo": true,
+          "fonte": "database/sql/schema/04_eventos_etapas_integracao.sql",
+          "atributoJava": "canhotoPendenteDesde",
+          "tipoJava": "LocalDateTime",
+          "linhaSql": 18,
+          "linhaJava": 110
+        },
+        "intelipost_pre_shipment_list": {
+          "tipoSql": "BIGINT",
+          "permiteNulo": true,
+          "fonte": "database/sql/migration/V6__selia_plp_auditoria_correlacao.sql",
+          "atributoJava": "intelipostPreShipmentList",
+          "tipoJava": "Long",
+          "linhaSql": 11,
+          "linhaJava": 36
+        },
+        "logistics_provider_shipment_list": {
+          "tipoSql": "BIGINT",
+          "permiteNulo": true,
+          "fonte": "database/sql/migration/V6__selia_plp_auditoria_correlacao.sql",
+          "atributoJava": "logisticsProviderShipmentList",
+          "tipoJava": "Long",
+          "linhaSql": 15,
+          "linhaJava": 38
+        },
+        "order_number": {
+          "tipoSql": "VARCHAR(100)",
+          "permiteNulo": true,
+          "fonte": "database/sql/migration/V6__selia_plp_auditoria_correlacao.sql",
+          "atributoJava": "orderNumber",
+          "tipoJava": "String",
+          "linhaSql": 19,
+          "linhaJava": 40
+        },
+        "volume_number": {
+          "tipoSql": "VARCHAR(100)",
+          "permiteNulo": true,
+          "fonte": "database/sql/migration/V6__selia_plp_auditoria_correlacao.sql",
+          "atributoJava": "volumeNumber",
+          "tipoJava": "String",
+          "linhaSql": 23,
+          "linhaJava": 42
+        },
+        "canhoto_chave_cte_efetiva": {
+          "tipoSql": "VARCHAR(44)",
+          "permiteNulo": true,
+          "fonte": "database/sql/migration/V10__vedacit_reconciliacao_canhoto_cte.sql",
+          "atributoJava": "canhotoChaveCteEfetiva",
+          "tipoJava": "String",
+          "linhaSql": 9,
+          "linhaJava": 79
+        },
+        "canhoto_reconciliacao_tipo": {
+          "tipoSql": "VARCHAR(50)",
+          "permiteNulo": true,
+          "fonte": "database/sql/migration/V10__vedacit_reconciliacao_canhoto_cte.sql",
+          "atributoJava": "canhotoReconciliacaoTipo",
+          "tipoJava": "String",
+          "linhaSql": 13,
+          "linhaJava": 81
+        },
+        "canhoto_reconciliacao_motivo": {
+          "tipoSql": "NVARCHAR(500)",
+          "permiteNulo": true,
+          "fonte": "database/sql/migration/V10__vedacit_reconciliacao_canhoto_cte.sql",
+          "atributoJava": "canhotoReconciliacaoMotivo",
+          "tipoJava": "String",
+          "linhaSql": 17,
+          "linhaJava": 83
+        },
+        "canhoto_classificacao_operacional": {
+          "tipoSql": "VARCHAR(40)",
+          "permiteNulo": true,
+          "fonte": "database/sql/migration/V11__classificacao_operacional_canhoto_vedacit.sql",
+          "atributoJava": "canhotoClassificacaoOperacional",
+          "tipoJava": "String",
+          "linhaSql": 9,
+          "linhaJava": 85
+        },
+        "canhoto_classificado_em": {
+          "tipoSql": "DATETIME2",
+          "permiteNulo": true,
+          "fonte": "database/sql/migration/V11__classificacao_operacional_canhoto_vedacit.sql",
+          "atributoJava": "canhotoClassificadoEm",
+          "tipoJava": "LocalDateTime",
+          "linhaSql": 13,
+          "linhaJava": 87
+        }
+      },
+      "entidade": "backend/java/src/main/java/com/example/satelite/models/LogIntegracaoModel.java",
+      "chavePrimaria": {
+        "nome": "PK_tb_log_integracao",
+        "colunas": [
+          "id"
+        ],
+        "fonte": "database/sql/schema/01_create_tb_log_integracao.sql:44"
+      },
+      "chavesEstrangeiras": [],
+      "transientes": [
+        {
+          "atributo": "avaliacaoDadosId",
+          "tipoJava": "java.util.UUID",
+          "fonte": "backend/java/src/main/java/com/example/satelite/models/LogIntegracaoModel.java:112"
+        },
+        {
+          "atributo": "avaliacaoCanhotoId",
+          "tipoJava": "java.util.UUID",
+          "fonte": "backend/java/src/main/java/com/example/satelite/models/LogIntegracaoModel.java:113"
+        },
+        {
+          "atributo": "avaliacaoDadosEm",
+          "tipoJava": "LocalDateTime",
+          "fonte": "backend/java/src/main/java/com/example/satelite/models/LogIntegracaoModel.java:114"
+        },
+        {
+          "atributo": "avaliacaoCanhotoEm",
+          "tipoJava": "LocalDateTime",
+          "fonte": "backend/java/src/main/java/com/example/satelite/models/LogIntegracaoModel.java:115"
+        },
+        {
+          "atributo": "avaliacaoCicloId",
+          "tipoJava": "java.util.UUID",
+          "fonte": "backend/java/src/main/java/com/example/satelite/models/LogIntegracaoModel.java:116"
+        },
+        {
+          "atributo": "estavaEmQuarentena",
+          "tipoJava": "boolean",
+          "fonte": "backend/java/src/main/java/com/example/satelite/models/LogIntegracaoModel.java:119"
+        },
+        {
+          "atributo": "resultadoDaRepescagem",
+          "tipoJava": "String",
+          "fonte": "backend/java/src/main/java/com/example/satelite/models/LogIntegracaoModel.java:121"
+        }
+      ],
+      "indicesDaCorrelacaoSelia": [
+        {
+          "nome": "IX_tb_log_integracao_selia_plp_lista",
+          "unico": false,
+          "colunas": [
+            "sistema_destino",
+            "intelipost_pre_shipment_list",
+            "data_processamento ASC",
+            "id ASC"
+          ],
+          "incluidas": [
+            "logistics_provider_shipment_list",
+            "status"
+          ],
+          "fonte": "database/sql/migration/V6__selia_plp_auditoria_correlacao.sql:33"
+        },
+        {
+          "nome": "IX_tb_log_integracao_selia_plp_nfe",
+          "unico": false,
+          "colunas": [
+            "sistema_destino",
+            "chave_nfe",
+            "status",
+            "data_processamento DESC",
+            "id DESC"
+          ],
+          "incluidas": [
+            "intelipost_pre_shipment_list",
+            "order_number",
+            "volume_number"
+          ],
+          "fonte": "database/sql/migration/V6__selia_plp_auditoria_correlacao.sql:46"
+        }
+      ]
+    },
+    "dbo.tb_log_integracao_quarentena_evento": {
+      "colunas": {
+        "id": {
+          "tipoSql": "BIGINT",
+          "permiteNulo": false,
+          "fonte": "database/sql/migration/V8__historico_quarentena_repescagem.sql",
+          "linhaSql": 13,
+          "atributoJava": "id",
+          "tipoJava": "Long",
+          "linhaJava": 25,
+          "identidade": true
+        },
+        "log_integracao_id": {
+          "tipoSql": "BIGINT",
+          "permiteNulo": false,
+          "fonte": "database/sql/migration/V8__historico_quarentena_repescagem.sql",
+          "linhaSql": 14,
+          "atributoJava": "logIntegracaoId",
+          "tipoJava": "Long",
+          "linhaJava": 28
+        },
+        "tipo_evento": {
+          "tipoSql": "VARCHAR(30)",
+          "permiteNulo": false,
+          "fonte": "database/sql/migration/V8__historico_quarentena_repescagem.sql",
+          "linhaSql": 15,
+          "atributoJava": "tipoEvento",
+          "tipoJava": "String",
+          "linhaJava": 31
+        },
+        "resultado": {
+          "tipoSql": "VARCHAR(20)",
+          "permiteNulo": false,
+          "fonte": "database/sql/migration/V8__historico_quarentena_repescagem.sql",
+          "linhaSql": 16,
+          "atributoJava": "resultado",
+          "tipoJava": "String",
+          "linhaJava": 34
+        },
+        "etapa": {
+          "tipoSql": "VARCHAR(20)",
+          "permiteNulo": false,
+          "fonte": "database/sql/migration/V8__historico_quarentena_repescagem.sql",
+          "linhaSql": 17,
+          "atributoJava": "etapa",
+          "tipoJava": "String",
+          "linhaJava": 37
+        },
+        "mensagem": {
+          "tipoSql": "NVARCHAR(MAX)",
+          "permiteNulo": true,
+          "fonte": "database/sql/migration/V8__historico_quarentena_repescagem.sql",
+          "linhaSql": 18,
+          "atributoJava": "mensagem",
+          "tipoJava": "String",
+          "linhaJava": 40
+        },
+        "data_evento": {
+          "tipoSql": "DATETIME2(3)",
+          "permiteNulo": false,
+          "fonte": "database/sql/migration/V8__historico_quarentena_repescagem.sql",
+          "linhaSql": 19,
+          "atributoJava": "dataEvento",
+          "tipoJava": "LocalDateTime",
+          "linhaJava": 43
+        }
+      },
+      "chavePrimaria": {
+        "nome": "PK_tb_log_integracao_quarentena_evento",
+        "colunas": [
+          "id"
+        ],
+        "fonte": "database/sql/migration/V8__historico_quarentena_repescagem.sql:20"
+      },
+      "chavesEstrangeiras": [
+        {
+          "nome": "FK_tb_log_integracao_quarentena_evento_log",
+          "colunas": [
+            "log_integracao_id"
+          ],
+          "tabelaAlvo": "dbo.tb_log_integracao",
+          "colunasAlvo": [
+            "id"
+          ],
+          "fonte": "database/sql/migration/V8__historico_quarentena_repescagem.sql:21"
+        }
+      ],
+      "entidade": "backend/java/src/main/java/com/example/satelite/models/QuarentenaEventoModel.java",
+      "transientes": []
+    },
+    "dbo.tb_reconciliacao_cliente_execucao": {
+      "colunas": {
+        "id": {
+          "tipoSql": "BIGINT",
+          "permiteNulo": false,
+          "fonte": "database/sql/schema/05_reconciliacao_clientes.sql",
+          "linhaSql": 9,
+          "identidade": true
+        },
+        "cliente": {
+          "tipoSql": "VARCHAR(20)",
+          "permiteNulo": false,
+          "fonte": "database/sql/schema/05_reconciliacao_clientes.sql",
+          "linhaSql": 10
+        },
+        "dia_referencia": {
+          "tipoSql": "DATE",
+          "permiteNulo": false,
+          "fonte": "database/sql/schema/05_reconciliacao_clientes.sql",
+          "linhaSql": 11
+        },
+        "inicio_em": {
+          "tipoSql": "DATETIME2",
+          "permiteNulo": false,
+          "fonte": "database/sql/schema/05_reconciliacao_clientes.sql",
+          "linhaSql": 12
+        },
+        "atualizado_em": {
+          "tipoSql": "DATETIME2",
+          "permiteNulo": false,
+          "fonte": "database/sql/schema/05_reconciliacao_clientes.sql",
+          "linhaSql": 13
+        },
+        "fim_em": {
+          "tipoSql": "DATETIME2",
+          "permiteNulo": true,
+          "fonte": "database/sql/schema/05_reconciliacao_clientes.sql",
+          "linhaSql": 14
+        },
+        "status": {
+          "tipoSql": "VARCHAR(30)",
+          "permiteNulo": false,
+          "fonte": "database/sql/schema/05_reconciliacao_clientes.sql",
+          "linhaSql": 15
+        },
+        "ultimo_log_id": {
+          "tipoSql": "BIGINT",
+          "permiteNulo": false,
+          "fonte": "database/sql/schema/05_reconciliacao_clientes.sql",
+          "linhaSql": 16
+        },
+        "limite_log_id": {
+          "tipoSql": "BIGINT",
+          "permiteNulo": false,
+          "fonte": "database/sql/schema/05_reconciliacao_clientes.sql",
+          "linhaSql": 17
+        }
+      },
+      "chavePrimaria": {
+        "nome": "PK_reconciliacao_cliente_execucao",
+        "colunas": [
+          "id"
+        ],
+        "fonte": "database/sql/schema/05_reconciliacao_clientes.sql:9"
+      },
+      "chavesEstrangeiras": []
+    },
+    "dbo.tb_reconciliacao_cliente_item": {
+      "colunas": {
+        "execucao_id": {
+          "tipoSql": "BIGINT",
+          "permiteNulo": false,
+          "fonte": "database/sql/schema/05_reconciliacao_clientes.sql",
+          "linhaSql": 24
+        },
+        "log_id": {
+          "tipoSql": "BIGINT",
+          "permiteNulo": false,
+          "fonte": "database/sql/schema/05_reconciliacao_clientes.sql",
+          "linhaSql": 25
+        },
+        "revisado_em": {
+          "tipoSql": "DATETIME2",
+          "permiteNulo": false,
+          "fonte": "database/sql/schema/05_reconciliacao_clientes.sql",
+          "linhaSql": 26
+        },
+        "proxima_revisao_em": {
+          "tipoSql": "DATETIME2",
+          "permiteNulo": false,
+          "fonte": "database/sql/schema/05_reconciliacao_clientes.sql",
+          "linhaSql": 27
+        },
+        "arquivado": {
+          "tipoSql": "BIT",
+          "permiteNulo": false,
+          "fonte": "database/sql/schema/05_reconciliacao_clientes.sql",
+          "linhaSql": 28
+        },
+        "resultado_dados": {
+          "tipoSql": "VARCHAR(70)",
+          "permiteNulo": false,
+          "fonte": "database/sql/schema/05_reconciliacao_clientes.sql",
+          "linhaSql": 29
+        },
+        "resultado_comprovante": {
+          "tipoSql": "VARCHAR(70)",
+          "permiteNulo": false,
+          "fonte": "database/sql/schema/05_reconciliacao_clientes.sql",
+          "linhaSql": 30
+        },
+        "acao": {
+          "tipoSql": "VARCHAR(70)",
+          "permiteNulo": false,
+          "fonte": "database/sql/schema/05_reconciliacao_clientes.sql",
+          "linhaSql": 31
+        }
+      },
+      "chavePrimaria": {
+        "nome": "PK_reconciliacao_cliente_item",
+        "colunas": [
+          "execucao_id",
+          "log_id"
+        ],
+        "fonte": "database/sql/schema/05_reconciliacao_clientes.sql:32"
+      },
+      "chavesEstrangeiras": [
+        {
+          "nome": "FK_reconciliacao_cliente_item_execucao",
+          "colunas": [
+            "execucao_id"
+          ],
+          "tabelaAlvo": "dbo.tb_reconciliacao_cliente_execucao",
+          "colunasAlvo": [
+            "id"
+          ],
+          "fonte": "database/sql/schema/05_reconciliacao_clientes.sql:33"
+        },
+        {
+          "nome": "FK_reconciliacao_cliente_item_log",
+          "colunas": [
+            "log_id"
+          ],
+          "tabelaAlvo": "dbo.tb_log_integracao",
+          "colunasAlvo": [
+            "id"
+          ],
+          "fonte": "database/sql/schema/05_reconciliacao_clientes.sql:35"
+        }
+      ]
+    },
+    "dbo.tb_reconciliacao_vedacit_execucao": {
+      "colunas": {
+        "id": {
+          "tipoSql": "BIGINT",
+          "permiteNulo": false,
+          "fonte": "database/sql/migration/V27__reconciliacao_noturna_vedacit.sql",
+          "linhaSql": 9,
+          "identidade": true
+        },
+        "dia_referencia": {
+          "tipoSql": "DATE",
+          "permiteNulo": false,
+          "fonte": "database/sql/migration/V27__reconciliacao_noturna_vedacit.sql",
+          "linhaSql": 10
+        },
+        "inicio_em": {
+          "tipoSql": "DATETIME2",
+          "permiteNulo": false,
+          "fonte": "database/sql/migration/V27__reconciliacao_noturna_vedacit.sql",
+          "linhaSql": 11
+        },
+        "atualizado_em": {
+          "tipoSql": "DATETIME2",
+          "permiteNulo": false,
+          "fonte": "database/sql/migration/V27__reconciliacao_noturna_vedacit.sql",
+          "linhaSql": 12
+        },
+        "fim_em": {
+          "tipoSql": "DATETIME2",
+          "permiteNulo": true,
+          "fonte": "database/sql/migration/V27__reconciliacao_noturna_vedacit.sql",
+          "linhaSql": 13
+        },
+        "status": {
+          "tipoSql": "VARCHAR(30)",
+          "permiteNulo": false,
+          "fonte": "database/sql/migration/V27__reconciliacao_noturna_vedacit.sql",
+          "linhaSql": 14
+        },
+        "ultimo_log_id": {
+          "tipoSql": "BIGINT",
+          "permiteNulo": false,
+          "fonte": "database/sql/migration/V27__reconciliacao_noturna_vedacit.sql",
+          "linhaSql": 15
+        },
+        "limite_log_id": {
+          "tipoSql": "BIGINT",
+          "permiteNulo": false,
+          "fonte": "database/sql/migration/V27__reconciliacao_noturna_vedacit.sql",
+          "linhaSql": 16
+        },
+        "bloqueio_sftp": {
+          "tipoSql": "VARCHAR(60)",
+          "permiteNulo": true,
+          "fonte": "database/sql/migration/V27__reconciliacao_noturna_vedacit.sql",
+          "linhaSql": 17
+        },
+        "bloqueio_consulta_xml": {
+          "tipoSql": "VARCHAR(60)",
+          "permiteNulo": true,
+          "fonte": "database/sql/migration/V27__reconciliacao_noturna_vedacit.sql",
+          "linhaSql": 18
+        },
+        "bloqueio_consulta_pod": {
+          "tipoSql": "VARCHAR(60)",
+          "permiteNulo": true,
+          "fonte": "database/sql/migration/V27__reconciliacao_noturna_vedacit.sql",
+          "linhaSql": 19
+        },
+        "bloqueio_origem_xml": {
+          "tipoSql": "VARCHAR(60)",
+          "permiteNulo": true,
+          "fonte": "database/sql/migration/V27__reconciliacao_noturna_vedacit.sql",
+          "linhaSql": 20
+        },
+        "bloqueio_envio_xml": {
+          "tipoSql": "VARCHAR(60)",
+          "permiteNulo": true,
+          "fonte": "database/sql/migration/V27__reconciliacao_noturna_vedacit.sql",
+          "linhaSql": 21
+        },
+        "bloqueio_envio_pod": {
+          "tipoSql": "VARCHAR(60)",
+          "permiteNulo": true,
+          "fonte": "database/sql/migration/V27__reconciliacao_noturna_vedacit.sql",
+          "linhaSql": 22
+        },
+        "fontes_dia": {
+          "tipoSql": "DATE",
+          "permiteNulo": false,
+          "fonte": "database/sql/migration/V27__reconciliacao_noturna_vedacit.sql",
+          "linhaSql": 23
+        },
+        "motivo": {
+          "tipoSql": "VARCHAR(200)",
+          "permiteNulo": true,
+          "fonte": "database/sql/migration/V27__reconciliacao_noturna_vedacit.sql",
+          "linhaSql": 24
+        },
+        "retomadas": {
+          "tipoSql": "INT",
+          "permiteNulo": false,
+          "fonte": "database/sql/migration/V27__reconciliacao_noturna_vedacit.sql",
+          "linhaSql": 25
+        }
+      },
+      "chavePrimaria": {
+        "nome": "PK_reconciliacao_vedacit_execucao",
+        "colunas": [
+          "id"
+        ],
+        "fonte": "database/sql/migration/V27__reconciliacao_noturna_vedacit.sql:9"
+      },
+      "chavesEstrangeiras": []
+    },
+    "dbo.tb_reconciliacao_vedacit_item": {
+      "colunas": {
+        "execucao_id": {
+          "tipoSql": "BIGINT",
+          "permiteNulo": false,
+          "fonte": "database/sql/migration/V27__reconciliacao_noturna_vedacit.sql",
+          "linhaSql": 32
+        },
+        "log_id": {
+          "tipoSql": "BIGINT",
+          "permiteNulo": false,
+          "fonte": "database/sql/migration/V27__reconciliacao_noturna_vedacit.sql",
+          "linhaSql": 33
+        },
+        "revisado_em": {
+          "tipoSql": "DATETIME2",
+          "permiteNulo": false,
+          "fonte": "database/sql/migration/V27__reconciliacao_noturna_vedacit.sql",
+          "linhaSql": 34
+        },
+        "proxima_revisao_em": {
+          "tipoSql": "DATETIME2",
+          "permiteNulo": false,
+          "fonte": "database/sql/migration/V27__reconciliacao_noturna_vedacit.sql",
+          "linhaSql": 35
+        },
+        "arquivado": {
+          "tipoSql": "BIT",
+          "permiteNulo": false,
+          "fonte": "database/sql/migration/V27__reconciliacao_noturna_vedacit.sql",
+          "linhaSql": 36
+        },
+        "resultado_xml": {
+          "tipoSql": "VARCHAR(70)",
+          "permiteNulo": false,
+          "fonte": "database/sql/migration/V27__reconciliacao_noturna_vedacit.sql",
+          "linhaSql": 37
+        },
+        "resultado_comprovante": {
+          "tipoSql": "VARCHAR(70)",
+          "permiteNulo": false,
+          "fonte": "database/sql/migration/V27__reconciliacao_noturna_vedacit.sql",
+          "linhaSql": 38
+        },
+        "acao": {
+          "tipoSql": "VARCHAR(70)",
+          "permiteNulo": false,
+          "fonte": "database/sql/migration/V27__reconciliacao_noturna_vedacit.sql",
+          "linhaSql": 39
+        },
+        "detalhe": {
+          "tipoSql": "NVARCHAR(500)",
+          "permiteNulo": false,
+          "fonte": "database/sql/migration/V27__reconciliacao_noturna_vedacit.sql",
+          "linhaSql": 40
+        }
+      },
+      "chavePrimaria": {
+        "nome": "PK_reconciliacao_vedacit_item",
+        "colunas": [
+          "execucao_id",
+          "log_id"
+        ],
+        "fonte": "database/sql/migration/V27__reconciliacao_noturna_vedacit.sql:41"
+      },
+      "chavesEstrangeiras": [
+        {
+          "nome": "FK_reconciliacao_item_execucao",
+          "colunas": [
+            "execucao_id"
+          ],
+          "tabelaAlvo": "dbo.tb_reconciliacao_vedacit_execucao",
+          "colunasAlvo": [
+            "id"
+          ],
+          "fonte": "database/sql/migration/V27__reconciliacao_noturna_vedacit.sql:42"
+        },
+        {
+          "nome": "FK_reconciliacao_item_log",
+          "colunas": [
+            "log_id"
+          ],
+          "tabelaAlvo": "dbo.tb_log_integracao",
+          "colunasAlvo": [
+            "id"
+          ],
+          "fonte": "database/sql/migration/V27__reconciliacao_noturna_vedacit.sql:44"
+        }
+      ]
+    },
+    "dbo.tb_work_sftp_cliente_execucao": {
+      "colunas": {
+        "resultado_execucao": {
+          "tipoSql": "VARCHAR(40)",
+          "permiteNulo": true,
+          "fonte": "database/sql/schema/04_eventos_etapas_integracao.sql",
+          "linhaSql": 20
+        },
+        "id": {
+          "tipoSql": "BIGINT",
+          "permiteNulo": false,
+          "fonte": "database/sql/migration/V16__auditoria_ciclos_work_sftp_clientes.sql",
+          "linhaSql": 11,
+          "identidade": true
+        },
+        "sftp_cliente": {
+          "tipoSql": "VARCHAR(64)",
+          "permiteNulo": false,
+          "fonte": "database/sql/migration/V16__auditoria_ciclos_work_sftp_clientes.sql",
+          "linhaSql": 12
+        },
+        "inicio_em": {
+          "tipoSql": "DATETIME2(3)",
+          "permiteNulo": false,
+          "fonte": "database/sql/migration/V16__auditoria_ciclos_work_sftp_clientes.sql",
+          "linhaSql": 13
+        },
+        "fim_em": {
+          "tipoSql": "DATETIME2(3)",
+          "permiteNulo": true,
+          "fonte": "database/sql/migration/V16__auditoria_ciclos_work_sftp_clientes.sql",
+          "linhaSql": 14
+        },
+        "execucao_id": {
+          "tipoSql": "UNIQUEIDENTIFIER",
+          "permiteNulo": true,
+          "fonte": "database/sql/migration/V16__auditoria_ciclos_work_sftp_clientes.sql",
+          "linhaSql": 15
+        },
+        "atualizado_em": {
+          "tipoSql": "DATETIME2(3)",
+          "permiteNulo": true,
+          "fonte": "database/sql/migration/V16__auditoria_ciclos_work_sftp_clientes.sql",
+          "linhaSql": 16
+        },
+        "conexao": {
+          "tipoSql": "VARCHAR(20)",
+          "permiteNulo": false,
+          "fonte": "database/sql/migration/V16__auditoria_ciclos_work_sftp_clientes.sql",
+          "linhaSql": 17
+        },
+        "status_ciclo": {
+          "tipoSql": "VARCHAR(20)",
+          "permiteNulo": false,
+          "fonte": "database/sql/migration/V16__auditoria_ciclos_work_sftp_clientes.sql",
+          "linhaSql": 18
+        },
+        "arquivos_validos": {
+          "tipoSql": "INT",
+          "permiteNulo": false,
+          "fonte": "database/sql/migration/V16__auditoria_ciclos_work_sftp_clientes.sql",
+          "linhaSql": 19
+        },
+        "arquivos_rejeitados": {
+          "tipoSql": "INT",
+          "permiteNulo": false,
+          "fonte": "database/sql/migration/V16__auditoria_ciclos_work_sftp_clientes.sql",
+          "linhaSql": 20
+        },
+        "selecionados": {
+          "tipoSql": "INT",
+          "permiteNulo": false,
+          "fonte": "database/sql/migration/V16__auditoria_ciclos_work_sftp_clientes.sql",
+          "linhaSql": 21
+        },
+        "enviados": {
+          "tipoSql": "INT",
+          "permiteNulo": false,
+          "fonte": "database/sql/migration/V16__auditoria_ciclos_work_sftp_clientes.sql",
+          "linhaSql": 22
+        },
+        "pendentes": {
+          "tipoSql": "INT",
+          "permiteNulo": false,
+          "fonte": "database/sql/migration/V16__auditoria_ciclos_work_sftp_clientes.sql",
+          "linhaSql": 23
+        },
+        "saldo": {
+          "tipoSql": "BIGINT",
+          "permiteNulo": false,
+          "fonte": "database/sql/migration/V16__auditoria_ciclos_work_sftp_clientes.sql",
+          "linhaSql": 24
+        },
+        "bloqueios": {
+          "tipoSql": "BIGINT",
+          "permiteNulo": false,
+          "fonte": "database/sql/migration/V16__auditoria_ciclos_work_sftp_clientes.sql",
+          "linhaSql": 25
+        },
+        "timeouts_ambiguos": {
+          "tipoSql": "BIGINT",
+          "permiteNulo": false,
+          "fonte": "database/sql/migration/V16__auditoria_ciclos_work_sftp_clientes.sql",
+          "linhaSql": 26
+        },
+        "duracao_ms": {
+          "tipoSql": "BIGINT",
+          "permiteNulo": false,
+          "fonte": "database/sql/migration/V16__auditoria_ciclos_work_sftp_clientes.sql",
+          "linhaSql": 27
+        },
+        "xml_habilitado": {
+          "tipoSql": "BIT",
+          "permiteNulo": true,
+          "fonte": "database/sql/migration/V16__auditoria_ciclos_work_sftp_clientes.sql",
+          "linhaSql": 28
+        },
+        "xml_avaliados": {
+          "tipoSql": "INT",
+          "permiteNulo": true,
+          "fonte": "database/sql/migration/V16__auditoria_ciclos_work_sftp_clientes.sql",
+          "linhaSql": 29
+        },
+        "xml_enviados": {
+          "tipoSql": "INT",
+          "permiteNulo": true,
+          "fonte": "database/sql/migration/V16__auditoria_ciclos_work_sftp_clientes.sql",
+          "linhaSql": 30
+        },
+        "xml_ja_processados": {
+          "tipoSql": "INT",
+          "permiteNulo": true,
+          "fonte": "database/sql/migration/V16__auditoria_ciclos_work_sftp_clientes.sql",
+          "linhaSql": 31
+        },
+        "xml_pendentes": {
+          "tipoSql": "INT",
+          "permiteNulo": true,
+          "fonte": "database/sql/migration/V16__auditoria_ciclos_work_sftp_clientes.sql",
+          "linhaSql": 32
+        },
+        "xml_erros": {
+          "tipoSql": "INT",
+          "permiteNulo": true,
+          "fonte": "database/sql/migration/V16__auditoria_ciclos_work_sftp_clientes.sql",
+          "linhaSql": 33
+        },
+        "erros_comprovante": {
+          "tipoSql": "INT",
+          "permiteNulo": true,
+          "fonte": "database/sql/migration/V16__auditoria_ciclos_work_sftp_clientes.sql",
+          "linhaSql": 34
+        },
+        "motivo_falha": {
+          "tipoSql": "NVARCHAR(240)",
+          "permiteNulo": true,
+          "fonte": "database/sql/migration/V16__auditoria_ciclos_work_sftp_clientes.sql",
+          "linhaSql": 35
+        }
+      },
+      "chavePrimaria": {
+        "nome": "PK_tb_work_sftp_cliente_execucao",
+        "colunas": [
+          "id"
+        ],
+        "fonte": "database/sql/migration/V16__auditoria_ciclos_work_sftp_clientes.sql:36"
+      },
+      "chavesEstrangeiras": []
+    }
+  }
+}
