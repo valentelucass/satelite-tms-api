@@ -2,7 +2,7 @@
 
 ## Dois programas ativos no PM2, 18/11/2026
 
-O grupo `satelite-tms` contém `api-integracoes-19090` e `clientes`. A API Java atende as 21 rotas em `127.0.0.1:19090`. O JAR de clientes executa SFTP/Vedacit, SELIA e a reconciliação. Os cinco controladores HTTP e as bibliotecas do Tomcat foram retirados desse JAR. O Rust continua em bancada.
+O grupo `satelite-tms` contém `api-integracoes-19090` e `SATELITE-TMS-CLIENTES`. A API Java atende as 21 rotas em `127.0.0.1:19090`. O JAR de clientes executa SFTP/Vedacit, SELIA e a reconciliação. Os cinco controladores HTTP e as bibliotecas do Tomcat foram retirados desse JAR. O Rust continua em bancada.
 
 O primeiro ciclo SELIA do novo worker terminou com código 0. Os cadastros antigos foram removidos depois da confirmação dos novos processos. O dump principal e o de reserva do PM2 foram conferidos e preservam as 13 aplicações alheias. Foi mantido backup criptografado das quatro definições anteriores. A configuração de restauração foi validada no disco, sem reiniciar o Windows.
 

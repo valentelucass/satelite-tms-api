@@ -13,7 +13,7 @@ echo( =================================================
 echo(           [ SERVICOS DO PM2 - SATELITE-TMS ]
 echo( -------------------------------------------------
 echo( 1. Iniciar API do dashboard e recebimento SELIA
-echo( 2. Iniciar processamento de clientes e reconciliacao
+echo( 2. Iniciar SATELITE-TMS-CLIENTES ^(integracoes e reconciliacao^)
 echo( 3. Iniciar os dois programas
 echo(
 echo( =================================================

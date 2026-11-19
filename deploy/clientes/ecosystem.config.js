@@ -95,7 +95,7 @@ module.exports = {
     },
     {
       ...common,
-      name: 'clientes',
+      name: 'SATELITE-TMS-CLIENTES',
       restart_delay: 60000,
       min_uptime: 10000,
       max_restarts: 3,

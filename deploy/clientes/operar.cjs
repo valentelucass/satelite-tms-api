@@ -1,11 +1,11 @@
 'use strict';
 const path = require('node:path');
 const namespace = 'satelite-tms';
-const programas = ['api-integracoes-19090', 'clientes'];
 const anteriores = {
   'api-integracoes-19090': ['Satelite-API-19090'],
-  clientes: ['ETL-SELIA-Worker', 'RECONCILIACAO-CLIENTES', 'WORK-SFTP-CLIENTES']
+  'SATELITE-TMS-CLIENTES': ['clientes', 'ETL-SELIA-Worker', 'RECONCILIACAO-CLIENTES', 'WORK-SFTP-CLIENTES']
 };
+const programas = Object.keys(anteriores);
 const raiz = path.resolve(__dirname, '../..');
 
 async function executar(pm2, acao, nomes) {
@@ -27,7 +27,11 @@ async function executar(pm2, acao, nomes) {
       } else if (acao === 'parar') {
         if (processo && status !== 'stopped') await chamar('stop', processo.pm_id);
       } else if (status !== 'online' && status !== 'launching') {
-        if (lista.some(p => anteriores[nome].includes(p.name) && p.pm2_env.status !== 'stopped')) {
+        const anteriorAtivo = lista.some(p => anteriores[nome].includes(p.name) &&
+          p.pm2_env.status !== 'stopped' &&
+          (p.name !== 'clientes' || (p.pm2_env.namespace === namespace &&
+            path.resolve(p.pm2_env.pm_cwd).toLowerCase() === raiz.toLowerCase())));
+        if (anteriorAtivo) {
           throw Error('Há um cadastro anterior ativo para ' + nome + '. Conclua a troca de processos antes de iniciar.');
         }
         await chamar('start', path.join(__dirname, 'ecosystem.config.js'), {only: nome});
@@ -41,7 +45,7 @@ async function executar(pm2, acao, nomes) {
 if (require.main === module) {
   const [acao, nome = 'todos', ...extra] = process.argv.slice(2);
   if (!['status', 'iniciar', 'parar'].includes(acao) || ![...programas, 'todos'].includes(nome) || extra.length) {
-    console.error('Uso: node operar.cjs status|iniciar|parar [api-integracoes-19090|clientes|todos]');
+    console.error('Uso: node operar.cjs status|iniciar|parar [' + [...programas, 'todos'].join('|') + ']');
     process.exitCode = 2;
   } else {
     const pm2 = require(path.join(process.env.APPDATA, 'npm/node_modules/pm2'));

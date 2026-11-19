@@ -3,7 +3,7 @@
 | Processo no grupo `satelite-tms` | Responsabilidade |
 |---|---|
 | `api-integracoes-19090` | Consultas do dashboard e recepção das listas de pré-embarque SELIA/Intelipost em `127.0.0.1:19090`. |
-| `clientes` | Integração de eventos e comprovantes SELIA, processamento documental Vedacit por SFTP e reconciliação de Vedacit, PPG, SELIA e SUPPORTE. |
+| `SATELITE-TMS-CLIENTES` | Integração de eventos e comprovantes SELIA, processamento documental Vedacit por SFTP e reconciliação de Vedacit, PPG, SELIA e SUPPORTE. |
 
 A API inicia em modo dashboard com `satelite-api.jar`. O segundo processo usa `satelite-clientes.jar`, compilado com o perfil Maven `clientes-worker`, e inicia sem porta HTTP. Os controladores do painel e do recebimento SELIA pertencem ao pacote da API. SFTP e SELIA têm uma agenda por rotina e cada uma aguarda 30 minutos depois do próprio término. A reconciliação conserva as janelas de revisão por cliente. A seleção explícita de SELIA mantém a leitura do seu cursor e evita iniciar uma segunda passagem de Vedacit. PPG e SUPPORTE participam da revisão local. Seus envios continuam desabilitados neste perfil.
 
@@ -31,7 +31,7 @@ O empacotador cria os dois arquivos na mesma pasta em `deploy/clientes/pacotes/v
 
 ## Operação
 
-Use `node deploy/clientes/operar.cjs status` na raiz para ver os dois serviços. Os comandos `iniciar` e `parar` aceitam `api-integracoes-19090`, `clientes` ou `todos`. O menu `satelite.bat` usa os mesmos nomes. Parar o worker interrompe as agendas de todos os clientes e a reconciliação.
+Use `node deploy/clientes/operar.cjs status` na raiz para ver os dois serviços. Os comandos `iniciar` e `parar` aceitam `api-integracoes-19090`, `SATELITE-TMS-CLIENTES` ou `todos`. O menu `satelite.bat` usa os mesmos nomes. Parar o worker interrompe as agendas de todos os clientes e a reconciliação.
 
 Na migração de 18/11/2026, os três processos antigos de clientes foram desligados entre os ciclos e fora da janela noturna. Os dois cadastros novos foram verificados no PM2 e nos dois arquivos de restauração usados no servidor. As demais 13 definições foram preservadas. A tarefa `PM2-Projetos` usa o cadastro salvo para restaurar os serviços quando o Windows inicia.
 
