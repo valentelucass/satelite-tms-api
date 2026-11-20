@@ -48,6 +48,7 @@ set "SANEAMENTO_VEDACIT_ONLY="
 set "RECONCILIACAO_ONLY="
 set "EVENTOS_ETAPAS_ONLY="
 set "RESUMO_PAINEL_ONLY="
+set "FILA_SFTP_ONLY="
 if /I "%~1"=="--rodizio" (
     set "RODIZIO_ONLY=1"
 ) else if /I "%~1"=="--confirmacoes" (
@@ -60,8 +61,10 @@ if /I "%~1"=="--rodizio" (
     set "EVENTOS_ETAPAS_ONLY=1"
 ) else if /I "%~1"=="--resumo-painel" (
     set "RESUMO_PAINEL_ONLY=1"
+) else if /I "%~1"=="--fila-sftp" (
+    set "FILA_SFTP_ONLY=1"
 ) else if not "%~1"=="" (
-    echo [ERRO] Opcao invalida. Use sem argumentos, --rodizio, --confirmacoes, --saneamento-vedacit, --reconciliacao, --eventos-etapas ou --resumo-painel.
+    echo [ERRO] Opcao invalida. Use sem argumentos, --rodizio, --confirmacoes, --saneamento-vedacit, --reconciliacao, --eventos-etapas, --resumo-painel ou --fila-sftp.
     exit /b 1
 )
 
@@ -96,6 +99,7 @@ if "%SQLCMD_TLS_ARGS%"=="" (
 echo.
 
 if defined RODIZIO_ONLY goto :rodizio_only
+if defined FILA_SFTP_ONLY goto :fila_sftp_only
 if defined RESUMO_PAINEL_ONLY goto :resumo_painel_only
 if defined CONFIRMACOES_ONLY goto :confirmacoes_only
 if defined SANEAMENTO_VEDACIT_ONLY goto :saneamento_vedacit_only
@@ -127,6 +131,10 @@ call :run_sql "%SCRIPT_ROOT%\migration\V28__eventos_etapas_integracao.sql"
 if errorlevel 1 exit /b 1
 echo [OK] Auditoria de eventos e agenda documental atualizadas.
 exit /b 0
+
+:fila_sftp_only
+call :run_sql "%SCRIPT_ROOT%\migration\V30__indice_fila_documental_vedacit.sql"
+exit /b %errorlevel%
 
 :rodizio_only
 rem Atualizacao aditiva da base existente, sem repetir conciliacoes historicas.

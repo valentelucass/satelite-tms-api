@@ -15,7 +15,7 @@ import org.springframework.data.repository.query.Param;
 
 import com.example.satelite.models.LogIntegracaoModel;
 
-public interface LogIntegracaoRepository extends JpaRepository<LogIntegracaoModel, Long> {
+public interface LogIntegracaoRepository extends JpaRepository<LogIntegracaoModel, Long>, ConsultaInventarioNfe {
 
     @Query("""
             SELECT l FROM LogIntegracaoModel l WHERE l.sistemaDestino = 'VEDACIT'
@@ -254,10 +254,16 @@ public interface LogIntegracaoRepository extends JpaRepository<LogIntegracaoMode
             AND (l.canhotoProximaAvaliacaoEm IS NULL OR l.canhotoProximaAvaliacaoEm <= :agora)
             ORDER BY l.dataProcessamento ASC, l.id ASC
             """)
-    List<LogIntegracaoModel> findCandidatosSftpPorClienteENfes(
+    List<LogIntegracaoModel> buscarCandidatosSftpPorLista(
             @Param("cliente") String cliente, @Param("chavesNfe") List<String> chavesNfe,
             @Param("agora") LocalDateTime agora, Pageable pageable
     );
+
+    default List<LogIntegracaoModel> findCandidatosSftpPorClienteENfes(
+            String cliente, List<String> chavesNfe, LocalDateTime agora, Pageable pageable) {
+        return tentarListarLoteNfe(cliente, chavesNfe, agora, pageable)
+                .orElseGet(() -> buscarCandidatosSftpPorLista(cliente, chavesNfe, agora, pageable));
+    }
 
     default List<LogIntegracaoModel> findCandidatosSftpPorClienteENfes(String cliente, List<String> chavesNfe, Pageable pageable) {
         return findCandidatosSftpPorClienteENfes(cliente, chavesNfe, LocalDateTime.now(java.time.ZoneId.of("America/Sao_Paulo")), pageable);
@@ -306,9 +312,14 @@ public interface LogIntegracaoRepository extends JpaRepository<LogIntegracaoMode
               AND l.canhotoClassificacaoOperacional = 'PENDENTE_ENVIO'
               AND l.chaveNfe IN :chavesNfe AND l.chaveCte IS NOT NULL AND TRIM(l.chaveCte) <> ''
             """)
-    long countNfesCandidatasSftpPorClienteENfes(
+    long contarCandidatasSftpPorLista(
             @Param("cliente") String cliente, @Param("chavesNfe") List<String> chavesNfe
     );
+
+    default long countNfesCandidatasSftpPorClienteENfes(String cliente, List<String> chavesNfe) {
+        return tentarContarLoteNfe(cliente, chavesNfe)
+                .orElseGet(() -> contarCandidatasSftpPorLista(cliente, chavesNfe));
+    }
 
     @Query("""
             SELECT l FROM LogIntegracaoModel l

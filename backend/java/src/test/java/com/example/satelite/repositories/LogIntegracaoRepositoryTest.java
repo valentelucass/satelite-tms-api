@@ -44,13 +44,13 @@ class LogIntegracaoRepositoryTest {
     @Test
     void filaSftpDeveSelecionarSomentePendenciaAtivaEClassificada() throws NoSuchMethodException {
         Method normal = LogIntegracaoRepository.class.getMethod(
-                "findCandidatosSftpPorClienteENfes", String.class, List.class, java.time.LocalDateTime.class, Pageable.class
+                "buscarCandidatosSftpPorLista", String.class, List.class, java.time.LocalDateTime.class, Pageable.class
         );
         Method tecnico = LogIntegracaoRepository.class.getMethod(
                 "findTecnicosSftpPorClienteENfes", String.class, List.class, java.time.LocalDateTime.class, Pageable.class
         );
         Method saldo = LogIntegracaoRepository.class.getMethod(
-                "countNfesCandidatasSftpPorClienteENfes", String.class, List.class
+                "contarCandidatasSftpPorLista", String.class, List.class
         );
 
         assertTrue(normal.getAnnotation(Query.class).value().contains("COALESCE(l.arquivado, false) = false"));

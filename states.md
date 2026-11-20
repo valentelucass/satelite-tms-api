@@ -1,5 +1,13 @@
 # Estado Atual do Sistema
 
+## Fila documental em produção em 20/11/2026
+
+O worker passou a consultar lotes de 32 a 500 chaves de NF-e com um parâmetro SQL. Cada chave precisa ter 44 dígitos de 0 a 9. Outros formatos seguem pela comparação anterior. A migração V30 acrescenta o índice filtrado da fila Vedacit. A busca conserva o horário de elegibilidade e a ordem por processamento e ID.
+
+A cópia restaurada repetiu os 42 campos, o saldo e a ordem em 36 comparações pela aplicação e dez comparações concorrentes. Os dois perfis Java concluíram suas suítes com 515 e 610 testes aprovados, respectivamente no worker e na API. Cada perfil tem três testes ignorados. Com 500 chaves e 133 notas elegíveis, a contagem passou de 2.360 para 8 leituras lógicas na mediana medida na cópia.
+
+O pacote de clientes `3d160b45ce2a4786a49484a40857c2a1` entrou em operação entre os ciclos às 13h40. O SHA-256 do JAR é `84a05fb892d472dbaf5f11dc3d205513ce2bf47ce21eb5b122ad1640094c79ee`. A seleção anterior era `19e229eda41545809e7932beb5dab011`. A configuração de inicialização foi conferida nos dois arquivos do PM2. A API Rust continuou atendendo com o mesmo processo.
+
 ## API Rust em produção, 18/11/2026 às 23h12
 
 O PM2 iniciou `api-integracoes-19090` com `satelite-tms-api.exe` em `127.0.0.1:19090` e `SATELITE-TMS-CLIENTES` seguiu online em Java. A API acessa diretamente o SQL Server da auditoria. O dashboard conserva a rota `GET /api/auditoria/integracoes-clientes`. O executável publicado tem SHA-256 `b5b02ecd50a1ea385d328928b705ace8689693bfec60f8f42db4ed51408f874f`. O PM2 guardou a configuração principal e a de reserva. O JAR Java anterior fica disponível para reversão.
