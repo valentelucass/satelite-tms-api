@@ -15,5 +15,5 @@ if /I not "%VEDACIT_SFTP_RECEIPT_ONLY%"=="true" (
     echo [ERRO] VEDACIT_SFTP_RECEIPT_ONLY deve ser true.
     exit /b 1
 )
-node -e "const a=require('./deploy/clientes/ecosystem.config.js').apps.find(p=>p.name==='clientes' && p.namespace==='satelite-tms');if(!a)process.exit(1);console.log(a.namespace+'/'+a.name)"
+node -e "const a=require('./deploy/clientes/ecosystem.config.js').apps.find(p=>p.name==='SATELITE-TMS-CLIENTES' && p.namespace==='satelite-tms');if(!a)process.exit(1);console.log(a.namespace+'/'+a.name)"
 exit /b %errorlevel%

@@ -28,7 +28,8 @@ O modo SQLite usa um arquivo de teste indicado na linha de comando. Na bancada, 
 - `src/dto` descreve a lista de pré-embarque e o recibo que a SELIA troca com o Satélite.
 - `src/models` descreve os dados do painel, do recibo e dos vínculos entre nota, pedido e volume.
 - `src/services` aplica as regras de cada consulta ou recebimento.
-- `src/repositories` contém as consultas ao banco e a transação que grava a lista e seus vínculos.
+- `src/repositories` executa as consultas ao banco.
+- `sql/auditoria` reúne as consultas do painel. [sql/selia/receber.sql](sql/selia/receber.sql) grava a lista de pré-embarque e seus vínculos em uma transação. O Rust incorpora esses arquivos ao executável durante a compilação.
 - O [catálogo de contratos](contracts/api-integracoes.json) descreve o formato das chamadas Java, os campos do dashboard e as colunas do banco. Os [dados de teste](tests/fixtures) reproduzem os casos usados na bancada.
 
 ## Rodar localmente

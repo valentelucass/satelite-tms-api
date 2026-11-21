@@ -46,8 +46,8 @@
         ],
         "regra": "A lista externa identifica um cabeçalho SELIA_PLP. O id desse cabeçalho fornece logistics_provider_shipment_list. Cada tripla distinta NF-e/pedido/volume gera um SELIA_PLP_MAP associado por ambos os identificadores. A relação entre essas linhas é lógica.",
         "fontes": [
-          "backend/java/src/api/java/com/example/satelite/services/selia/SeliaPreShipmentListService.java:86",
-          "backend/java/src/api/java/com/example/satelite/services/selia/SeliaPreShipmentListService.java:105",
+          "backend/java/src/main/perfis/api/java/com/example/satelite/services/selia/SeliaPreShipmentListService.java:86",
+          "backend/java/src/main/perfis/api/java/com/example/satelite/services/selia/SeliaPreShipmentListService.java:105",
           "backend/rust/src/repositories/selia.rs:33"
         ]
       },
@@ -63,7 +63,7 @@
         "uso": "Imagem para o dashboard",
         "regra": "Consulta por id, exige destino PPG e extrai o conteúdo de request_payload. O endpoint retorna 404 quando não há uma imagem utilizável segundo o extrator. Esta leitura é diferente do sinal possuiImagemPayload apresentado na tabela do painel.",
         "fontes": [
-          "backend/java/src/api/java/com/example/satelite/services/auditoria/IntegracaoAuditoriaService.java:275",
+          "backend/java/src/main/perfis/api/java/com/example/satelite/services/auditoria/IntegracaoAuditoriaService.java:275",
           "backend/rust/src/services/imagem.rs:18"
         ]
       }
@@ -74,7 +74,7 @@
     {
       "metodo": "GET",
       "caminho": "/api/auditoria/integracoes-clientes",
-      "controller": "backend/java/src/api/java/com/example/satelite/controllers/IntegracaoAuditoriaController.java#consultarIntegracoesClientes",
+      "controller": "backend/java/src/main/perfis/api/java/com/example/satelite/controllers/IntegracaoAuditoriaController.java#consultarIntegracoesClientes",
       "parametros": [
         {
           "nome": "pagina",
@@ -219,7 +219,7 @@
         "400": "datas ausentes/inválidas, incompletas ou invertidas onde aplicável, ou destino fora da lista"
       },
       "rastreio": [
-        "backend/java/src/api/java/com/example/satelite/services/auditoria/IntegracaoAuditoriaService.java#consultarIntegracoesClientes",
+        "backend/java/src/main/perfis/api/java/com/example/satelite/services/auditoria/IntegracaoAuditoriaService.java#consultarIntegracoesClientes",
         "backend/java/src/main/java/com/example/satelite/repositories/LogIntegracaoRepository.java#buscarMetricasIntegracoesClientes",
         "backend/java/src/main/java/com/example/satelite/repositories/IntegracaoAuditoriaQueryRepository.java#buscarPendencias"
       ],
@@ -244,7 +244,7 @@
     {
       "metodo": "GET",
       "caminho": "/api/auditoria/integracoes-clientes/exportacao",
-      "controller": "backend/java/src/api/java/com/example/satelite/controllers/IntegracaoAuditoriaController.java#exportarIntegracoesClientes",
+      "controller": "backend/java/src/main/perfis/api/java/com/example/satelite/controllers/IntegracaoAuditoriaController.java#exportarIntegracoesClientes",
       "parametros": [
         {
           "nome": "dataInicial",
@@ -373,7 +373,7 @@
         "400": "condições de período/destino; a validação ocorre durante a escrita do StreamingResponseBody, portanto a resposta pode já ter começado"
       },
       "rastreio": [
-        "backend/java/src/api/java/com/example/satelite/services/auditoria/IntegracaoAuditoriaService.java#exportarIntegracoesClientes",
+        "backend/java/src/main/perfis/api/java/com/example/satelite/services/auditoria/IntegracaoAuditoriaService.java#exportarIntegracoesClientes",
         "backend/java/src/main/java/com/example/satelite/repositories/IntegracaoAuditoriaQueryRepository.java#exportarPendencias"
       ],
       "tabelas": [
@@ -453,7 +453,7 @@
             "campo": "possuiImagemPayload"
           }
         ],
-        "serializador": "backend/java/src/api/java/com/example/satelite/utils/CsvStreamWriter.java#escreverLinha",
+        "serializador": "backend/java/src/main/perfis/api/java/com/example/satelite/utils/CsvStreamWriter.java#escreverLinha",
         "modeloLinha": "PendenciaDTO"
       },
       "regras": [
@@ -464,7 +464,7 @@
     {
       "metodo": "GET",
       "caminho": "/api/auditoria/integracoes-clientes/evolucao-diaria",
-      "controller": "backend/java/src/api/java/com/example/satelite/controllers/IntegracaoAuditoriaController.java#consultarEvolucaoDiaria",
+      "controller": "backend/java/src/main/perfis/api/java/com/example/satelite/controllers/IntegracaoAuditoriaController.java#consultarEvolucaoDiaria",
       "parametros": [
         {
           "nome": "dataInicial",
@@ -508,7 +508,7 @@
         "400": "datas ausentes/inválidas, incompletas ou invertidas onde aplicável, ou destino fora da lista"
       },
       "rastreio": [
-        "backend/java/src/api/java/com/example/satelite/services/auditoria/IntegracaoAuditoriaService.java#consultarEvolucaoDiaria",
+        "backend/java/src/main/perfis/api/java/com/example/satelite/services/auditoria/IntegracaoAuditoriaService.java#consultarEvolucaoDiaria",
         "backend/java/src/main/java/com/example/satelite/repositories/LogIntegracaoRepository.java#buscarEvolucaoDiariaIntegracoes"
       ],
       "tabelas": [
@@ -532,7 +532,7 @@
     {
       "metodo": "GET",
       "caminho": "/api/auditoria/integracoes-clientes/indicadores-etapas",
-      "controller": "backend/java/src/api/java/com/example/satelite/controllers/IntegracaoAuditoriaController.java#consultarIndicadoresEtapas",
+      "controller": "backend/java/src/main/perfis/api/java/com/example/satelite/controllers/IntegracaoAuditoriaController.java#consultarIndicadoresEtapas",
       "parametros": [
         {
           "nome": "dataInicial",
@@ -576,8 +576,8 @@
         "400": "datas ausentes/inválidas, incompletas ou invertidas onde aplicável, ou destino fora da lista"
       },
       "rastreio": [
-        "backend/java/src/api/java/com/example/satelite/services/auditoria/IntegracaoAuditoriaService.java#consultarIndicadoresEtapas",
-        "backend/java/src/api/java/com/example/satelite/repositories/IntegracaoIndicadoresEtapasRepository.java#consultar"
+        "backend/java/src/main/perfis/api/java/com/example/satelite/services/auditoria/IntegracaoAuditoriaService.java#consultarIndicadoresEtapas",
+        "backend/java/src/main/perfis/api/java/com/example/satelite/repositories/IntegracaoIndicadoresEtapasRepository.java#consultar"
       ],
       "tabelas": [
         "dbo.tb_log_integracao",
@@ -600,7 +600,7 @@
     {
       "metodo": "GET",
       "caminho": "/api/auditoria/integracoes-clientes/indicadores-operacionais",
-      "controller": "backend/java/src/api/java/com/example/satelite/controllers/IntegracaoAuditoriaController.java#consultarIndicadoresOperacionais",
+      "controller": "backend/java/src/main/perfis/api/java/com/example/satelite/controllers/IntegracaoAuditoriaController.java#consultarIndicadoresOperacionais",
       "parametros": [
         {
           "nome": "dataInicial",
@@ -644,8 +644,8 @@
         "400": "datas ausentes/inválidas, incompletas ou invertidas onde aplicável, ou destino fora da lista"
       },
       "rastreio": [
-        "backend/java/src/api/java/com/example/satelite/services/auditoria/IntegracaoAuditoriaService.java#consultarIndicadoresOperacionais",
-        "backend/java/src/api/java/com/example/satelite/repositories/IntegracaoOperacionalRepository.java#consultar"
+        "backend/java/src/main/perfis/api/java/com/example/satelite/services/auditoria/IntegracaoAuditoriaService.java#consultarIndicadoresOperacionais",
+        "backend/java/src/main/perfis/api/java/com/example/satelite/repositories/IntegracaoOperacionalRepository.java#consultar"
       ],
       "tabelas": [
         "dbo.tb_log_integracao",
@@ -669,7 +669,7 @@
     {
       "metodo": "GET",
       "caminho": "/api/auditoria/integracoes-clientes/pendencias-etapas",
-      "controller": "backend/java/src/api/java/com/example/satelite/controllers/IntegracaoAuditoriaController.java#consultarPendenciasEtapas",
+      "controller": "backend/java/src/main/perfis/api/java/com/example/satelite/controllers/IntegracaoAuditoriaController.java#consultarPendenciasEtapas",
       "parametros": [
         {
           "nome": "destino",
@@ -741,8 +741,8 @@
         "400": "etapa, ação ou destino inválido ou parâmetro obrigatório ausente"
       },
       "rastreio": [
-        "backend/java/src/api/java/com/example/satelite/services/auditoria/IntegracaoAuditoriaService.java#consultarPendenciasEtapas",
-        "backend/java/src/api/java/com/example/satelite/repositories/IntegracaoOperacionalRepository.java#pendencias"
+        "backend/java/src/main/perfis/api/java/com/example/satelite/services/auditoria/IntegracaoAuditoriaService.java#consultarPendenciasEtapas",
+        "backend/java/src/main/perfis/api/java/com/example/satelite/repositories/IntegracaoOperacionalRepository.java#pendencias"
       ],
       "tabelas": [
         "dbo.tb_log_integracao",
@@ -763,7 +763,7 @@
     {
       "metodo": "GET",
       "caminho": "/api/auditoria/integracoes-clientes/resumo-tabelas",
-      "controller": "backend/java/src/api/java/com/example/satelite/controllers/IntegracaoAuditoriaController.java#consultarResumoTabelas",
+      "controller": "backend/java/src/main/perfis/api/java/com/example/satelite/controllers/IntegracaoAuditoriaController.java#consultarResumoTabelas",
       "parametros": [
         {
           "nome": "dataInicial",
@@ -807,7 +807,7 @@
         "400": "datas ausentes/inválidas, incompletas ou invertidas onde aplicável, ou destino fora da lista"
       },
       "rastreio": [
-        "backend/java/src/api/java/com/example/satelite/services/auditoria/IntegracaoAuditoriaService.java#consultarResumoTabelas",
+        "backend/java/src/main/perfis/api/java/com/example/satelite/services/auditoria/IntegracaoAuditoriaService.java#consultarResumoTabelas",
         "backend/java/src/main/java/com/example/satelite/repositories/IntegracaoAuditoriaQueryRepository.java#buscarResumoTabelas"
       ],
       "tabelas": [
@@ -828,7 +828,7 @@
     {
       "metodo": "GET",
       "caminho": "/api/auditoria/vedacit-sftp/clientes",
-      "controller": "backend/java/src/api/java/com/example/satelite/controllers/IntegracaoAuditoriaController.java#consultarStatusVedacitSftp",
+      "controller": "backend/java/src/main/perfis/api/java/com/example/satelite/controllers/IntegracaoAuditoriaController.java#consultarStatusVedacitSftp",
       "parametros": [],
       "resposta": {
         "status": 200,
@@ -837,7 +837,7 @@
       },
       "erros": {},
       "rastreio": [
-        "backend/java/src/api/java/com/example/satelite/services/auditoria/IntegracaoAuditoriaService.java#consultarStatusWorkSftpClientes",
+        "backend/java/src/main/perfis/api/java/com/example/satelite/services/auditoria/IntegracaoAuditoriaService.java#consultarStatusWorkSftpClientes",
         "backend/java/src/main/java/com/example/satelite/repositories/WorkSftpClientesAuditoriaRepository.java#buscarUltimosCiclos"
       ],
       "tabelas": [
@@ -857,7 +857,7 @@
     {
       "metodo": "GET",
       "caminho": "/api/auditoria/vedacit-sftp/execucoes",
-      "controller": "backend/java/src/api/java/com/example/satelite/controllers/IntegracaoAuditoriaController.java#consultarExecucoesVedacitSftp",
+      "controller": "backend/java/src/main/perfis/api/java/com/example/satelite/controllers/IntegracaoAuditoriaController.java#consultarExecucoesVedacitSftp",
       "parametros": [
         {
           "nome": "pagina",
@@ -915,7 +915,7 @@
         "400": "período inválido ou tipo de parâmetro incompatível"
       },
       "rastreio": [
-        "backend/java/src/api/java/com/example/satelite/services/auditoria/IntegracaoAuditoriaService.java#consultarHistoricoWorkSftpClientes",
+        "backend/java/src/main/perfis/api/java/com/example/satelite/services/auditoria/IntegracaoAuditoriaService.java#consultarHistoricoWorkSftpClientes",
         "backend/java/src/main/java/com/example/satelite/repositories/WorkSftpClientesAuditoriaRepository.java#buscarHistorico"
       ],
       "tabelas": [
@@ -939,7 +939,7 @@
     {
       "metodo": "GET",
       "caminho": "/api/auditoria/logs/{id}/imagem",
-      "controller": "backend/java/src/api/java/com/example/satelite/controllers/IntegracaoAuditoriaController.java#consultarImagemCanhoto",
+      "controller": "backend/java/src/main/perfis/api/java/com/example/satelite/controllers/IntegracaoAuditoriaController.java#consultarImagemCanhoto",
       "parametros": [
         {
           "nome": "id",
@@ -958,7 +958,7 @@
         "404": "registro ausente, destino diferente de PPG ou payload sem imagem; corpo vazio"
       },
       "rastreio": [
-        "backend/java/src/api/java/com/example/satelite/services/auditoria/IntegracaoAuditoriaService.java#buscarImagemCanhoto",
+        "backend/java/src/main/perfis/api/java/com/example/satelite/services/auditoria/IntegracaoAuditoriaService.java#buscarImagemCanhoto",
         "backend/java/src/main/java/com/example/satelite/repositories/LogIntegracaoRepository.java#findById"
       ],
       "tabelas": [
@@ -979,7 +979,7 @@
     {
       "metodo": "GET",
       "caminho": "/api/etl/quarentena/erros",
-      "controller": "backend/java/src/api/java/com/example/satelite/controllers/QuarentenaController.java#listarErrosManuais",
+      "controller": "backend/java/src/main/perfis/api/java/com/example/satelite/controllers/QuarentenaController.java#listarErrosManuais",
       "parametros": [
         {
           "nome": "pagina",
@@ -1040,7 +1040,7 @@
     {
       "metodo": "GET",
       "caminho": "/api/etl/quarentena/historico",
-      "controller": "backend/java/src/api/java/com/example/satelite/controllers/QuarentenaController.java#listarHistoricoRepescagens",
+      "controller": "backend/java/src/main/perfis/api/java/com/example/satelite/controllers/QuarentenaController.java#listarHistoricoRepescagens",
       "parametros": [
         {
           "nome": "pagina",
@@ -1116,7 +1116,7 @@
     {
       "metodo": "GET",
       "caminho": "/api/etl/quarentena/historico/exportacao",
-      "controller": "backend/java/src/api/java/com/example/satelite/controllers/QuarentenaController.java#exportarHistoricoRepescagens",
+      "controller": "backend/java/src/main/perfis/api/java/com/example/satelite/controllers/QuarentenaController.java#exportarHistoricoRepescagens",
       "parametros": [
         {
           "nome": "dataInicial",
@@ -1204,14 +1204,14 @@
             "campo": "motivo"
           }
         ],
-        "serializador": "backend/java/src/api/java/com/example/satelite/utils/CsvStreamWriter.java#escreverLinha",
+        "serializador": "backend/java/src/main/perfis/api/java/com/example/satelite/utils/CsvStreamWriter.java#escreverLinha",
         "modeloLinha": "QuarentenaHistoricoDTO"
       }
     },
     {
       "metodo": "GET",
       "caminho": "/api/etl/quarentena/erros/exportacao",
-      "controller": "backend/java/src/api/java/com/example/satelite/controllers/QuarentenaController.java#exportarErrosManuais",
+      "controller": "backend/java/src/main/perfis/api/java/com/example/satelite/controllers/QuarentenaController.java#exportarErrosManuais",
       "parametros": [
         {
           "nome": "destino",
@@ -1280,14 +1280,14 @@
             "campo": "dataUltimaTentativa"
           }
         ],
-        "serializador": "backend/java/src/api/java/com/example/satelite/utils/CsvStreamWriter.java#escreverLinha",
+        "serializador": "backend/java/src/main/perfis/api/java/com/example/satelite/utils/CsvStreamWriter.java#escreverLinha",
         "modeloLinha": "QuarentenaErroManualDTO"
       }
     },
     {
       "metodo": "POST",
       "caminho": "/api/etl/quarentena/{destino}/reprocessar",
-      "controller": "backend/java/src/api/java/com/example/satelite/controllers/QuarentenaController.java#reprocessar",
+      "controller": "backend/java/src/main/perfis/api/java/com/example/satelite/controllers/QuarentenaController.java#reprocessar",
       "parametros": [
         {
           "nome": "destino",
@@ -1324,7 +1324,7 @@
     {
       "metodo": "GET",
       "caminho": "/api/auditoria/vedacit/reconciliacoes",
-      "controller": "backend/java/src/api/java/com/example/satelite/controllers/ReconciliacaoVedacitController.java#execucoes",
+      "controller": "backend/java/src/main/perfis/api/java/com/example/satelite/controllers/ReconciliacaoVedacitController.java#execucoes",
       "parametros": [],
       "resposta": {
         "status": 200,
@@ -1349,7 +1349,7 @@
     {
       "metodo": "GET",
       "caminho": "/api/auditoria/vedacit/reconciliacoes/{id}/resumo",
-      "controller": "backend/java/src/api/java/com/example/satelite/controllers/ReconciliacaoVedacitController.java#resumo",
+      "controller": "backend/java/src/main/perfis/api/java/com/example/satelite/controllers/ReconciliacaoVedacitController.java#resumo",
       "parametros": [
         {
           "nome": "id",
@@ -1379,7 +1379,7 @@
     {
       "metodo": "GET",
       "caminho": "/api/auditoria/vedacit/reconciliacoes/{id}/itens",
-      "controller": "backend/java/src/api/java/com/example/satelite/controllers/ReconciliacaoVedacitController.java#itens",
+      "controller": "backend/java/src/main/perfis/api/java/com/example/satelite/controllers/ReconciliacaoVedacitController.java#itens",
       "parametros": [
         {
           "nome": "id",
@@ -1428,7 +1428,7 @@
     {
       "metodo": "GET",
       "caminho": "/api/auditoria/reconciliacoes/{cliente}",
-      "controller": "backend/java/src/api/java/com/example/satelite/controllers/ReconciliacaoClientesController.java#execucoes",
+      "controller": "backend/java/src/main/perfis/api/java/com/example/satelite/controllers/ReconciliacaoClientesController.java#execucoes",
       "parametros": [
         {
           "nome": "cliente",
@@ -1475,7 +1475,7 @@
     {
       "metodo": "GET",
       "caminho": "/api/auditoria/reconciliacoes/{cliente}/{id}/resumo",
-      "controller": "backend/java/src/api/java/com/example/satelite/controllers/ReconciliacaoClientesController.java#resumo",
+      "controller": "backend/java/src/main/perfis/api/java/com/example/satelite/controllers/ReconciliacaoClientesController.java#resumo",
       "parametros": [
         {
           "nome": "cliente",
@@ -1524,7 +1524,7 @@
     {
       "metodo": "POST",
       "caminho": "/api/selia/intelipost/pre-shipment-list",
-      "controller": "backend/java/src/api/java/com/example/satelite/controllers/SeliaPreShipmentListController.java#receber",
+      "controller": "backend/java/src/main/perfis/api/java/com/example/satelite/controllers/SeliaPreShipmentListController.java#receber",
       "parametros": [
         {
           "nome": "logistic-provider-api-key",
@@ -1547,9 +1547,9 @@
         "500": "falha interna; o formato depende do ponto da falha"
       },
       "rastreio": [
-        "backend/java/src/api/java/com/example/satelite/config/SeliaPlpRequestSizeFilter.java#doFilterInternal",
-        "backend/java/src/api/java/com/example/satelite/controllers/SeliaPlpRateLimitInterceptor.java#preHandle",
-        "backend/java/src/api/java/com/example/satelite/services/selia/SeliaPreShipmentListService.java#receber",
+        "backend/java/src/main/perfis/api/java/com/example/satelite/config/SeliaPlpRequestSizeFilter.java#doFilterInternal",
+        "backend/java/src/main/perfis/api/java/com/example/satelite/controllers/SeliaPlpRateLimitInterceptor.java#preHandle",
+        "backend/java/src/main/perfis/api/java/com/example/satelite/services/selia/SeliaPreShipmentListService.java#receber",
         "backend/java/src/main/java/com/example/satelite/repositories/LogIntegracaoRepository.java#findTopBySistemaDestinoAndIntelipostPreShipmentListOrderByDataProcessamentoAscIdAsc"
       ],
       "tabelas": [
@@ -1573,7 +1573,7 @@
   ],
   "modelos": {
     "AuditoriaIntegracoesClientesResponseDTO": {
-      "fonte": "backend/java/src/api/java/com/example/satelite/dto/auditoria/AuditoriaIntegracoesClientesResponseDTO.java#AuditoriaIntegracoesClientesResponseDTO",
+      "fonte": "backend/java/src/main/perfis/api/java/com/example/satelite/dto/auditoria/AuditoriaIntegracoesClientesResponseDTO.java#AuditoriaIntegracoesClientesResponseDTO",
       "campos": {
         "geradoEm": {
           "tipoJava": "LocalDateTime",
@@ -1610,8 +1610,8 @@
     },
     "ErroFiltroSelia": {
       "fonte": [
-        "backend/java/src/api/java/com/example/satelite/controllers/SeliaPlpRateLimitInterceptor.java",
-        "backend/java/src/api/java/com/example/satelite/config/SeliaPlpRequestSizeFilter.java"
+        "backend/java/src/main/perfis/api/java/com/example/satelite/controllers/SeliaPlpRateLimitInterceptor.java",
+        "backend/java/src/main/perfis/api/java/com/example/satelite/config/SeliaPlpRequestSizeFilter.java"
       ],
       "campos": {
         "status": {
@@ -1800,7 +1800,7 @@
       "expansao": "SELECT * pelo JDBC. Migrações podem acrescentar propriedades. Campos listados são os declarados no SQL versionado. Datas JDBC dependem do serializador da aplicação."
     },
     "IndicadoresEtapasDTO": {
-      "fonte": "backend/java/src/api/java/com/example/satelite/dto/auditoria/IndicadoresEtapasDTO.java#IndicadoresEtapasDTO",
+      "fonte": "backend/java/src/main/perfis/api/java/com/example/satelite/dto/auditoria/IndicadoresEtapasDTO.java#IndicadoresEtapasDTO",
       "campos": {
         "versao": {
           "tipoJava": "int",
@@ -1854,7 +1854,7 @@
       }
     },
     "IndicadoresEtapasDTO.Dia": {
-      "fonte": "backend/java/src/api/java/com/example/satelite/dto/auditoria/IndicadoresEtapasDTO.java#Dia",
+      "fonte": "backend/java/src/main/perfis/api/java/com/example/satelite/dto/auditoria/IndicadoresEtapasDTO.java#Dia",
       "campos": {
         "data": {
           "tipoJava": "LocalDate",
@@ -1898,7 +1898,7 @@
       }
     },
     "IndicadoresEtapasDTO.Etapa": {
-      "fonte": "backend/java/src/api/java/com/example/satelite/dto/auditoria/IndicadoresEtapasDTO.java#Etapa",
+      "fonte": "backend/java/src/main/perfis/api/java/com/example/satelite/dto/auditoria/IndicadoresEtapasDTO.java#Etapa",
       "campos": {
         "sistemaDestino": {
           "tipoJava": "String",
@@ -1978,7 +1978,7 @@
       }
     },
     "IndicadoresOperacionaisDTO": {
-      "fonte": "backend/java/src/api/java/com/example/satelite/dto/auditoria/IndicadoresOperacionaisDTO.java#IndicadoresOperacionaisDTO",
+      "fonte": "backend/java/src/main/perfis/api/java/com/example/satelite/dto/auditoria/IndicadoresOperacionaisDTO.java#IndicadoresOperacionaisDTO",
       "campos": {
         "versao": {
           "tipoJava": "int",
@@ -2059,7 +2059,7 @@
       }
     },
     "IndicadoresOperacionaisDTO.Atividade": {
-      "fonte": "backend/java/src/api/java/com/example/satelite/dto/auditoria/IndicadoresOperacionaisDTO.java#Atividade",
+      "fonte": "backend/java/src/main/perfis/api/java/com/example/satelite/dto/auditoria/IndicadoresOperacionaisDTO.java#Atividade",
       "campos": {
         "data": {
           "tipoJava": "LocalDate",
@@ -2139,7 +2139,7 @@
       }
     },
     "IndicadoresOperacionaisDTO.Dia": {
-      "fonte": "backend/java/src/api/java/com/example/satelite/dto/auditoria/IndicadoresOperacionaisDTO.java#Dia",
+      "fonte": "backend/java/src/main/perfis/api/java/com/example/satelite/dto/auditoria/IndicadoresOperacionaisDTO.java#Dia",
       "campos": {
         "data": {
           "tipoJava": "LocalDate",
@@ -2174,7 +2174,7 @@
       }
     },
     "IndicadoresOperacionaisDTO.Etapa": {
-      "fonte": "backend/java/src/api/java/com/example/satelite/dto/auditoria/IndicadoresOperacionaisDTO.java#Etapa",
+      "fonte": "backend/java/src/main/perfis/api/java/com/example/satelite/dto/auditoria/IndicadoresOperacionaisDTO.java#Etapa",
       "campos": {
         "sistemaDestino": {
           "tipoJava": "String",
@@ -2272,7 +2272,7 @@
       }
     },
     "IntegracaoEvolucaoDiariaDTO": {
-      "fonte": "backend/java/src/api/java/com/example/satelite/dto/auditoria/IntegracaoEvolucaoDiariaDTO.java#IntegracaoEvolucaoDiariaDTO",
+      "fonte": "backend/java/src/main/perfis/api/java/com/example/satelite/dto/auditoria/IntegracaoEvolucaoDiariaDTO.java#IntegracaoEvolucaoDiariaDTO",
       "campos": {
         "data": {
           "tipoJava": "LocalDate",
@@ -2377,8 +2377,8 @@
     },
     "MensagemFiltroSelia": {
       "fonte": [
-        "backend/java/src/api/java/com/example/satelite/controllers/SeliaPlpRateLimitInterceptor.java",
-        "backend/java/src/api/java/com/example/satelite/config/SeliaPlpRequestSizeFilter.java"
+        "backend/java/src/main/perfis/api/java/com/example/satelite/controllers/SeliaPlpRateLimitInterceptor.java",
+        "backend/java/src/main/perfis/api/java/com/example/satelite/config/SeliaPlpRequestSizeFilter.java"
       ],
       "campos": {
         "type": {
@@ -2398,7 +2398,7 @@
       }
     },
     "MetricaConsolidadaDTO": {
-      "fonte": "backend/java/src/api/java/com/example/satelite/dto/auditoria/MetricaConsolidadaDTO.java#MetricaConsolidadaDTO",
+      "fonte": "backend/java/src/main/perfis/api/java/com/example/satelite/dto/auditoria/MetricaConsolidadaDTO.java#MetricaConsolidadaDTO",
       "campos": {
         "sistemaDestino": {
           "tipoJava": "String",
@@ -2470,7 +2470,7 @@
           "colunasDeOrigem": [
             "sistema_destino"
           ],
-          "fonteDaRegra": "backend/java/src/api/java/com/example/satelite/services/auditoria/IntegracaoAuditoriaService.java:246"
+          "fonteDaRegra": "backend/java/src/main/perfis/api/java/com/example/satelite/services/auditoria/IntegracaoAuditoriaService.java:246"
         },
         "rotuloComprovante": {
           "tipoJava": "String",
@@ -2483,7 +2483,7 @@
           "colunasDeOrigem": [
             "sistema_destino"
           ],
-          "fonteDaRegra": "backend/java/src/api/java/com/example/satelite/services/auditoria/IntegracaoAuditoriaService.java:254"
+          "fonteDaRegra": "backend/java/src/main/perfis/api/java/com/example/satelite/services/auditoria/IntegracaoAuditoriaService.java:254"
         }
       },
       "consumoFrontend": {
@@ -2491,7 +2491,7 @@
       }
     },
     "PageableSpring": {
-      "fonte": "backend/java/src/api/java/com/example/satelite/controllers/QuarentenaController.java",
+      "fonte": "backend/java/src/main/perfis/api/java/com/example/satelite/controllers/QuarentenaController.java",
       "origem": "PageImpl do Spring Data. Campos conferidos em GET real do JAR candidato em H2 isolado, página 0, tamanho 1 vazia.",
       "campos": {
         "offset": {
@@ -2516,7 +2516,7 @@
       }
     },
     "PaginaErros": {
-      "fonte": "backend/java/src/api/java/com/example/satelite/controllers/QuarentenaController.java",
+      "fonte": "backend/java/src/main/perfis/api/java/com/example/satelite/controllers/QuarentenaController.java",
       "origem": "PageImpl do Spring Data. Campos conferidos em GET real do JAR candidato em H2 isolado, página 0, tamanho 1 vazia.",
       "campos": {
         "content": {
@@ -2556,7 +2556,7 @@
       }
     },
     "PaginaHistorico": {
-      "fonte": "backend/java/src/api/java/com/example/satelite/controllers/QuarentenaController.java",
+      "fonte": "backend/java/src/main/perfis/api/java/com/example/satelite/controllers/QuarentenaController.java",
       "origem": "PageImpl do Spring Data. Campos conferidos em GET real do JAR candidato em H2 isolado, página 0, tamanho 1 vazia.",
       "campos": {
         "content": {
@@ -2596,7 +2596,7 @@
       }
     },
     "PaginacaoDTO": {
-      "fonte": "backend/java/src/api/java/com/example/satelite/dto/auditoria/PaginacaoDTO.java#PaginacaoDTO",
+      "fonte": "backend/java/src/main/perfis/api/java/com/example/satelite/dto/auditoria/PaginacaoDTO.java#PaginacaoDTO",
       "campos": {
         "pagina": {
           "tipoJava": "int",
@@ -2862,7 +2862,7 @@
       }
     },
     "PendenciasEtapasDTO": {
-      "fonte": "backend/java/src/api/java/com/example/satelite/dto/auditoria/PendenciasEtapasDTO.java#PendenciasEtapasDTO",
+      "fonte": "backend/java/src/main/perfis/api/java/com/example/satelite/dto/auditoria/PendenciasEtapasDTO.java#PendenciasEtapasDTO",
       "campos": {
         "itens": {
           "tipoJava": "List<Item>",
@@ -2907,7 +2907,7 @@
       }
     },
     "PendenciasEtapasDTO.Item": {
-      "fonte": "backend/java/src/api/java/com/example/satelite/dto/auditoria/PendenciasEtapasDTO.java#Item",
+      "fonte": "backend/java/src/main/perfis/api/java/com/example/satelite/dto/auditoria/PendenciasEtapasDTO.java#Item",
       "campos": {
         "id": {
           "tipoJava": "long",
@@ -2996,7 +2996,7 @@
       }
     },
     "PendenciasPaginadasDTO": {
-      "fonte": "backend/java/src/api/java/com/example/satelite/dto/auditoria/PendenciasPaginadasDTO.java#PendenciasPaginadasDTO",
+      "fonte": "backend/java/src/main/perfis/api/java/com/example/satelite/dto/auditoria/PendenciasPaginadasDTO.java#PendenciasPaginadasDTO",
       "campos": {
         "itens": {
           "tipoJava": "List<PendenciaDTO>",
@@ -3113,7 +3113,7 @@
       }
     },
     "QuarentenaReprocessamentoResponseDTO": {
-      "fonte": "backend/java/src/api/java/com/example/satelite/dto/etl/QuarentenaReprocessamentoResponseDTO.java#QuarentenaReprocessamentoResponseDTO",
+      "fonte": "backend/java/src/main/perfis/api/java/com/example/satelite/dto/etl/QuarentenaReprocessamentoResponseDTO.java#QuarentenaReprocessamentoResponseDTO",
       "campos": {
         "destino": {
           "tipoJava": "String",
@@ -3228,7 +3228,7 @@
       }
     },
     "SeliaPreShipmentInvoiceDTO": {
-      "fonte": "backend/java/src/api/java/com/example/satelite/dto/selia/SeliaPreShipmentInvoiceDTO.java#SeliaPreShipmentInvoiceDTO",
+      "fonte": "backend/java/src/main/perfis/api/java/com/example/satelite/dto/selia/SeliaPreShipmentInvoiceDTO.java#SeliaPreShipmentInvoiceDTO",
       "campos": {
         "invoice_key": {
           "tipoJava": "String",
@@ -3242,7 +3242,7 @@
       "camposDesconhecidosNaEntrada": "ignorados"
     },
     "SeliaPreShipmentListRequestDTO": {
-      "fonte": "backend/java/src/api/java/com/example/satelite/dto/selia/SeliaPreShipmentListRequestDTO.java#SeliaPreShipmentListRequestDTO",
+      "fonte": "backend/java/src/main/perfis/api/java/com/example/satelite/dto/selia/SeliaPreShipmentListRequestDTO.java#SeliaPreShipmentListRequestDTO",
       "campos": {
         "intelipost_pre_shipment_list": {
           "tipoJava": "Long",
@@ -3264,7 +3264,7 @@
       "camposDesconhecidosNaEntrada": "ignorados"
     },
     "SeliaPreShipmentListResponseDTO": {
-      "fonte": "backend/java/src/api/java/com/example/satelite/dto/selia/SeliaPreShipmentListResponseDTO.java#SeliaPreShipmentListResponseDTO",
+      "fonte": "backend/java/src/main/perfis/api/java/com/example/satelite/dto/selia/SeliaPreShipmentListResponseDTO.java#SeliaPreShipmentListResponseDTO",
       "campos": {
         "intelipost_pre_shipment_list": {
           "tipoJava": "Long",
@@ -3309,7 +3309,7 @@
       "nulosNaSaida": "omitidos"
     },
     "SeliaPreShipmentMessageDTO": {
-      "fonte": "backend/java/src/api/java/com/example/satelite/dto/selia/SeliaPreShipmentMessageDTO.java#SeliaPreShipmentMessageDTO",
+      "fonte": "backend/java/src/main/perfis/api/java/com/example/satelite/dto/selia/SeliaPreShipmentMessageDTO.java#SeliaPreShipmentMessageDTO",
       "campos": {
         "type": {
           "tipoJava": "String",
@@ -3330,7 +3330,7 @@
       "nulosNaSaida": "omitidos"
     },
     "SeliaPreShipmentOrderDTO": {
-      "fonte": "backend/java/src/api/java/com/example/satelite/dto/selia/SeliaPreShipmentOrderDTO.java#SeliaPreShipmentOrderDTO",
+      "fonte": "backend/java/src/main/perfis/api/java/com/example/satelite/dto/selia/SeliaPreShipmentOrderDTO.java#SeliaPreShipmentOrderDTO",
       "campos": {
         "order_number": {
           "tipoJava": "String",
@@ -3352,7 +3352,7 @@
       "camposDesconhecidosNaEntrada": "ignorados"
     },
     "SeliaPreShipmentResponseOrderDTO": {
-      "fonte": "backend/java/src/api/java/com/example/satelite/dto/selia/SeliaPreShipmentResponseOrderDTO.java#SeliaPreShipmentResponseOrderDTO",
+      "fonte": "backend/java/src/main/perfis/api/java/com/example/satelite/dto/selia/SeliaPreShipmentResponseOrderDTO.java#SeliaPreShipmentResponseOrderDTO",
       "campos": {
         "order_number": {
           "tipoJava": "String",
@@ -3370,7 +3370,7 @@
       "nulosNaSaida": "omitidos"
     },
     "SeliaPreShipmentResponseVolumeDTO": {
-      "fonte": "backend/java/src/api/java/com/example/satelite/dto/selia/SeliaPreShipmentResponseVolumeDTO.java#SeliaPreShipmentResponseVolumeDTO",
+      "fonte": "backend/java/src/main/perfis/api/java/com/example/satelite/dto/selia/SeliaPreShipmentResponseVolumeDTO.java#SeliaPreShipmentResponseVolumeDTO",
       "campos": {
         "shipment_order_volume_number": {
           "tipoJava": "String",
@@ -3382,7 +3382,7 @@
       "nulosNaSaida": "omitidos"
     },
     "SeliaPreShipmentVolumeDTO": {
-      "fonte": "backend/java/src/api/java/com/example/satelite/dto/selia/SeliaPreShipmentVolumeDTO.java#SeliaPreShipmentVolumeDTO",
+      "fonte": "backend/java/src/main/perfis/api/java/com/example/satelite/dto/selia/SeliaPreShipmentVolumeDTO.java#SeliaPreShipmentVolumeDTO",
       "campos": {
         "shipment_order_volume_number": {
           "tipoJava": "String",
@@ -3404,7 +3404,7 @@
       "camposDesconhecidosNaEntrada": "ignorados"
     },
     "WorkSftpClienteExecucoesPaginadasDTO": {
-      "fonte": "backend/java/src/api/java/com/example/satelite/dto/auditoria/WorkSftpClienteExecucoesPaginadasDTO.java#WorkSftpClienteExecucoesPaginadasDTO",
+      "fonte": "backend/java/src/main/perfis/api/java/com/example/satelite/dto/auditoria/WorkSftpClienteExecucoesPaginadasDTO.java#WorkSftpClienteExecucoesPaginadasDTO",
       "campos": {
         "itens": {
           "tipoJava": "List<WorkSftpClienteStatusDTO>",

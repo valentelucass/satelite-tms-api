@@ -35,8 +35,8 @@
 		<spring-cloud.version>2025.1.2</spring-cloud.version>
 		<logback.version>1.5.16</logback.version>
 		<satelite.build.directory>${project.basedir}/../../target</satelite.build.directory>
-		<satelite.papel.sources>${project.basedir}/src/api/java</satelite.papel.sources>
-		<satelite.papel.tests>${project.basedir}/src/api-test/java</satelite.papel.tests>
+		<satelite.papel.sources>${project.basedir}/src/main/perfis/api/java</satelite.papel.sources>
+		<satelite.papel.tests>${project.basedir}/src/test/perfis/api/java</satelite.papel.tests>
 		<start-class>com.example.satelite.SateliteApplication</start-class>
 	</properties>
 	<dependencies>
@@ -251,7 +251,7 @@
 							<verbose>false</verbose>
 							<encoding>${project.build.sourceEncoding}</encoding>
 							<xnocompile>true</xnocompile>
-							<bindingDirectory>${project.basedir}/src/jaxws</bindingDirectory>
+							<bindingDirectory>${project.basedir}/src/main/jaxws</bindingDirectory>
 							<bindingFiles>
 								<bindingFile>vedacit-bindings.xml</bindingFile>
 							</bindingFiles>
@@ -285,7 +285,7 @@
 							<verbose>false</verbose>
 							<encoding>${project.build.sourceEncoding}</encoding>
 							<xnocompile>true</xnocompile>
-							<bindingDirectory>${project.basedir}/src/jaxws</bindingDirectory>
+							<bindingDirectory>${project.basedir}/src/main/jaxws</bindingDirectory>
 							<bindingFiles>
 								<bindingFile>nfe-bindings.xml</bindingFile>
 							</bindingFiles>
@@ -320,7 +320,7 @@
 							<verbose>false</verbose>
 							<encoding>${project.build.sourceEncoding}</encoding>
 							<xnocompile>true</xnocompile>
-							<bindingDirectory>${project.basedir}/src/jaxws/cte</bindingDirectory>
+							<bindingDirectory>${project.basedir}/src/main/jaxws/cte</bindingDirectory>
 							<bindingFiles>
 								<bindingFile>cte-jaxws-bindings.xml</bindingFile>
 								<bindingFile>cte-jaxb-bindings.xml</bindingFile>
@@ -390,8 +390,8 @@
 		<profile>
 			<id>clientes-worker</id>
 			<properties>
-				<satelite.papel.sources>${project.basedir}/src/clientes/java</satelite.papel.sources>
-				<satelite.papel.tests>${project.basedir}/src/clientes-test/java</satelite.papel.tests>
+				<satelite.papel.sources>${project.basedir}/src/main/perfis/clientes/java</satelite.papel.sources>
+				<satelite.papel.tests>${project.basedir}/src/test/perfis/clientes/java</satelite.papel.tests>
 				<satelite.build.directory>${project.basedir}/../../target/clientes-worker-build</satelite.build.directory>
 				<start-class>com.example.satelite.ClientesApplication</start-class>
 			</properties>

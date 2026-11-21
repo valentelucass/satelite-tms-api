@@ -54,7 +54,7 @@ exit /b 0
 
 :selecionar_pacote_clientes
 set "JAR_PATH="
-for /f "delims=" %%J in ('node -e "const p=require(process.argv[1]).apps.find(x=>x.name==='clientes'); console.log(p.args[p.args.indexOf('-jar')+1])" "%PROJECT_ROOT%\deploy\clientes\ecosystem.config.js"') do set "JAR_PATH=%%J"
+for /f "delims=" %%J in ('node -e "const p=require(process.argv[1]).apps.find(x=>x.name==='SATELITE-TMS-CLIENTES' && x.namespace==='satelite-tms'); console.log(p.args[p.args.indexOf('-jar')+1])" "%PROJECT_ROOT%\deploy\clientes\ecosystem.config.js"') do set "JAR_PATH=%%J"
 if not defined JAR_PATH (
     echo [ERRO] Pacote de clientes indisponivel. Confira deploy\clientes\pacotes.
     exit /b 1

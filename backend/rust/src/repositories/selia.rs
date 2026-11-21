@@ -7,7 +7,7 @@ use std::collections::BTreeSet;
 const RECEIVE_SQL_SERVER: &str = concat!(
     "DECLARE @lista bigint = CONVERT(bigint, ?), @mapas nvarchar(max) = CONVERT(nvarchar(max), ?), ",
     "@recibo bigint, @data datetime2(7);\n",
-    include_str!("selia_receber.sql"),
+    include_str!("../../sql/selia/receber.sql"),
     "\nSELECT @recibo AS id, CONVERT(varchar(32), @data, 121) AS data ",
     "FOR JSON PATH, WITHOUT_ARRAY_WRAPPER;"
 );
@@ -274,8 +274,8 @@ mod tests {
         let settings =
             crate::config::Settings::from_properties(std::path::Path::new(&path)).unwrap();
         let server = super::super::SqlServer::new(&settings).unwrap();
-        let query =
-            include_str!("selia_receber.sql").replace("dbo.tb_log_integracao", "#plp_satelite");
+        let query = include_str!("../../sql/selia/receber.sql")
+            .replace("dbo.tb_log_integracao", "#plp_satelite");
         assert!(!query.contains("dbo."));
         let mut first = mapping(1);
         first.order_number = "Ação".into();

@@ -135,7 +135,7 @@ public final class NoNetworkSecurityManager extends SecurityManager {
     $compileExit = Invoke-MavenLogged -Argumentos ($opcoesBuild + @('resources:resources', 'build-helper:add-source@add-wsimport-generated-sources', 'compiler:compile', 'resources:testResources', 'build-helper:add-test-source@testes-do-papel', 'compiler:testCompile')) -Log "$saida/compile.log"
     if ($compileExit -ne 0) { throw "Compilacao falhou; consulte $saida/compile.log" }
     $testExit = Invoke-MavenLogged -Argumentos ($opcoesBuild + @('-f', "$saida/test-pom.xml", "-Dtest=$Testes", 'surefire:test')) -Log "$saida/tests.log"
-    $fonteDoPapel = Join-Path $moduloJava "src/$Papel/java"
+    $fonteDoPapel = Join-Path $moduloJava "src/main/perfis/$Papel/java"
     $coverageExit = Invoke-MavenLogged -Argumentos ($opcoesBuild + @('-f', "$saida/test-pom.xml", "-Dsatelite.papel.sources=$fonteDoPapel", 'build-helper:add-source@add-wsimport-generated-sources', 'org.jacoco:jacoco-maven-plugin:0.8.15:report')) -Log "$saida/coverage.log"
     if ($coverageExit -ne 0) { throw "Relatorio falhou; consulte $saida/coverage.log" }
     $guardAtivo = Select-String -LiteralPath "$saida/tests.log" -SimpleMatch '[UNIT_NETWORK_GUARD] active' -Quiet

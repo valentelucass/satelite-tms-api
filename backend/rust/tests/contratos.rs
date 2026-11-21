@@ -14,7 +14,7 @@ fn catalogo() -> Value {
 #[test]
 fn catalogo_acompanha_as_rotas_publicadas_pelos_controllers_java() {
     let repo = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
-    let pasta = repo.join("backend/java/src/api/java/com/example/satelite/controllers");
+    let pasta = repo.join("backend/java/src/main/perfis/api/java/com/example/satelite/controllers");
     let prefixo = Regex::new(r#"@RequestMapping\("([^"]+)"\)"#).unwrap();
     let metodo =
         Regex::new(r#"@(Get|Post|Put|Delete|Patch)Mapping(?:\(\s*(?:value\s*=\s*)?"([^"]+)")?"#)

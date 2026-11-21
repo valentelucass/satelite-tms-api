@@ -1,5 +1,13 @@
 # Estado Atual do Sistema
 
+## Organização do backend e limpeza local em 21/11/2026
+
+O Java passou a ter apenas `src/main` e `src/test` no primeiro nível. Cada uma tem o código comum em `java` e as partes específicas em `perfis/api/java` e `perfis/clientes/java`. Os quatro XMLs de configuração dos contratos SOAP da Vedacit estão em `src/main/jaxws`. A API Rust lê a transação de recebimento da SELIA de `backend/rust/sql/selia/receber.sql` durante a compilação. Os 56 arquivos Java/XML movidos e a consulta SQL conservaram seu conteúdo. O manifesto padrão do PM2 permanece na raiz. Dois comandos de verificação e seleção de pacote passaram a usar o nome vigente `SATELITE-TMS-CLIENTES`.
+
+Passaram 610 testes da API Java de reversão, 515 do serviço de clientes e 22 do Rust. Cada perfil Java ignorou três testes e os quatro testes Rust que exigem SQL Server ficaram fora desta rodada local. As 1.225 classes compiladas da API Java e as 1.177 do serviço de clientes ficaram idênticas, byte a byte, às dos dois JARs da versão selecionada. A consulta principal do dashboard respondeu HTTP 200. Os dois processos do PM2 seguiram em execução.
+
+A limpeza retirou 859,4 MiB da pasta do projeto. Destes, 761,2 MiB de pacotes antigos e arquivos de compilação foram para a Lixeira do Windows. Os demais 98,2 MiB eram arquivos gerados e temporários. Foram preservados os relatórios de teste, as fontes SOAP usadas nos testes locais, os pacotes selecionados pelo PM2 e os arquivos referenciados para reversão.
+
 ## Fila documental em produção em 20/11/2026
 
 O roteiro de repetição e a leitura dos 133 comprovantes pendentes estão na [validação da fila documental](docs/validacao-da-fila-documental.md).
