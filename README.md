@@ -13,4 +13,6 @@ A API usa um executável Rust e o programa de clientes usa um JAR Java. Os pacot
 
 ## Testes locais
 
+O [roteiro da fila documental](docs/validacao-da-fila-documental.md) explica como comparar o saldo e a ordem, testar uma retomada com dois consumidores e confirmar por que um comprovante permaneceu pendente.
+
 Rode a suíte Java pela raiz do projeto com `.\scripts\testar_com_cobertura.ps1` para a API e acrescente `-Papel clientes` para testar o worker. Para a suíte Rust, entre em `backend/rust` e execute `cargo test --release --locked`.

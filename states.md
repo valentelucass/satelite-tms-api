@@ -2,6 +2,8 @@
 
 ## Fila documental em produção em 20/11/2026
 
+O roteiro de repetição e a leitura dos 133 comprovantes pendentes estão na [validação da fila documental](docs/validacao-da-fila-documental.md).
+
 O worker passou a consultar lotes de 32 a 500 chaves de NF-e com um parâmetro SQL. Cada chave precisa ter 44 dígitos de 0 a 9. Outros formatos seguem pela comparação anterior. A migração V30 acrescenta o índice filtrado da fila Vedacit. A busca conserva o horário de elegibilidade e a ordem por processamento e ID.
 
 A cópia restaurada repetiu os 42 campos, o saldo e a ordem em 36 comparações pela aplicação e dez comparações concorrentes. Os dois perfis Java concluíram suas suítes com 515 e 610 testes aprovados, respectivamente no worker e na API. Cada perfil tem três testes ignorados. Com 500 chaves e 133 notas elegíveis, a contagem passou de 2.360 para 8 leituras lógicas na mediana medida na cópia.
