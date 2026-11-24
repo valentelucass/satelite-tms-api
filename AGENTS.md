@@ -2,6 +2,14 @@
 
 ETL Java 17/Spring Boot: lê ocorrências e documentos ESL/Rodogarcia e integra PPG, Vedacit, SELIA e SUPPORTE conforme os perfis habilitados. O processamento principal usa scheduler/runners; a API auxiliar atende auditoria, quarentena e contratos específicos existentes.
 
+## Compilações e prévias locais na VM
+
+Use `../.runtime/memory-control/Executar-Batch.ps1 -Compilacao` para compilar e testar a versão que será publicada. Há uma vaga exclusiva para compilação, além das duas vagas operacionais do ETL e dos demais lotes. A compilação pode aguardar outra compilação ou a liberação de memória.
+
+Para servir uma prévia temporária, use o mesmo executor com `-Previa`, em uma sessão dedicada. A prévia tem uma vaga própria, até 2,5 GiB para toda a árvore de processos, prioridade reduzida e duração máxima de quatro horas. Encerre-a ao concluir a revisão. Após 20 minutos sem interação, o executor encerra a prévia e seus processos filhos. No Vite, registre `atividadePrevia()`; em outros servidores, sinalize a interação conforme o [guia do executor](../.runtime/memory-control/README.md). Polling, verificações de saúde e uma aba aberta em repouso não renovam o prazo.
+
+Antes de encerrar um processo fora do PM2, confira sua identidade, finalidade e dependências. ETL, tarefas agendadas, pontes de produção e ferramentas compartilhadas podem operar fora do PM2.
+
 ## Contexto conforme a tarefa
 
 - Consulte o estado recente e as pendências relacionadas em [states.md](states.md) ao retomar trabalho ou alterar comportamento, configuração ou operação. Diferencie histórico de estado atual; uma correção textual não exige releitura integral.
